@@ -1,8 +1,8 @@
 # 数据库 Schema · Our Nest
 
-**版本**：v1.0
-**日期**：2026-04-24
-**引擎**：SQLite (WAL mode)
+**版本**：v1.1
+**日期**：2026-04-29
+**引擎**：SQLite (WAL mode)；Supabase/Postgres 作为 Phase 1+ 云端同步备选
 
 ---
 
@@ -22,10 +22,29 @@ SQLite 默认模式下写操作会互相阻塞，WAL 模式允许一个写 + 多
 
 ---
 
-## 二、表结构总览
+## 二、数据库路线
+
+### 方案 A：SQLite Phase 1 先跑通
+
+SQLite 可以理解成项目自己带的“小数据库文件”。它适合本地开发、单人使用、快速验证微信桥接与记忆逻辑。
+
+Phase 1 即使接入微信，也可以先用 SQLite。重点不是马上换数据库，而是从一开始把表结构设计成“多入口共用同一份记忆”。
+
+### 方案 B：Supabase/Postgres 云端同步方案
+
+Supabase 可以理解成“云端数据库 + 同步服务”。它更适合后期长期运行、多设备同步、云备份、远程服务器部署。
+
+Supabase 不是另一套产品逻辑，只是把同样的数据结构放到云端 Postgres。也就是说，SQLite 和 Supabase 应尽量共用同一套表设计，未来迁移时只是“搬数据库”，不是重做 Remoire。
+
+---
+
+## 三、表结构总览
 
 ```
-conversations          聊天消息（核心）
+channels               入口类型（Remoire / Claude.ai MCP / 微信）
+channel_bindings       具体入口绑定（某个微信账号、某个 MCP 客户端）
+conversations          会话容器（同一段聊天）
+messages               统一消息记录（核心）
 memory_candidates      记忆候选（等待确认）
 memories               正式记忆（已确认）
 special_dates          特殊日期（纪念日等）
@@ -33,7 +52,12 @@ reminders              提醒 / 待办 / 共同事件
 diaries                日记
 diary_unlock_logs      日记解锁记录
 notes                  小纸条
-model_configs          模型配置
+model_configs          模型配置（旧名，后续迁移为 model_settings）
+model_settings         统一模型槽位设置
+prompt_profiles        Prompt 编辑器分场景配置
+proactive_message_settings 主动消息参数
+delivery_logs          外部入口消息发送记录
+usage_logs             token / 模型调用成本记录
 books                  共读书目（P1）
 reading_notes          共读批注（P1）
 play_spaces            平行空间（P1）
@@ -42,36 +66,204 @@ signals                轻量生活信号（P1）
 
 ---
 
-## 三、表结构详细
+## 四、表结构详细
 
-### 1. conversations — 聊天消息
+### 1. channels — 入口类型
 
-所有聊天记录的存储。每条消息一行，用户消息和 AI 回复分别存储。
+记录 Remoire 有哪些聊天入口。微信、Remoire 前端、Claude.ai MCP 都只是入口，不是三套关系。
 
 ```sql
-CREATE TABLE IF NOT EXISTS conversations (
-    id TEXT PRIMARY KEY,                          -- UUID v4
-    session_id TEXT NOT NULL DEFAULT 'default',    -- 会话 ID，首发只有一个 default
-    role TEXT NOT NULL,                            -- 'user' / 'assistant' / 'system'
-    content TEXT NOT NULL,                         -- 消息文本内容
-    message_type TEXT DEFAULT 'text',              -- 'text' / 'image' / 'voice' / 'location' / 'system_card'
-    metadata_json TEXT,                            -- JSON，存附件信息：
-                                                   --   图片：{"image_url": "...", "thumbnail_url": "..."}
-                                                   --   语音：{"audio_url": "...", "duration_sec": 12}
-                                                   --   定位：{"lat": 39.9, "lng": 116.4, "address": "..."}
-                                                   --   系统卡：{"card_type": "memory_saved", "ref_id": "..."}
-    is_proactive BOOLEAN DEFAULT 0,                -- 是否为 AI 主动发送的消息（区别于回复）
+CREATE TABLE IF NOT EXISTS channels (
+    id TEXT PRIMARY KEY,
+    channel_type TEXT NOT NULL UNIQUE,              -- 'remoire_frontend' / 'claude_mcp' / 'wechat'
+    display_name TEXT NOT NULL,                     -- 'Remoire 前端' / 'Claude.ai' / '微信'
+    enabled BOOLEAN DEFAULT 1,
     created_at DATETIME NOT NULL DEFAULT (datetime('now'))
 );
 ```
 
-设计说明：
-- `session_id` 首发阶段固定为 `'default'`，所有消息在同一个流里
-- 后续如果要支持多会话（比如平行空间独立对话），通过 session_id 区分
-- `metadata_json` 用 JSON 存灵活数据，不为每种消息类型建子表
-- `is_proactive` 用于前端区分主动消息的视觉样式（更轻、更像自言自语）
+### 2. channel_bindings — 入口绑定
 
-### 2. memory_candidates — 记忆候选
+记录某个具体入口身份。比如某个微信账号、某个 MCP 客户端。
+
+```sql
+CREATE TABLE IF NOT EXISTS channel_bindings (
+    id TEXT PRIMARY KEY,
+    channel_id TEXT NOT NULL,
+    external_user_id TEXT,                          -- 微信 openid / unionid / MCP client id 等
+    display_name TEXT,
+    metadata_json TEXT,
+    enabled BOOLEAN DEFAULT 1,
+    created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+
+    FOREIGN KEY (channel_id) REFERENCES channels(id)
+);
+```
+
+### 3. conversations — 会话容器
+
+一段对话的容器。消息正文放在 `messages` 表里。
+
+```sql
+CREATE TABLE IF NOT EXISTS conversations (
+    id TEXT PRIMARY KEY,
+    channel_id TEXT NOT NULL,
+    binding_id TEXT,
+    title TEXT,
+    status TEXT DEFAULT 'active',                   -- 'active' / 'archived'
+    last_message_at DATETIME,
+    created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+    updated_at DATETIME NOT NULL DEFAULT (datetime('now')),
+
+    FOREIGN KEY (channel_id) REFERENCES channels(id),
+    FOREIGN KEY (binding_id) REFERENCES channel_bindings(id)
+);
+```
+
+### 4. messages — 统一消息记录
+
+所有入口的消息都进这一张表。这样 Connie 能知道“刚刚是在微信聊的”，也能知道“距离上次联系过去多久”。
+
+```sql
+CREATE TABLE IF NOT EXISTS messages (
+    id TEXT PRIMARY KEY,
+    conversation_id TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    role TEXT NOT NULL,                             -- 'user' / 'assistant' / 'system'
+    content TEXT NOT NULL,
+    message_type TEXT DEFAULT 'text',               -- 'text' / 'image' / 'voice' / 'location' / 'system_card'
+    metadata_json TEXT,
+    is_proactive BOOLEAN DEFAULT 0,
+    delivery_status TEXT DEFAULT 'stored',          -- 'stored' / 'sent' / 'delivered' / 'failed'
+    external_message_id TEXT,                       -- 微信等外部平台返回的消息 ID
+    created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+
+    FOREIGN KEY (conversation_id) REFERENCES conversations(id),
+    FOREIGN KEY (channel_id) REFERENCES channels(id)
+);
+```
+
+设计说明：
+- 静儿从哪个入口发消息，Connie 就在哪个入口回复。
+- Connie 主动发消息时，发送入口由 `proactive_message_settings.default_channel` 决定。
+- 主动消息如果需要多端展示，应尽量复用一次 AI 生成结果，而不是分别调用模型。
+- 首发如果想简化，也可以先保留旧 `conversations` 表名做消息表；但长期建议迁移成 `conversations` + `messages` 两层。
+
+### 5. model_settings — 统一模型槽位设置
+
+模型设置统一放后端。Remoire 前端和微信默认共用 `daily` 槽位，保证 Connie 是同一个人。
+
+```sql
+CREATE TABLE IF NOT EXISTS model_settings (
+    id TEXT PRIMARY KEY,
+    slot TEXT NOT NULL UNIQUE,                      -- 'daily' / 'deep' / 'backend'
+    display_name TEXT NOT NULL,
+    api_base TEXT NOT NULL,
+    api_key TEXT NOT NULL,
+    model_id TEXT NOT NULL,
+    temperature REAL DEFAULT 0.7,
+    max_tokens INTEGER DEFAULT 2048,
+    enabled BOOLEAN DEFAULT 1,
+    created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+    updated_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+```
+
+槽位说明：
+- `daily`：日常聊天 + 主动消息，Remoire 前端和微信默认共用。主动消息风格差异由 prompt_profiles 控制，不需要单独槽位。
+- `deep`：深度谈话、日记、总结。
+- `backend`：记忆整理、候选生成、情感打标、摘要压缩、对话导入处理、日记草稿、工具调用。
+
+### 6. prompt_profiles — Prompt 编辑器
+
+Prompt 统一存在后端，由设置页编辑，不散落在前端或微信桥接代码里。
+
+```sql
+CREATE TABLE IF NOT EXISTS prompt_profiles (
+    id TEXT PRIMARY KEY,
+    scene TEXT NOT NULL UNIQUE,                     -- 'identity' / 'daytime_proactive' / 'night_proactive' / 'wechat_reply_style' / 'frontend_reply_style' / 'tool_use'
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    enabled BOOLEAN DEFAULT 1,
+    created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+    updated_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+```
+
+### 7. proactive_message_settings — 主动消息设置
+
+主动消息要有时间感、入口选择和成本控制。
+
+```sql
+CREATE TABLE IF NOT EXISTS proactive_message_settings (
+    id TEXT PRIMARY KEY DEFAULT 'default',
+    enabled BOOLEAN DEFAULT 1,
+    default_channel TEXT DEFAULT 'wechat',          -- 'wechat' / 'remoire_frontend' / 'both'
+    daytime_start TEXT DEFAULT '09:00',
+    daytime_end TEXT DEFAULT '22:30',
+    allow_night BOOLEAN DEFAULT 0,
+    frequency_level TEXT DEFAULT 'medium',          -- 'low' / 'medium' / 'high'
+    max_messages_per_burst INTEGER DEFAULT 8,        -- 所有轮次总上限
+    max_burst_rounds INTEGER DEFAULT 3,              -- 最多几轮（初始 + 追 1 + 追 2）
+    min_round_interval_minutes INTEGER DEFAULT 10,   -- 轮次间最短间隔
+    burst_ends_on_reply BOOLEAN DEFAULT 1,           -- 用户回复后立刻结束 burst，切回普通聊天
+    max_daily_count INTEGER DEFAULT 5,
+    cooldown_minutes INTEGER DEFAULT 60,
+    enabled_types TEXT,                             -- JSON array: ['care', 'reminder', 'followup', 'memory', 'note']
+    quiet_rules_json TEXT,
+    created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+    updated_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+```
+
+### 8. delivery_logs — 外部入口发送记录
+
+记录微信等外部入口是否发送成功。
+
+```sql
+CREATE TABLE IF NOT EXISTS delivery_logs (
+    id TEXT PRIMARY KEY,
+    message_id TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    status TEXT NOT NULL,                           -- 'pending' / 'sent' / 'delivered' / 'failed'
+    external_message_id TEXT,
+    error TEXT,
+    created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+    updated_at DATETIME NOT NULL DEFAULT (datetime('now')),
+
+    FOREIGN KEY (message_id) REFERENCES messages(id),
+    FOREIGN KEY (channel_id) REFERENCES channels(id)
+);
+```
+
+### 9. usage_logs — token / 成本记录
+
+记录每次模型调用的用途和 token 估算，方便以后控制成本。
+
+```sql
+CREATE TABLE IF NOT EXISTS usage_logs (
+    id TEXT PRIMARY KEY,
+    source TEXT NOT NULL,                           -- 'chat' / 'proactive' / 'memory_extract' / 'diary' / 'prompt_preview'
+    channel_id TEXT,
+    model_slot TEXT NOT NULL,
+    model_id TEXT,
+    prompt_tokens INTEGER,
+    completion_tokens INTEGER,
+    estimated_cost REAL,
+    created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+
+    FOREIGN KEY (channel_id) REFERENCES channels(id)
+);
+```
+
+成本规则：
+- 静儿从哪个入口发消息，就只在那个入口回复。
+- 主动消息默认只发一个入口，推荐微信优先。
+- 两边都发时，尽量复用一次 AI 生成结果。
+- 记忆召回只取最相关的 top-3 到 top-5。
+- 长聊天用摘要 + 最近几条原文，不把完整历史都塞给模型。
+
+### 10. memory_candidates — 记忆候选
 
 从聊天中提取出来但还没被用户确认的记忆。是记忆系统的"缓冲区"。
 
@@ -102,7 +294,7 @@ CREATE TABLE IF NOT EXISTS memory_candidates (
 - `confidence 0.45 ~ 0.75` → 推给用户确认
 - `confidence > 0.75` 且是 fact / date / unresolved → 可自动入正式记忆
 
-### 3. memories — 正式记忆
+### 11. memories — 正式记忆
 
 用户确认过的、或高置信度自动入库的长期记忆。这是小窝的灵魂。
 
@@ -357,9 +549,29 @@ CREATE TABLE IF NOT EXISTS signals (
 
 ---
 
-## 四、索引
+## 五、索引
 
 ```sql
+-- 消息：按会话和时间查询
+CREATE INDEX IF NOT EXISTS idx_messages_conversation
+    ON messages(conversation_id, created_at);
+
+-- 消息：按入口和时间查询
+CREATE INDEX IF NOT EXISTS idx_messages_channel
+    ON messages(channel_id, created_at);
+
+-- 消息：快速查找主动消息
+CREATE INDEX IF NOT EXISTS idx_messages_proactive
+    ON messages(is_proactive, created_at);
+
+-- 发送记录：按消息查询
+CREATE INDEX IF NOT EXISTS idx_delivery_message
+    ON delivery_logs(message_id, created_at);
+
+-- 成本记录：按用途和时间查询
+CREATE INDEX IF NOT EXISTS idx_usage_source
+    ON usage_logs(source, created_at);
+
 -- 聊天：按会话和时间查询
 CREATE INDEX IF NOT EXISTS idx_conv_session
     ON conversations(session_id, created_at);
@@ -411,7 +623,7 @@ CREATE INDEX IF NOT EXISTS idx_unlock_diary
 
 ---
 
-## 五、迁移策略
+## 六、迁移策略
 
 首发不使用 ORM 迁移工具（Alembic 等），太重了。
 
@@ -432,7 +644,7 @@ backend/migrations/
 
 ---
 
-## 六、备份策略
+## 七、备份策略
 
 ```bash
 # 每天凌晨 4 点自动备份（cron）
@@ -449,7 +661,7 @@ scp root@你的VPS:/opt/our-nest/backend/data/our-nest.db ~/Downloads/
 
 ---
 
-## 七、注意事项
+## 八、注意事项
 
 1. **所有主键用 UUID v4 字符串**，不用自增整数。原因是 MCP 端和小窝端都可能创建记忆，UUID 避免冲突。
 

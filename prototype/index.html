@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+<title>我们的小窝 · Prototype</title>
+<link rel="stylesheet" href="components/tokens.css" />
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+<script type="text/babel" src="components/primitives.jsx"></script>
+<script type="text/babel" src="components/ChatPage.jsx"></script>
+<script type="text/babel" src="components/UsPage.jsx"></script>
+<script type="text/babel" src="components/DiaryPage.jsx"></script>
+<script type="text/babel" src="components/OtherPages.jsx"></script>
+<script type="text/babel" src="components/App.jsx"></script>
+<style>
+  html, body { height: 100%; overflow: hidden; }
+  body { margin: 0; }
+  /* custom scrollbar */
+  ::-webkit-scrollbar { width: 3px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  input { outline: none; }
+  button { -webkit-tap-highlight-color: transparent; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<div id="tweaks-root"></div>
+
+<script type="text/babel">
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "fontScale": 0.95,
+  "radiusScale": 0.8,
+  "shadowAlpha": 1.5,
+  "spacingScale": 0.9,
+  "bubbleSendBg": "#96836e",
+  "bubbleRecvBg": "#ede9e3",
+  "accentColor": "#7c6350",
+  "bgPrimary": "#f6f2ed",
+  "paperTexture": 4,
+  "dayCount": 256,
+  "darkMode": true,
+  "bubbleStyle": "default",
+  "noteStyle": "classic",
+  "diaryCoverJinger": "",
+  "diaryCoverConnie": "",
+  "fontChat": "",
+  "fontChatName": "",
+  "fontNote": "",
+  "fontNoteName": "",
+  "fontDiary": "",
+  "fontDiaryName": "",
+  "fontRead": "",
+  "fontReadName": "",
+  "fontParallel": "",
+  "fontParallelName": ""
+}/*EDITMODE-END*/;
+
+// Default font stacks for each slot (used when no custom font uploaded)
+const FONT_DEFAULTS = {
+  chat:     "'Manrope', 'LXGW WenKai', 'Helvetica Neue', sans-serif",
+  note:     "'ShouShuTi', 'JustAnotherHand', 'Caveat', cursive",
+  diary:    "'ShouShuTi', 'JustAnotherHand', cursive",
+  read:     "'Caveat', 'JustAnotherHand', cursive",
+  parallel: "'Petrona', 'LXGW WenKai', Georgia, serif",
+};
+
+function adjustBg(hex, delta) {
+  try {
+    const r2=parseInt(hex.slice(1,3),16), g2=parseInt(hex.slice(3,5),16), b2=parseInt(hex.slice(5,7),16);
+    const c = v => Math.max(0,Math.min(255,v+delta*2.55));
+    return `rgb(${c(r2)},${c(g2)},${c(b2)})`;
+  } catch(e) { return hex; }
+}
+
+function Root() {
+  const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
+
+  // Listen for tweak-update events from settings page (standalone preview mode,
+  // where there's no parent host listening to postMessage)
+  React.useEffect(() => {
+    const handler = (e) => {
+      const edits = e.detail || {};
+      Object.entries(edits).forEach(([k, v]) => setTweak(k, v));
+    };
+    window.addEventListener('tweak-update', handler);
+    return () => window.removeEventListener('tweak-update', handler);
+  }, [setTweak]);
+
+  React.useEffect(() => {
+    const r = document.documentElement;
+    if (!t.darkMode) {
+      r.style.setProperty('--bubble-send',    t.bubbleSendBg);
+      r.style.setProperty('--bubble-receive', t.bubbleRecvBg);
+      r.style.setProperty('--accent',         t.accentColor);
+      r.style.setProperty('--bg-primary',     t.bgPrimary);
+      r.style.setProperty('--bg-secondary',   adjustBg(t.bgPrimary, -5));
+      r.style.setProperty('--bg-elevated',    adjustBg(t.bgPrimary, +2));
+      r.style.setProperty('--text-primary',   '#28211C');
+      r.style.setProperty('--text-secondary', '#72665C');
+      r.style.setProperty('--text-tertiary',  '#AEA49A');
+      r.style.setProperty('--border',         '#DDD6CE');
+      r.style.setProperty('--border-light',   '#EDE8E2');
+    } else {
+      ['--bubble-send','--bubble-receive','--accent','--bg-primary','--bg-secondary',
+       '--bg-elevated','--text-primary','--text-secondary','--text-tertiary',
+       '--border','--border-light'].forEach(v => r.style.removeProperty(v));
+    }
+    const fs = t.fontScale;
+    r.style.setProperty('--text-xs',   `${0.6875 * fs}rem`);
+    r.style.setProperty('--text-sm',   `${0.8125 * fs}rem`);
+    r.style.setProperty('--text-base', `${0.9063 * fs}rem`);
+    r.style.setProperty('--text-md',   `${1      * fs}rem`);
+    r.style.setProperty('--text-lg',   `${1.25   * fs}rem`);
+    r.style.setProperty('--text-xl',   `${1.5    * fs}rem`);
+    r.style.setProperty('--text-2xl',  `${2      * fs}rem`);
+    const rs = t.radiusScale;
+    r.style.setProperty('--radius-sm', `${8  * rs}px`);
+    r.style.setProperty('--radius-md', `${14 * rs}px`);
+    r.style.setProperty('--radius-lg', `${20 * rs}px`);
+    r.style.setProperty('--radius-xl', `${24 * rs}px`);
+    const sa = t.shadowAlpha;
+    if (t.darkMode) {
+      r.style.setProperty('--shadow-sm',         `0 1px 4px rgba(10,8,5,${0.45*sa})`);
+      r.style.setProperty('--shadow-md',         `0 2px 12px rgba(10,8,5,${0.55*sa})`);
+      r.style.setProperty('--shadow-lg',         `0 8px 28px rgba(10,8,5,${0.65*sa})`);
+      r.style.setProperty('--shadow-paper-lift', `2px 4px 12px rgba(10,8,5,${0.5*sa}), -1px 8px 24px rgba(10,8,5,${0.35*sa})`);
+    } else {
+      r.style.setProperty('--shadow-sm',         `0 1px 4px rgba(40,33,28,${0.05*sa})`);
+      r.style.setProperty('--shadow-md',         `0 2px 12px rgba(40,33,28,${0.07*sa})`);
+      r.style.setProperty('--shadow-lg',         `0 8px 28px rgba(40,33,28,${0.09*sa})`);
+      r.style.setProperty('--shadow-paper-lift', `2px 4px 12px rgba(40,33,28,${0.08*sa}), -1px 8px 24px rgba(40,33,28,${0.06*sa})`);
+    }
+    const ss = t.spacingScale;
+    r.style.setProperty('--space-4', `${1   * ss}rem`);
+    r.style.setProperty('--space-6', `${1.5 * ss}rem`);
+    r.style.setProperty('--space-8', `${2   * ss}rem`);
+    r.style.setProperty('--space-10',`${2.5 * ss}rem`);
+    // paper grid texture
+    const pt = t.paperTexture / 100;
+    r.style.setProperty('--paper-grid-alpha', pt);
+    document.documentElement.setAttribute('data-theme', t.darkMode ? 'dark' : '');
+
+    // Custom font injection — for each slot, if user uploaded a ttf, register @font-face
+    // and override --font-{slot} to use it.
+    const SLOTS = ['chat', 'note', 'diary', 'read', 'parallel'];
+    let styleEl = document.getElementById('custom-fonts');
+    if (!styleEl) {
+      styleEl = document.createElement('style');
+      styleEl.id = 'custom-fonts';
+      document.head.appendChild(styleEl);
+    }
+    let css = '';
+    SLOTS.forEach(slot => {
+      const cap = slot.charAt(0).toUpperCase() + slot.slice(1);
+      const data = t['font' + cap];
+      if (data) {
+        const fam = 'CustomFont_' + slot;
+        css += `@font-face { font-family: '${fam}'; src: url(${data}) format('truetype'); font-display: swap; }\n`;
+        r.style.setProperty('--font-' + slot, `'${fam}', ${FONT_DEFAULTS[slot]}`);
+      } else {
+        r.style.setProperty('--font-' + slot, FONT_DEFAULTS[slot]);
+      }
+    });
+    styleEl.textContent = css;
+  }, [t]);
+
+  return (
+    <>
+      <App tweaks={t} />
+      <TweaksPanel>
+        <TweakSection label="排版 · Typography" />
+        <TweakSlider label="字体缩放"   value={t.fontScale}    min={0.8} max={1.3} step={0.05} onChange={v => setTweak('fontScale', v)} />
+
+        <TweakSection label="形态 · Shape" />
+        <TweakSlider label="圆角倍率"   value={t.radiusScale}  min={0}   max={2}   step={0.1}  onChange={v => setTweak('radiusScale', v)} />
+        <TweakSlider label="阴影强度"   value={t.shadowAlpha}  min={0}   max={3}   step={0.1}  onChange={v => setTweak('shadowAlpha', v)} />
+        <TweakSlider label="间距倍率"   value={t.spacingScale} min={0.7} max={1.5} step={0.05} onChange={v => setTweak('spacingScale', v)} />
+        <TweakSlider label="纸纹密度"   value={t.paperTexture} min={0}   max={20}  step={1}    onChange={v => setTweak('paperTexture', v)} />
+
+        <TweakSection label="颜色 · Color" />
+        <TweakColor  label="主强调色"   value={t.accentColor}  onChange={v => setTweak('accentColor', v)} />
+        <TweakColor  label="主背景色"   value={t.bgPrimary}    onChange={v => setTweak('bgPrimary', v)} />
+        <TweakColor  label="发送气泡"   value={t.bubbleSendBg} onChange={v => setTweak('bubbleSendBg', v)} />
+        <TweakColor  label="接收气泡"   value={t.bubbleRecvBg} onChange={v => setTweak('bubbleRecvBg', v)} />
+
+        <TweakSection label="内容 · Content" />
+        <TweakSlider label="在一起天数" value={t.dayCount}     min={1}   max={9999} step={1}   onChange={v => setTweak('dayCount', v)} />
+
+        <TweakSection label="外观 · Appearance" />
+        <TweakToggle label="深色模式"   value={t.darkMode}     onChange={v => setTweak('darkMode', v)} />
+      </TweaksPanel>
+    </>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<Root />);
+</script>
+</body>
+</html>

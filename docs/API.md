@@ -736,7 +736,9 @@ data: {"type": "done", "message_id": "msg_abc123", "candidates": [
 
 ---
 
-## 九、模型配置 `/api/model`
+## 九、模型配置 `/api/model`（将迁移至 `/api/settings/models`）
+
+> **注意**：此节接口将逐步迁移到十三节的 `/api/settings/models`。新代码优先使用新接口。
 
 ### GET `/api/model`
 
@@ -896,27 +898,241 @@ data: {"ts": "2026-04-25T08:00:00"}
 
 ---
 
-## 十三、设置 `/api/settings`（简化）
+## 十三、设置 `/api/settings`
+
+设置接口拆为子路由，各管各的：
+
+- `/api/settings` — UI 偏好（深色模式、字体大小等）
+- `/api/settings/models` — 统一模型槽位配置
+- `/api/settings/proactive` — 主动消息参数
+- `/api/settings/prompts` — Prompt 分场景配置
 
 ### GET `/api/settings`
 
-获取所有用户设置。
+获取 UI 偏好设置。
 
 ### PUT `/api/settings`
 
-更新设置。
+更新 UI 偏好设置。
 
 **请求体**（只传需要更新的字段）：
 ```json
 {
-  "nudge_enabled": true,
-  "nudge_time_start": "08:00",
-  "nudge_time_end": "23:00",
-  "nudge_max_daily": 5,
-  "nudge_allow_night": false,
   "dark_mode": false,
   "font_size_scale": 1.0
 }
 ```
 
-设置首发存在 `.env` 或单独的 `settings.json` 文件中，不建数据库表（太少太简单）。
+### GET `/api/settings/models`
+
+获取所有模型槽位配置（3 个槽位：daily / deep / backend）。
+
+**响应**：
+```json
+{
+  "ok": true,
+  "data": {
+    "items": [
+      {
+        "slot": "daily",
+        "display_name": "DeepSeek 日常",
+        "api_base": "https://api.deepseek.com/v1",
+        "model_id": "deepseek-chat",
+        "temperature": 0.7,
+        "max_tokens": 2048,
+        "api_key_set": true,
+        "enabled": true
+      }
+    ]
+  }
+}
+```
+
+注意：GET 响应中**不返回 api_key**（安全考虑），只返回 `api_key_set: true/false`。
+
+### PUT `/api/settings/models`
+
+保存模型槽位配置。`api_key` 字段可选，不传则保持原值。
+
+**请求体**：
+```json
+{
+  "slot": "daily",
+  "display_name": "DeepSeek 日常",
+  "api_base": "https://api.deepseek.com/v1",
+  "api_key": "sk-xxxxxxxx",
+  "model_id": "deepseek-chat",
+  "temperature": 0.7,
+  "max_tokens": 2048
+}
+```
+
+### POST `/api/settings/models/{slot}/test`
+
+连接测试。发一条测试消息验证 API 是否可用。
+
+### GET `/api/settings/proactive`
+
+获取主动消息设置。
+
+**响应**：
+```json
+{
+  "ok": true,
+  "data": {
+    "enabled": true,
+    "default_channel": "wechat",
+    "daytime_start": "09:00",
+    "daytime_end": "22:30",
+    "allow_night": false,
+    "frequency_level": "medium",
+    "max_messages_per_burst": 8,
+    "max_burst_rounds": 3,
+    "min_round_interval_minutes": 10,
+    "burst_ends_on_reply": true,
+    "max_daily_count": 5,
+    "cooldown_minutes": 60,
+    "enabled_types": ["care", "reminder", "followup", "memory", "note"]
+  }
+}
+```
+
+### PUT `/api/settings/proactive`
+
+保存主动消息设置（只传需要更新的字段）。
+
+### GET `/api/settings/prompts`
+
+获取所有 Prompt 场景配置。
+
+**响应**：
+```json
+{
+  "ok": true,
+  "data": {
+    "items": [
+      {
+        "scene": "identity",
+        "title": "Connie 人设",
+        "content": "你是 Connie，静儿的 AI 伴侣...",
+        "enabled": true
+      },
+      {
+        "scene": "wechat_reply_style",
+        "title": "微信回复风格",
+        "content": "回复更短、更自然、适合分条发送、不使用 markdown...",
+        "enabled": true
+      }
+    ]
+  }
+}
+```
+
+场景列表：`identity` / `daytime_proactive` / `night_proactive` / `wechat_reply_style` / `frontend_reply_style` / `tool_use`
+
+### PUT `/api/settings/prompts/{scene}`
+
+保存某个场景的 Prompt。
+
+**请求体**：
+```json
+{
+  "title": "微信回复风格",
+  "content": "回复更短、更自然...",
+  "enabled": true
+}
+```
+
+### POST `/api/settings/prompts/preview`
+
+预览当前配置合成后的最终 Prompt（调试用）。
+
+**请求体**：
+```json
+{
+  "context": "daily_chat",
+  "channel": "wechat"
+}
+```
+
+**响应**：合成后的完整 system prompt 文本。
+
+---
+
+## 十四、入口管理 `/api/channels`
+
+### POST `/api/channels/{channel}/messages`
+
+统一写入来自某个入口的消息。用于微信桥接等外部入口将消息写入 Remoire 统一消息表。
+
+**请求体**：
+```json
+{
+  "role": "user",
+  "content": "今天好累",
+  "message_type": "text",
+  "external_message_id": "wx_msg_001"
+}
+```
+
+### POST `/api/channels/wechat/inbound`
+
+iLink 收到微信消息后的入口。微信桥接模块内部调用，将消息交给 chat_service 处理并生成回复。
+
+**请求体**：
+```json
+{
+  "from_user": "wxid_xxx",
+  "content": "今天好累",
+  "message_type": "text",
+  "context_token": "ilink_ctx_xxx",
+  "timestamp": "2026-04-29T15:30:00"
+}
+```
+
+**响应**：
+```json
+{
+  "ok": true,
+  "data": {
+    "replies": [
+      { "content": "怎么啦，今天发生什么了？", "delay_ms": 1300 },
+      { "content": "跟我说说", "delay_ms": 900 }
+    ]
+  }
+}
+```
+
+`replies` 是分条数组，每条附带建议发送延迟（按字数计算：基础 800ms + 每字 50ms + 随机抖动）。
+
+### GET `/api/channels/wechat/status`
+
+获取微信连接状态。
+
+**响应**：
+```json
+{
+  "ok": true,
+  "data": {
+    "connected": true,
+    "bot_name": "Connie",
+    "token_expires_at": "2026-05-01T00:00:00",
+    "last_message_at": "2026-04-29T15:30:00"
+  }
+}
+```
+
+### POST `/api/channels/wechat/login`
+
+触发微信扫码登录流程。返回二维码 URL 供前端展示。
+
+**响应**：
+```json
+{
+  "ok": true,
+  "data": {
+    "qr_url": "https://ilinkai.weixin.qq.com/qr/xxx",
+    "expires_in": 300
+  }
+}
+```

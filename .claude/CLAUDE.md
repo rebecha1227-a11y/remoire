@@ -1,4 +1,4 @@
-# 我们的小窝 · Our Nest
+# 我们的小窝 · Remoire
 
 ## 项目一句话
 
@@ -72,14 +72,27 @@ our-nest/
 
 ## 当前阶段
 
-Phase 0 — 项目脚手架搭建中
+Phase 1 — 文档设计完成，准备开发
+
+## Phase 1 范围
+
+聊天核心 + 记忆系统 + MCP + 微信桥接(iLink) + 主动消息(含 burst) + 对话导入 + 分条发送
+
+## Phase 1 关键原则
+
+- **多入口统一后端**：微信、Remoire 前端、Claude.ai 都只是入口，记忆/Prompt/模型配置归后端统一管理
+- **微信桥接用 iLink API 直连**：Python 长轮询，跟 FastAPI 主进程一起跑，不走 OpenClaw
+- **模型 3 个槽位**：daily（日常+主动消息）/ deep / backend，主动消息不单独设槽位
+- **数据库双路线**：Phase 1 用 SQLite，表结构按多入口设计，未来可迁移 Supabase
+- **成本控制**：一个入口发 → 一个入口回；主动消息默认单端；记忆召回 top-3~5；LLM 月预算 ¥15-50
+- **分条发送**：微信和 Remoire 都支持 AI 连续发多条，逐条流式 + typing indicator
 
 ## DO
 
 - 所有 LLM 调用走 `app/llm.py` 的 `call_llm()`，兼容 OpenAI 格式
 - SQLite 开 WAL：`PRAGMA journal_mode=WAL`
 - CSS Variables 管理颜色，暗色模式通过 `[data-theme="dark"]` 切换变量
-- 字体只用 Cormorant Garamond（Display）+ Instrument Sans（Body UI）
+- 字体：Display 用 **Petrona**（Google Fonts，人文衬线），Body UI 用 **Manrope**（Google Fonts，温暖几何无衬线），中文用 **LXGW WenKai 霞鹜文楷**（开源温暖手写感）。组件里硬编码改用 `var(--font-display)` / `var(--font-body)`
 - 移动端优先，430px 设计基准
 - API 统一格式：`{ "ok": bool, "data": ..., "error": ... }`
 - 阴影用 `rgba(40,33,28,...)` 暖棕色
@@ -143,3 +156,4 @@ Phase 0 — 项目脚手架搭建中
 | 理解产品 | docs/PRD.md |
 | 技术架构 | docs/TECH_STACK.md |
 | 部署 | docs/DEPLOYMENT.md |
+| Phase 1 设计决策 | docs/PHASE1_DECISIONS.md |

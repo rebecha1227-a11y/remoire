@@ -171,15 +171,18 @@
 ### 3.1 字体选型
 
 ```css
-/* Display — 衬线，用于标题、日记正文、关系计时器数字 */
-font-family: 'Cormorant Garamond', Georgia, serif;
+/* Display — Petrona，可变字重的人文主义衬线，温暖书卷气，用于标题、日记正文、关系计时器数字 */
+font-family: var(--font-display); /* 'Petrona', 'LXGW WenKai', Georgia, serif */
 
-/* Body UI — 无衬线，用于所有 UI 文字、消息气泡、按钮、导航标签 */
-font-family: 'Instrument Sans', 'Helvetica Neue', sans-serif;
+/* Body UI — Manrope，温暖几何无衬线，圆润但不卡通，用于所有 UI 文字、消息气泡、按钮、导航标签 */
+font-family: var(--font-body); /* 'Manrope', 'LXGW WenKai', 'Helvetica Neue', sans-serif */
+
+/* 中文 — LXGW WenKai 霞鹜文楷，开源免费、温暖、带手写感但完全可读 */
+/* 已作为 fallback 写入 --font-display 和 --font-body，不需要单独设置 */
 
 /* Handwriting — 手写体，用于便签留言、日记页的涂鸦和补充说明 */
-/* 英文推荐：Caveat 或 Kalam；中文推荐：手写楷体/行楷（需带一定随意感但高辨识度） */
-font-family: 'Caveat', 'Liu Jian Mao Cao', cursive;
+/* 英文 Caveat / JustAnotherHand；中文 ShouShuTi 手书体 */
+font-family: var(--font-note); /* 'ShouShuTi', 'JustAnotherHand', 'Caveat', cursive */
 
 /* Mono — 等宽，仅用于技术型内容如 API Key 输入框（可选） */
 font-family: 'JetBrains Mono', monospace;
@@ -189,8 +192,13 @@ font-family: 'JetBrains Mono', monospace;
 
 ```html
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Petrona:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&family=Manrope:wght@400;500;600;700&family=Caveat:wght@400;500&display=swap" rel="stylesheet">
+<!-- 中文：LXGW WenKai 霞鹜文楷，jsdelivr CDN -->
+<link href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css" rel="stylesheet">
 ```
+
+**为什么不用 Cormorant Garamond / Instrument Sans？**
+这两个字体在 impeccable 的「不要再选」清单里——所有想做"文艺/温暖品牌"的项目都默认选它们，反而失去辨识度。Petrona + Manrope + LXGW WenKai 的组合既保留温暖书卷气，又给 Remoire 一张自己的脸。
 
 ### 3.3 字阶
 
@@ -208,16 +216,16 @@ font-family: 'JetBrains Mono', monospace;
 
 | 场景 | 字体 | 字重 | 说明 |
 |---|---|---|---|
-| 页面主标题 | Cormorant Garamond | 500 (Medium) | 不用粗体，细腻感来自字体本身 |
-| 关系计时器数字 | Cormorant Garamond | 300 (Light) | 轻量，数字本身就有重量 |
-| 日记正文 | Cormorant Garamond | 400 (Regular) | AI 写的日记可用 italic |
-| UI 标签 / 按钮 | Instrument Sans | 500 | — |
-| 正文 / 气泡 | Instrument Sans | 400 | — |
-| 时间戳 / 弱信息 | Instrument Sans | 400 | 配合 --text-tertiary 颜色 |
+| 页面主标题 | Petrona | 500 (Medium) | 不用粗体，细腻感来自字体本身 |
+| 关系计时器数字 | Petrona | 300 (Light) | 轻量，数字本身就有重量 |
+| 日记正文 | Petrona | 400 (Regular) | AI 写的日记可用 italic |
+| UI 标签 / 按钮 | Manrope | 500 | — |
+| 正文 / 气泡 | Manrope | 400 | — |
+| 时间戳 / 弱信息 | Manrope | 400 | 配合 --text-tertiary 颜色 |
 
 ### 3.5 禁止
 
-- ❌ DM Sans / Inter / Roboto 作为主字体（太通用，没有辨识度）
+- ❌ DM Sans / Inter / Roboto / Cormorant Garamond / Instrument Sans 作为主字体（都在 impeccable 反射清单里，太通用）
 - ❌ font-weight: 700 / 800 在页面标题（太重，破坏 quiet 气质）
 - ❌ 全大写字母标题 text-transform: uppercase（时尚感过强）
   - **唯一例外**：日记页的作者标签（"JINGER" / "CONNIE"），用 11px + letter-spacing: 1px
