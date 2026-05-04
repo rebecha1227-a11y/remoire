@@ -19,6 +19,7 @@
 | MCP | FastMCP | 最新 |
 | HTTP 客户端 | httpx | 最新 |
 | LLM 接口 | 任何 OpenAI 兼容格式 | — |
+| Web Push | pywebpush + VAPID | 最新 |
 
 ## 目录结构
 
@@ -51,7 +52,8 @@ our-nest/
 │       ├── llm.py            # 统一 LLM 调用（OpenAI 兼容）
 │       ├── identity.py       # AI 人设 profile
 │       ├── routers/          # chat, memory, diary, reminder, calendar,
-│       │                     # import_, model, note, stream, settings, play, signal
+│       │                     # import_, model, note, stream, settings, play, signal,
+│       │                     # device, push
 │       ├── services/         # memory_service, association, reminder_service,
 │       │                     # diary_service, nudge_service, digest_service
 │       ├── scheduler/jobs.py # APScheduler 定时任务
@@ -68,7 +70,7 @@ our-nest/
 
 ## 承重墙（P0）
 
-聊天 → 记忆（含关联） → MCP → 主动消息 → 提醒 → 日记 → 小纸条
+聊天 → 记忆（含关联） → MCP → 主动消息 → 提醒 → 日记 → 小纸条 → 设备感知 → 推送通知
 
 ## 当前阶段
 
@@ -76,7 +78,7 @@ Phase 1 — 文档设计完成，准备开发
 
 ## Phase 1 范围
 
-聊天核心 + 记忆系统 + MCP + 微信桥接(iLink) + 主动消息(含 burst) + 对话导入 + 分条发送
+聊天核心 + 记忆系统 + MCP + 微信桥接(iLink) + 主动消息(含 burst) + 对话导入 + 分条发送 + iPhone 设备数据采集 + Web Push 推送
 
 ## Phase 1 关键原则
 
@@ -86,6 +88,8 @@ Phase 1 — 文档设计完成，准备开发
 - **数据库双路线**：Phase 1 用 SQLite，表结构按多入口设计，未来可迁移 Supabase
 - **成本控制**：一个入口发 → 一个入口回；主动消息默认单端；记忆召回 top-3~5；LLM 月预算 ¥15-50
 - **分条发送**：微信和 Remoire 都支持 AI 连续发多条，逐条流式 + typing indicator
+- **设备数据只做上下文**：iPhone 采集的定位/天气/电量/步数/屏幕时间只注入 AI prompt，不做前端展示
+- **Web Push 推送**：页面不可见时所有 AI 消息都推送，用 SSE 连接状态判断可见性
 
 ## DO
 
@@ -145,6 +149,9 @@ Phase 1 — 文档设计完成，准备开发
 | 小纸条 | AI 静默留言，打开 app 时发现 |
 | 气息状态 | 聊天顶部诗意文案 |
 | 槽位 | 模型角色：daily / deep / backend |
+| snapshot() | 采集设备快照——iPhone 定时上传的定位/天气/电量/步数 |
+| push() | 推送通知——页面不可见时通过 Web Push 发通知 |
+| toggle | 屏幕时间追踪逻辑——App 开/关自动交替记录 |
 
 ## 文档指引
 

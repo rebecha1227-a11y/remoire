@@ -1,7 +1,7 @@
 # 数据库 Schema · Our Nest
 
-**版本**：v1.1
-**日期**：2026-04-29
+**版本**：v1.2
+**日期**：2026-04-30
 **引擎**：SQLite (WAL mode)；Supabase/Postgres 作为 Phase 1+ 云端同步备选
 
 ---
@@ -62,6 +62,9 @@ books                  共读书目（P1）
 reading_notes          共读批注（P1）
 play_spaces            平行空间（P1）
 signals                轻量生活信号（P1）
+device_snapshots       iPhone 设备快照（定位/天气/电量/步数）
+app_usage_events       App 使用追踪（屏幕使用时间）
+push_subscriptions     Web Push 推送订阅
 ```
 
 ---
@@ -547,6 +550,76 @@ CREATE TABLE IF NOT EXISTS signals (
 );
 ```
 
+### 14. device_snapshots — iPhone 设备快照
+
+iPhone 通过 iOS 快捷指令定时（每 3 小时）上传设备数据。AI 在生成对话和主动消息时读取最新快照作为上下文。
+
+```sql
+CREATE TABLE IF NOT EXISTS device_snapshots (
+    id TEXT PRIMARY KEY,                          -- UUID v4
+    latitude REAL,                                 -- 纬度
+    longitude REAL,                                -- 经度
+    city TEXT,                                     -- 城市（"北京"）
+    district TEXT,                                 -- 区/县（"朝阳区"）
+    weather TEXT,                                  -- 天气描述（"晴 28°C"）
+    battery_level INTEGER,                         -- 电量百分比 0-100
+    battery_charging INTEGER DEFAULT 0,            -- 是否充电 0/1
+    steps INTEGER,                                 -- 今日步数
+    raw_json TEXT,                                 -- 完整原始 JSON（扩展字段用）
+    created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+```
+
+设计说明：
+- 只保留最近 24 小时数据。每次写入时自动清理过期记录：`DELETE FROM device_snapshots WHERE created_at < datetime('now', '-24 hours')`
+- `raw_json` 存完整上传数据，方便以后加新字段（比如海拔、WiFi 名）不用改表结构
+- 认证方式：URL 查询参数 `key`（独立的 `DEVICE_SECRET_KEY`），因为 iOS 快捷指令无法方便地设置 HTTP Header
+
+### 15. app_usage_events — App 使用追踪
+
+通过 iOS 快捷指令自动化，每次打开/关闭指定 App 时发一个请求。服务器用 toggle 逻辑自动判断是开还是关。
+
+```sql
+CREATE TABLE IF NOT EXISTS app_usage_events (
+    id TEXT PRIMARY KEY,                          -- UUID v4
+    app_name TEXT NOT NULL,                        -- App 名称（从 URL 路径传入）
+    event_type TEXT NOT NULL,                      -- 'open' / 'close'
+    created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+```
+
+Toggle 逻辑：
+1. 查该 App 最后一条记录的 `event_type`
+2. 如果是 "open"，这次记 "close"；如果是 "close"，这次记 "open"
+3. 没有记录，默认记 "open"
+4. 容错：如果最后一条是 "open" 且超过 4 小时没有 "close"，视为遗漏关闭，下次来的请求当 "open" 处理
+
+设计说明：
+- 同样只保留 24 小时数据，写入时清理过期记录
+- 服务器支持任意数量的 App，App 名称由 URL 路径决定
+- AI 读取时按 App 汇总当日使用时长（open/close 配对计算分钟数）
+
+### 16. push_subscriptions — Web Push 推送订阅
+
+存储前端注册的 Web Push 订阅信息，用于在用户不在 Remoire 页面时推送通知。
+
+```sql
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+    id TEXT PRIMARY KEY,                          -- UUID v4
+    endpoint TEXT NOT NULL UNIQUE,                 -- Push service endpoint URL
+    p256dh TEXT NOT NULL,                          -- 客户端公钥
+    auth TEXT NOT NULL,                            -- 认证密钥
+    user_agent TEXT,                               -- 浏览器标识（调试用）
+    created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+    last_used_at DATETIME                          -- 最后一次成功推送时间
+);
+```
+
+设计说明：
+- `endpoint` 加 UNIQUE 约束，同一浏览器重复订阅时走 UPSERT（更新 keys）
+- 推送失败（endpoint 过期/用户取消权限）时自动删除该订阅
+- VAPID 密钥对存在 `.env` 里（`VAPID_PRIVATE_KEY`、`VAPID_PUBLIC_KEY`、`VAPID_MAILTO`），不进数据库
+
 ---
 
 ## 五、索引
@@ -619,6 +692,16 @@ CREATE INDEX IF NOT EXISTS idx_notes_unread
 -- 解锁记录：按日记 ID
 CREATE INDEX IF NOT EXISTS idx_unlock_diary
     ON diary_unlock_logs(diary_id, created_at);
+
+-- 设备快照：按时间查最新
+CREATE INDEX IF NOT EXISTS idx_device_snapshots_created
+    ON device_snapshots(created_at DESC);
+
+-- App 使用追踪：按 App 名称和时间（toggle 查询 + 汇总用）
+CREATE INDEX IF NOT EXISTS idx_app_usage_app_created
+    ON app_usage_events(app_name, created_at DESC);
+
+-- 推送订阅：endpoint 已有 UNIQUE 约束自带索引，无需额外建
 ```
 
 ---

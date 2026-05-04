@@ -29,7 +29,20 @@
 | 13 | Remoire markdown | 渲染器挂着，但 Prompt 约束日常聊天不用 markdown 语法。微信回复完全不用 markdown |
 | 14 | LLM 月预算 | ¥15-50，可以稍多一点 |
 | 15 | 主动消息每日上限 | 默认 5 次/天，用户可调 |
-| 16 | Phase 1 范围 | 聊天核心 + 记忆系统 + MCP + 微信桥接 + 主动消息(含分条) + 对话导入 + 分条发送 |
+| 16 | Phase 1 范围 | 聊天核心 + 记忆系统 + MCP + 微信桥接 + 主动消息(含分条) + 对话导入 + 分条发送 + iPhone 设备数据采集 + Web Push 推送 |
+| 17 | 设备数据用途 | 仅作 AI 聊天上下文（注入 system prompt），不做前端展示或仪表盘 |
+| 18 | 设备数据采集频率 | iPhone 快捷指令每 3 小时定时上传一次，AI 发消息时读最新一条 |
+| 19 | 设备数据采集项 | 定位（城市/区）、天气、电量、步数、屏幕使用时间（按 App） |
+| 20 | 屏幕使用时间追踪方式 | 每个 App 单独建一条 iOS 快捷指令自动化 + 服务器 toggle 逻辑，支持任意数量 App |
+| 21 | 设备数据认证方式 | URL 查询参数 `key`（独立 `DEVICE_SECRET_KEY`），因 iOS 快捷指令无法方便设 HTTP Header |
+| 22 | 设备数据保留时长 | 24 小时，每次写入时自动清理过期记录 |
+| 23 | AI 使用设备数据方式 | 静默上下文注入 system prompt，AI 自行判断是否提及，不逐项播报。超过 6h 不注入 |
+| 24 | 推送通知方案 | Web Push（PWA 标准能力），VAPID 密钥对 + pywebpush 库 |
+| 25 | 推送触发条件 | 页面不可见时，所有 AI 消息都推送（nudge / note / chat reply / reminder_due） |
+| 26 | 页面可见性检测 | SSE 连接状态作代理——SSE 连着=可见，断开=不可见（移动端后台会断 SSE） |
+| 27 | 推送点击行为 | 统一打开/聚焦 Remoire 聊天页（`/chat`） |
+| 28 | 推送服务部署 | 直接加到 Remoire FastAPI 后端，不另建独立服务 |
+| 29 | iPhone 设备数据 + Web Push Phase 归属 | 纳入 Phase 1（开发量不大但对"AI 主动靠近"体验提升显著） |
 
 ## Recommended Approach
 

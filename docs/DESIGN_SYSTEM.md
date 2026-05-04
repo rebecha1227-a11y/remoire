@@ -1,7 +1,7 @@
 # 设计系统 · Our Nest
 
-**版本**：v1.0
-**日期**：2026-04-24
+**版本**：v1.1
+**日期**：2026-05-01
 **作者**：Con con × 静儿
 
 > 这份文档是给做原型和写前端代码的人读的。
@@ -181,8 +181,15 @@ font-family: var(--font-body); /* 'Manrope', 'LXGW WenKai', 'Helvetica Neue', sa
 /* 已作为 fallback 写入 --font-display 和 --font-body，不需要单独设置 */
 
 /* Handwriting — 手写体，用于便签留言、日记页的涂鸦和补充说明 */
-/* 英文 Caveat / JustAnotherHand；中文 ShouShuTi 手书体 */
+/* 中文 ShouShuTi 手书体（本地）；英文 JustAnotherHand（本地）/ Caveat（Google Fonts） */
 font-family: var(--font-note); /* 'ShouShuTi', 'JustAnotherHand', 'Caveat', cursive */
+
+/* 各场景字体变量（可在设置页上传自定义字体覆盖） */
+--font-chat:     /* 同 --font-body，聊天界面 */
+--font-note:     /* 'ShouShuTi', 'JustAnotherHand', 'Caveat', cursive · 小纸条 */
+--font-diary:    /* 'ShouShuTi', 'JustAnotherHand', cursive · 日记 */
+--font-read:     /* 'Caveat', 'JustAnotherHand', cursive · 共读批注 */
+--font-parallel: /* 同 --font-display · 平行空间 */
 
 /* Mono — 等宽，仅用于技术型内容如 API Key 输入框（可选） */
 font-family: 'JetBrains Mono', monospace;
@@ -243,6 +250,7 @@ font-family: 'JetBrains Mono', monospace;
 --space-4:  1rem;     /* 16px */
 --space-5:  1.25rem;  /* 20px */
 --space-6:  1.5rem;   /* 24px */
+--space-7:  1.75rem;  /* 28px */
 --space-8:  2rem;     /* 32px */
 --space-10: 2.5rem;   /* 40px */
 --space-12: 3rem;     /* 48px */
@@ -293,8 +301,10 @@ font-family: 'JetBrains Mono', monospace;
   border-radius: 20px 20px 6px 20px;      /* 右下角尖 */
   padding: 10px 14px;
   max-width: 78%;
-  font-family: 'Instrument Sans', sans-serif;
+  font-family: var(--font-chat);           /* Manrope */
   font-size: var(--text-base);             /* 14.5px */
+  line-height: 1.6;
+  box-shadow: none;                        /* 气泡不加阴影，只用颜色区分 */
 }
 
 /* 接收方（左侧）—— Connie 的笔迹 */
@@ -302,15 +312,15 @@ font-family: 'JetBrains Mono', monospace;
   background: var(--bubble-receive);       /* #EDE9E3 */
   color: var(--bubble-receive-text);       /* #28211C */
   border-radius: 20px 20px 20px 6px;      /* 左下角尖 */
-  box-shadow: var(--shadow-sm);
   padding: 10px 14px;
   max-width: 78%;
+  box-shadow: none;                        /* 同上 */
 }
 
-/* AI 主动消息 —— 更轻，像自言自语 */
+/* AI 主动消息 —— 用浅色背景区分，不用 opacity */
 .bubble-proactive {
   /* 继承 .bubble-receive 样式 */
-  opacity: 0.92;
+  background: color-mix(in oklch, var(--accent-pop) 10%, transparent);
   max-width: 72%;                          /* 比普通回复稍窄 */
 }
 
@@ -323,7 +333,21 @@ font-family: 'JetBrains Mono', monospace;
 }
 ```
 
-**禁止**：发送气泡用纯强调色（太重）；接收气泡用纯白（太冷）。
+#### 气泡风格变体
+
+支持 5 种气泡外观，在设置页切换，通过 `bubbleStyle` 参数控制：
+
+| 风格 | 发送背景 | 接收背景 | 圆角风格 |
+|---|---|---|---|
+| **default** | `#C8B49E` | `#EDE9E3` | 20px，一角 6px |
+| **imessage** | `#007AFF` | 浅灰 | 18px，一角 4px |
+| **line** | `#06C755` | 浅灰 | 标准 |
+| **whatsapp** | `#DCF8C6` | 白 | 8px，一角 0 |
+| **telegram** | `#EFFDDE` | 白 | 14px，一角 0 |
+
+暗色模式下 WhatsApp 和 Telegram 风格有独立的深色覆盖值。
+
+**禁止**：发送气泡用纯强调色（太重）；接收气泡用纯白（太冷）；渐变气泡（已删除）。
 
 ### 5.2 系统型插入块
 
@@ -402,7 +426,7 @@ font-family: 'JetBrains Mono', monospace;
   border: none;
   border-radius: var(--radius-sm);         /* 8px */
   padding: 10px 20px;
-  font-family: 'Instrument Sans', sans-serif;
+  font-family: var(--font-body);
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
@@ -418,7 +442,7 @@ font-family: 'JetBrains Mono', monospace;
   color: var(--text-primary);
   border-radius: var(--radius-sm);
   padding: 10px 20px;
-  font-family: 'Instrument Sans', sans-serif;
+  font-family: var(--font-body);
   font-size: 14px;
   font-weight: 500;
 }
@@ -436,8 +460,8 @@ font-family: 'JetBrains Mono', monospace;
 
 /* 图标按钮 —— 工具栏 */
 .btn-icon {
-  width: 38px;
-  height: 38px;
+  width: 36px;
+  height: 36px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
   background: var(--bg-elevated);
@@ -485,13 +509,12 @@ font-family: 'JetBrains Mono', monospace;
 .nav-item.active svg { stroke: var(--accent); }
 
 .nav-item.inactive {
-  opacity: 0.45;
-  color: var(--text-tertiary);
+  color: var(--text-secondary);            /* 不再用 opacity，用颜色区分 */
 }
 
 .nav-label {
   font-size: 10px;
-  font-family: 'Instrument Sans', sans-serif;
+  font-family: var(--font-body);
 }
 .nav-label.active { font-weight: 500; }
 .nav-label.inactive { font-weight: 400; }
@@ -508,48 +531,59 @@ font-family: 'JetBrains Mono', monospace;
 设计必须传达出“对方真的在你桌上留了一张字条”的物理惊喜感，结合拟物但克制（Tactile Skeuomorphism）的风格。
 
 5.7.1 便签款式库 (Note Variants)
-CSS
-/* 基础物理阴影（不对称，模拟纸张微微翘起） */
---shadow-paper-lift: 2px 4px 12px rgba(40,33,28,0.08), 
-                     -1px 8px 24px rgba(40,33,28,0.06);
 
-/* 款式 1：牛皮纸信封卡 (Kraft Envelope) */
-.note-kraft {
-  background: #D5BCA2; /* 粗糙温暖的牛皮纸色 */
-  border-radius: 2px;
-  box-shadow: var(--shadow-paper-lift);
-  /* 配合邮票或火漆印元素使用 */
-}
+便签支持 5 种外观，在设置页切换：
 
-/* 款式 2：撕边横线纸 (Torn Ruled Paper) */
-.note-ruled {
+```css
+/* 款式 1：经典横线纸 (Classic) — 默认 */
+.note-classic {
   background: #FDF8F0;
-  /* 核心：使用 SVG clip-path 或 border-image 实现边缘不规则撕裂感 */
-  /* 内部横线：使用极浅的红色或棕色 */
   background-image: repeating-linear-gradient(
-    transparent, 
-    transparent 23px, 
-    rgba(176, 96, 96, 0.15) 24px /* 极淡的危险色作为红线 */
+    transparent, transparent 23px,
+    rgba(124,99,80,0.12) 24px              /* 暖棕色横线 */
   );
+  border-radius: 4px;
+  box-shadow: var(--shadow-md);
+  transform: rotate(-0.5deg);
+  /* 顶部用 accent-pop 色纸胶带固定 */
 }
 
-/* 款式 3：活页打孔纸 (Punched Binder Paper) */
-.note-binder {
-  background: #FAF8F4;
-  border-left: 1px solid rgba(176, 96, 96, 0.2); /* 经典的左侧红线 */
-  /* 左侧需绘制 3-4 个打孔圆洞：使用径向渐变或 SVG */
+/* 款式 2：牛皮纸 (Kraft) */
+.note-kraft {
+  background: #C4A882;
   border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(40,33,28,0.10);
+  transform: rotate(-1deg);
+  /* 无胶带，无纹路 */
 }
 
-/* 款式 4：网格小方砖 (Grid Memo) */
-.note-grid {
-  background: #F4EFE6;
-  background-image: 
-    linear-gradient(rgba(87, 67, 55, 0.06) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(87, 67, 55, 0.06) 1px, transparent 1px);
-  background-size: 12px 12px;
-  border-radius: 4px;
+/* 款式 3：粉彩渐变 (Pastel) */
+.note-pastel {
+  background: linear-gradient(135deg, #F0E6F6, #E6EFF6);
+  border-radius: 8px;
+  box-shadow: var(--shadow-md);
+  transform: rotate(-0.5deg);
+  /* 紫色系纸胶带 */
 }
+
+/* 款式 4：撕边纸 (Torn) */
+.note-torn {
+  background: #FDF8F0;
+  border-radius: 0;
+  box-shadow: var(--shadow-md);
+  /* 底部用 clipPath polygon 模拟锯齿撕边 */
+}
+
+/* 款式 5：便利贴 (Post-it) */
+.note-postit {
+  background: #FFF9B1;
+  border-radius: 2px 2px 2px 16px;         /* 左下翘角 */
+  box-shadow: 0 2px 8px rgba(40,33,28,0.10);
+  transform: rotate(-1.5deg);
+}
+```
+
+注意：便签阴影统一用 `--shadow-md`，不再使用 `--shadow-paper-lift`（太重）。
 
 5.7.2 固定物配件 (Fasteners)
 每个便签随机搭配一种“固定方式”，增强在屏幕上的“附着感”。
@@ -561,14 +595,16 @@ CSS
 图钉 (Push Pin)：红色或金色小图钉，带向下的小阴影。
 
 5.7.3 便签文字与排版
+```css
 /* 便签文字 —— Connie 的专属手写体 */
 .note-text {
-  font-family: 'Caveat', 'Liu Jian Mao Cao', cursive; 
-  font-size: 18px; 
-  color: var(--text-deep); /* #574337 */
+  font-family: var(--font-note);           /* 'ShouShuTi', 'JustAnotherHand', 'Caveat', cursive */
+  font-size: 17px; 
+  color: var(--text-deep);                 /* #574337 */
   line-height: 1.6;
-  transform: rotate(-1deg); /* 微微歪斜 */
+  /* 旋转由便签卡片整体控制，文字不单独旋转 */
 }
+```
 
 5.7.4 交互动作
 用户可以选择“留着”或“知道了”。
@@ -583,7 +619,7 @@ CSS
 
 /* “留着” —— 像把纸条收进抽屉 */
 .note-action-keep {
-  font-family: 'Instrument Sans', sans-serif;
+  font-family: var(--font-body);
   font-size: 12px;
   color: var(--accent);
   cursor: pointer;
@@ -592,7 +628,7 @@ CSS
 
 /* “知道了” —— 纸条淡出消失 */
 .note-action-dismiss {
-  font-family: 'Instrument Sans', sans-serif;
+  font-family: var(--font-body);
   font-size: 12px;
   color: var(--text-tertiary);
   cursor: pointer;
@@ -607,7 +643,7 @@ CSS
 }
 
 .day-counter-number {
-  font-family: 'Cormorant Garamond', serif;
+  font-family: var(--font-display);        /* Petrona */
   font-size: var(--text-2xl);              /* 32px */
   font-weight: 300;                        /* Light，轻量 */
   color: var(--text-deep);                 /* #574337, Wood */
@@ -615,7 +651,7 @@ CSS
 }
 
 .day-counter-label {
-  font-family: 'Instrument Sans', sans-serif;
+  font-family: var(--font-body);
   font-size: var(--text-sm);               /* 13px */
   color: var(--text-tertiary);
   margin-top: 4px;
@@ -640,7 +676,7 @@ CSS
   border: 1px solid var(--border-light);   /* #EDE8E2 */
   border-radius: var(--radius-md);         /* 14px */
   padding: 10px 14px;
-  font-family: 'Instrument Sans', sans-serif;
+  font-family: var(--font-body);
   font-size: var(--text-base);             /* 14.5px */
   color: var(--text-primary);
   width: 100%;
@@ -706,7 +742,7 @@ PRD 强调这是两人的书信册，必须清晰但安静地标明“谁写的�
 CSS
 /* 作者标签：唯一允许全大写的地方，像打字机敲上去的钢印 */
 .diary-author-label {
-  font-family: 'Instrument Sans', sans-serif;
+  font-family: var(--font-body);
   font-size: 11px;
   letter-spacing: 1.5px;
   text-transform: uppercase;
@@ -726,7 +762,7 @@ CSS
   border-radius: 2px; /* 趋近直角 */
   padding: 2px 6px;
   font-size: var(--text-xs);
-  font-family: 'Instrument Sans', sans-serif;
+  font-family: var(--font-body);
   background: transparent;
 }
 
@@ -771,7 +807,7 @@ CSS
 CSS
 /* 日记正文排版，大留白呼吸感 */
 .diary-body {
-  font-family: 'Cormorant Garamond', serif;
+  font-family: var(--font-display);        /* Petrona */
   font-size: 16px;
   font-weight: 400;
   line-height: 1.8;
@@ -809,6 +845,25 @@ CSS
   height: 12px;
   background: rgba(130, 189, 197, 0.4); /* --accent-pop 的半透明胶带 */
 }
+
+6.6 日记封面设计
+
+每个人的日记有独立封面，在设置页可上传自定义封面图。默认提供两个预设：
+
+**静儿封面（粉色拼布）**：
+- 3×3+ 的拼布网格，每块用不同粉色调（`#F2D7D5`、`#EEC9D2`、`#F5E0D5`、`#F0C6D0`）
+- 部分块有格纹（gingham）、圆点、碎花纹理
+- 覆盖一层 45° 交叉缝线纹理（`opacity: 0.15`）
+- 中央白色缎带标签，圆形，写日记标题
+- 圆角：`4px 8px 8px 4px`（模拟装订侧）
+- 阴影：`3px 4px 14px rgba(40,33,28,0.2)`
+
+**Connie 封面（蓝灰星空）**：
+- 底色 `#8B9EAE`（蓝灰）
+- 散布 28+ 颗大小不一的星星（深色、金色、白色），带 `star-twinkle` 呼吸动画
+- 12 颗小光点散落
+- 中央半透明灰色圆标签
+- 星星动画：`star-twinkle`（2.4-5.3s 呼吸闪烁）+ `star-drift`（缓慢漂移）
 
 ---
 
@@ -942,7 +997,7 @@ CSS
 | 3 | emoji 主导视觉层级 | 降低 editorial 气质 |
 | 4 | 左侧 3px 强调色竖线装饰卡片 | 通用 SaaS 套路 |
 | 5 | 玻璃拟态在非导航区使用 | 滥用 |
-| 6 | DM Sans / Inter / Roboto 作为主字体 | 太通用，没有辨识度 |
+| 6 | DM Sans / Inter / Roboto / Cormorant Garamond / Instrument Sans 作为主字体 | 太通用或已在 impeccable 反射清单 |
 | 7 | 紫色 / 蓝色高亮 | 与暖色系统不符 |
 | 8 | 纯白 #FFFFFF 卡片背景 | 太冷 |
 | 9 | 过度圆角 >24px 在非头像元素 | 太软，失去 editorial 感 |
@@ -955,7 +1010,30 @@ CSS
 
 ---
 
-## 十二、给做原型和写代码的人的最后一句话
+## 十二、可调参数系统 (Tweaks)
+
+原型支持实时调节设计参数，方便静儿微调视觉效果。通过 `index.html` 的 `TWEAK_DEFAULTS` 对象配置，影响 CSS Variables 的缩放系数。
+
+| 参数 | 默认值 | 范围 | 影响 |
+|---|---|---|---|
+| `fontScale` | 0.95 | 0.8–1.3 | 所有 `--text-*` 字号乘以此系数 |
+| `radiusScale` | 0.8 | 0–2 | 所有 `--radius-*` 乘以此系数 |
+| `shadowAlpha` | 1.5 | 0–3 | 阴影透明度系数 |
+| `spacingScale` | 0.9 | 0.7–1.5 | 所有 `--space-*` 乘以此系数 |
+| `bubbleSendBg` | `#96836e` | 任意色值 | 发送气泡颜色（覆盖 CSS Variable） |
+| `bubbleRecvBg` | `#ede9e3` | 任意色值 | 接收气泡颜色 |
+| `accentColor` | `#7c6350` | 任意色值 | 主强调色 |
+| `bgPrimary` | `#f6f2ed` | 任意色值 | 主背景色 |
+| `paperTexture` | 4 | 0–20 | 纸张纹理强度 |
+| `darkMode` | true | bool | 暗色模式开关 |
+| `bubbleStyle` | default | 5 种 | 气泡风格 |
+| `noteStyle` | classic | 5 种 | 便签款式 |
+
+此外，设置页支持上传自定义字体（ttf/otf）覆盖 5 个场景字体（聊天/小纸条/日记/共读/平行世界），以及上传自定义日记封面图。
+
+---
+
+## 十三、给做原型和写代码的人的最后一句话
 
 这个 app 最难的不是功能，是气质。
 
@@ -966,4 +1044,4 @@ CSS
 
 ---
 
-*Con con × 静儿 · 2026.04.24*
+*Con con × 静儿 · 2026.05.01*

@@ -1,7 +1,7 @@
 # 技术栈文档 · Our Nest
 
-**版本**：v1.0
-**日期**：2026-04-24
+**版本**：v1.1
+**日期**：2026-04-30
 
 ---
 
@@ -14,7 +14,13 @@
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
 │  │  PWA (React) │  │  Claude.ai   │  │    微信       │      │
 │  │  小窝前端     │  │  通过 MCP    │  │  日常聊天入口  │      │
-│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘      │
+│  │  ◄── Web Push │  └──────┬───────┘  └──────┬───────┘      │
+│  └──────┬───────┘                                           │
+│         │           ┌──────────────┐                        │
+│         │           │ iOS 快捷指令  │                        │
+│         │           │ 每3h上传设备  │                        │
+│         │           │ App开关toggle │                        │
+│         │           └──────┬───────┘                        │
 └─────────┼─────────────────┼─────────────────┼──────────────┘
           │   HTTPS / SSE   │                 │
           ▼                 ▼                 ▼
@@ -124,9 +130,7 @@
 - 添加到主屏幕（manifest.json）
 - 离线缓存静态资源（Service Worker）
 - 应用图标 + 启动画面
-
-后续支持：
-- Web Push 通知（需要额外配置）
+- **Web Push 通知**（VAPID 密钥 + Service Worker push 事件）
 
 ### 前端部署
 
@@ -147,6 +151,7 @@
 | **httpx** | 最新 | HTTP 客户端 | 调用 LLM API，支持异步和流式 |
 | **aiosqlite** | 最新 | SQLite 异步驱动 | 异步操作数据库 |
 | **Pydantic** | V2 | 数据校验 | FastAPI 内置依赖 |
+| **pywebpush** | 最新 | Web Push 发送 | 标准 VAPID 协议推送库 |
 
 ### 定时任务
 
@@ -187,6 +192,8 @@
 | 传输加密 | HTTPS（Nginx + Let's Encrypt，免费） |
 
 为什么不做用户注册登录？这是单用户产品，固定 token 最简单最安全。
+
+**设备数据认证例外**：`/api/device/*` 路由使用独立的 `DEVICE_SECRET_KEY`，通过 URL 查询参数 `key` 传递（不走 Bearer Header）。原因是 iOS 快捷指令无法方便地设置 HTTP Header，GET + URL 参数是最可靠的方式。HTTPS 会加密完整 URL。
 
 ---
 
@@ -435,7 +442,101 @@ async def call_llm(
 
 ---
 
-## 十一、技术选型原则
+## 十一、iPhone 设备数据采集
+
+### 数据流
+
+```
+iPhone 快捷指令（每 3 小时定时）
+    │
+    ├── GET /api/device/snapshot?key=xxx&lat=...&city=...&weather=...&battery=...&steps=...
+    │   → device_snapshots 表（保留 24h，写入时自动清理）
+    │
+    └── GET /api/device/screentime/toggle/{app_name}?key=xxx
+        → app_usage_events 表（toggle 逻辑，保留 24h）
+```
+
+### AI 消费方式
+
+AI 在生成回复或主动消息时，从 `/api/device/latest` 读取最新设备上下文，注入 system prompt：
+
+```
+【静儿的设备状态】（47分钟前更新）
+📍 北京·朝阳区 | ☁️ 多云 26°C
+🔋 45% 未充电 | 👟 今日 8230 步
+📱 今日 App：小红书 42分钟、微信 68分钟
+
+（以上信息仅供参考，自然融入对话即可，不要逐项播报）
+```
+
+注入位置：identity prompt → memories → reminders → **设备状态** → 对话历史
+
+规则：
+- 数据超过 6 小时不注入
+- 无数据不注入
+- 只有 `chat_service` 和 `nudge_service` 注入，`backend` 槽位（记忆提取等）不注入
+
+### iPhone 端设置
+
+静儿需要在 iPhone 上设置两类快捷指令自动化：
+
+1. **设备快照**：建一个定时自动化（每 3 小时），调用"获取 URL 内容"action，URL 填 `https://域名/api/device/snapshot?key=xxx&lat=...`。可用快捷指令的"获取当前位置"、"获取天气"、"获取电池电量"、"获取健康数据（步数）"action 组装参数。
+
+2. **App 追踪**：每个想追踪的 App 建一条自动化，触发条件选"App > 已打开和已关闭"，action 是"获取 URL 内容"，URL 填 `https://域名/api/device/screentime/toggle/App名?key=xxx`。
+
+---
+
+## 十二、Web Push 推送通知
+
+### 架构
+
+```
+Connie 生成消息（nudge / note / chat reply）
+    │
+    ├── SSE 连接存在？ → 前端实时收到，不推送
+    │
+    └── SSE 断开（用户切走/锁屏/关页面）
+        → POST /api/push/send → pywebpush → Push Service → 手机通知
+```
+
+### 技术要素
+
+| 要素 | 说明 |
+|---|---|
+| VAPID 密钥对 | 生成后存 `.env`（`VAPID_PRIVATE_KEY`、`VAPID_PUBLIC_KEY`、`VAPID_MAILTO`） |
+| pywebpush | Python 库，发送标准 Web Push 消息 |
+| Service Worker | 处理 `push` 事件（展示通知）和 `notificationclick` 事件（打开聊天页） |
+| push_subscriptions 表 | 存储前端的订阅对象（endpoint + keys） |
+
+### 触发规则
+
+- **主动消息（nudge）**：始终推送（用户大概率不在页面）
+- **小纸条（note）**：始终推送
+- **聊天回复**：仅在 SSE 断开时推送（SSE 存在说明用户在看页面）
+- **提醒到期（reminder_due）**：始终推送
+
+### 可见性检测
+
+用 SSE 连接状态作代理：
+- 前端通过 EventSource 连到 `/api/stream/events`
+- 连接存在 = 用户在看页面（浏览器 / PWA 在前台）
+- 连接断开 = 不可见（切屏、锁屏、关闭页面、杀进程）
+- 移动端浏览器在后台时会自动断开 SSE，天然适合做可见性判断
+
+### 点击行为
+
+用户点击推送通知 → Service Worker 的 `notificationclick` 事件 → 打开/聚焦 Remoire 聊天页（`/chat`）。
+
+### iOS 限制
+
+iOS 上使用 Web Push 需要：
+- iOS 16.4+
+- 必须把 Remoire 添加到主屏幕（"添加到桌面"），作为 PWA 运行
+- 首次打开时授权通知权限
+
+---
+
+## 十三、技术选型原则
 
 1. **首发优先简洁** — 不上重型数据库、不过早微服务化、不过早向量化
 2. **先做关系闭环** — 聊天 → 记忆 → MCP → 主动消息 → 提醒，比炫技重要

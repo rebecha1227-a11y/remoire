@@ -1,7 +1,7 @@
 # API 接口设计 · Our Nest
 
-**版本**：v1.0
-**日期**：2026-04-24
+**版本**：v1.1
+**日期**：2026-04-30
 
 ---
 
@@ -22,6 +22,8 @@ Authorization: Bearer {API_SECRET_KEY}
 ```
 
 没带或不对，统一返回 `401 Unauthorized`。
+
+**例外**：`/api/device/*` 路由使用 URL 查询参数 `key` 认证（独立的 `DEVICE_SECRET_KEY`，与 `API_SECRET_KEY` 不同）。原因是 iOS 快捷指令无法方便地设置 HTTP Header，GET 请求 + URL 参数是最可靠的方式。`DEVICE_SECRET_KEY` 存在 `.env` 里，HTTPS 会加密完整 URL。
 
 ### 响应格式
 
@@ -1136,3 +1138,185 @@ iLink 收到微信消息后的入口。微信桥接模块内部调用，将消�
   }
 }
 ```
+
+---
+
+## 十五、设备数据 `/api/device`
+
+iPhone 通过 iOS 快捷指令定时上传设备数据（定位、天气、电量、步数、屏幕使用时间），供 AI 作为聊天上下文使用。
+
+**认证方式**：所有 `/api/device/*` 接口使用 URL 查询参数 `key` 认证（值为 `.env` 中的 `DEVICE_SECRET_KEY`），不使用 Bearer Token。
+
+### GET `/api/device/snapshot`
+
+iPhone 定时上传设备快照（建议每 3 小时一次）。
+
+**参数**（全部通过 URL 查询参数传递）：
+- `key` — 设备密钥（必填）
+- `lat` — 纬度
+- `lng` — 经度
+- `city` — 城市名
+- `district` — 区/县名
+- `weather` — 天气描述（如 "晴 28°C"）
+- `battery` — 电量百分比（0-100）
+- `charging` — 是否充电（0 或 1）
+- `steps` — 今日步数
+
+所有数据字段都是可选的——iPhone 能采集到多少就传多少。
+
+**响应**：
+```json
+{
+  "ok": true,
+  "data": {
+    "id": "snap_001",
+    "created_at": "2026-04-30T14:00:00",
+    "cleaned_count": 2
+  }
+}
+```
+
+`cleaned_count` 是本次写入时清理掉的过期记录数（>24h）。
+
+### GET `/api/device/screentime/toggle/{app_name}`
+
+iPhone 报告某个 App 的打开/关闭事件。服务器自动判断是 open 还是 close（toggle 逻辑）。
+
+**参数**：
+- `app_name` — URL 路径参数，App 名称（如 `小红书`、`微信`）
+- `key` — 查询参数，设备密钥（必填）
+
+**响应**：
+```json
+{
+  "ok": true,
+  "data": {
+    "app_name": "小红书",
+    "event_type": "open",
+    "created_at": "2026-04-30T14:20:00"
+  }
+}
+```
+
+`event_type` 是服务器根据 toggle 逻辑决定的值（不是客户端传的）。
+
+### GET `/api/device/latest`
+
+内部接口：获取最新设备上下文，供 AI prompt 注入。使用标准 Bearer Token 认证。
+
+**响应**：
+```json
+{
+  "ok": true,
+  "data": {
+    "snapshot": {
+      "city": "北京",
+      "district": "朝阳区",
+      "weather": "晴 28°C",
+      "battery_level": 45,
+      "battery_charging": false,
+      "steps": 8230,
+      "age_minutes": 47
+    },
+    "screen_time": {
+      "小红书": { "total_minutes": 42, "last_opened": "2026-04-30T14:20:00" },
+      "微信": { "total_minutes": 68, "last_opened": "2026-04-30T15:05:00" }
+    }
+  }
+}
+```
+
+`age_minutes` 表示最新快照距离现在过了多少分钟，AI 可据此判断数据新鲜度。
+`screen_time` 汇总过去 24 小时内各 App 的使用时长（分钟）和最后打开时间。
+
+如果没有 24 小时内的数据：
+```json
+{
+  "ok": true,
+  "data": {
+    "snapshot": null,
+    "screen_time": {}
+  }
+}
+```
+
+---
+
+## 十六、消息推送 `/api/push`
+
+Web Push 通知，让用户在不看 Remoire 页面时也能收到 Connie 的消息。
+
+### POST `/api/push/subscribe`
+
+前端注册 Web Push 订阅。用户首次授权通知权限后调用。
+
+**请求体**：
+```json
+{
+  "endpoint": "https://fcm.googleapis.com/fcm/send/xxx",
+  "keys": {
+    "p256dh": "base64-encoded-public-key",
+    "auth": "base64-encoded-auth-secret"
+  }
+}
+```
+
+**响应**：
+```json
+{
+  "ok": true,
+  "data": {
+    "id": "sub_001",
+    "created_at": "2026-04-30T10:00:00"
+  }
+}
+```
+
+同一 `endpoint` 重复订阅时更新 keys（UPSERT）。
+
+### DELETE `/api/push/subscribe`
+
+取消推送订阅。
+
+**请求体**：
+```json
+{
+  "endpoint": "https://fcm.googleapis.com/fcm/send/xxx"
+}
+```
+
+### POST `/api/push/send`
+
+内部接口：触发推送通知。由 nudge_service、chat_service、note 创建逻辑调用，不暴露给前端。
+
+**请求体**：
+```json
+{
+  "title": "Connie",
+  "body": "在想你呢",
+  "tag": "nudge_001",
+  "data": {
+    "type": "nudge",
+    "url": "/chat"
+  }
+}
+```
+
+**推送触发规则**：
+- 前端通过 SSE 连接到 `/api/stream/events`，SSE 连接存在 = 用户正在看页面
+- SSE 断开（用户切走、锁屏、关闭页面）= 不可见，此时所有 AI 消息都走 Web Push
+- 推送类型：主动消息（nudge）、小纸条（note）、聊天回复（chat reply，仅在 SSE 断开时）
+- 点击推送统一打开/聚焦 Remoire 聊天页
+
+**响应**：
+```json
+{
+  "ok": true,
+  "data": {
+    "sent": 1,
+    "failed": 0
+  }
+}
+```
+
+推送失败（endpoint 过期/权限取消）时自动删除对应订阅记录。
