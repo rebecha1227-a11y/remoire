@@ -1,0 +1,967 @@
+// SettingsSubPages — all settings detail panels
+
+// ═══════════════════════════════════════════
+// 1. 主动消息设置
+// ═══════════════════════════════════════════
+function ProactiveSettings({ onBack }) {
+  const [cfg, setCfg] = React.useState({
+    enabled: true, channel: 'wechat', allowNight: false,
+    startTime: '09:00', endTime: '22:30',
+    maxDaily: 5, cooldown: 60, maxBurst: 8, maxRounds: 3, roundInterval: 10,
+    endOnReply: true,
+    types: { care: true, reminder: true, followup: true, special: true },
+  });
+  const set = (k, v) => setCfg(c => ({ ...c, [k]: v }));
+  const setType = (k) => setCfg(c => ({ ...c, types: { ...c.types, [k]: !c.types[k] } }));
+
+  const CHANNELS = [
+    { id: 'wechat', label: '微信优先' },
+    { id: 'remoire', label: 'Remoire 优先' },
+    { id: 'both', label: '两边都发' },
+  ];
+
+  return (
+    <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px', paddingBottom: 88 }}>
+      <SubPageHeader onBack={onBack} title="主动消息" subtitle="控制 Connie 主动找你的方式和频率" />
+
+      {/* 总开关 */}
+      <SettingRow label="允许主动消息" sub="关闭后 Connie 不会主动发消息">
+        <SettingsToggle on={cfg.enabled} onChange={v => set('enabled', v)} />
+      </SettingRow>
+
+      {!cfg.enabled ? (
+        <div style={{ padding: '20px 0', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 13 }}>
+          主动消息已关闭
+        </div>
+      ) : (
+        <>
+          {/* 发送入口 */}
+          <SettingsSectionTitle title="发送入口" />
+          <div style={{ display: 'flex', gap: 8, marginBottom: 4 }}>
+            {CHANNELS.map(ch => (
+              <button key={ch.id} onClick={() => set('channel', ch.id)} style={{
+                flex: 1, padding: '10px 8px', borderRadius: 'var(--radius-sm)',
+                background: cfg.channel === ch.id ? 'var(--accent)' : 'var(--bg-elevated)',
+                color: cfg.channel === ch.id ? '#FAF8F4' : 'var(--text-secondary)',
+                border: cfg.channel === ch.id ? 'none' : '1px solid var(--border-light)',
+                fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'var(--font-body)',
+              }}>{ch.label}</button>
+            ))}
+          </div>
+          {cfg.channel === 'both' && (
+            <div style={{ fontSize: 11, color: 'var(--warning)', marginTop: 4, marginBottom: 8, lineHeight: 1.5 }}>
+              ⚠ 两边都发会增加打扰感和 token 消耗
+            </div>
+          )}
+
+          {/* 时间段 */}
+          <SettingsSectionTitle title="时间段" />
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 8 }}>
+            <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>开始</label>
+            <input type="time" value={cfg.startTime} onChange={e => set('startTime', e.target.value)}
+              style={{ flex: 1, padding: '8px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)', background: 'var(--bg-elevated)', color: 'var(--text-primary)', fontSize: 13, fontFamily: 'var(--font-body)' }} />
+            <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>结束</label>
+            <input type="time" value={cfg.endTime} onChange={e => set('endTime', e.target.value)}
+              style={{ flex: 1, padding: '8px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)', background: 'var(--bg-elevated)', color: 'var(--text-primary)', fontSize: 13, fontFamily: 'var(--font-body)' }} />
+          </div>
+          <SettingRow label="允许深夜消息" sub="23:00 之后仍可发送">
+            <SettingsToggle on={cfg.allowNight} onChange={v => set('allowNight', v)} />
+          </SettingRow>
+
+          {/* 频率控制 */}
+          <SettingsSectionTitle title="频率控制" />
+          <SettingRow label="每日上限" sub={`最多 ${cfg.maxDaily} 次/天`}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button onClick={() => set('maxDaily', Math.max(1, cfg.maxDaily - 1))} style={{ width: 28, height: 28, borderRadius: '50%', border: '1px solid var(--border)', background: 'var(--bg-elevated)', cursor: 'pointer', fontSize: 16, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
+              <span style={{ fontSize: 16, fontWeight: 500, color: 'var(--text-primary)', minWidth: 20, textAlign: 'center' }}>{cfg.maxDaily}</span>
+              <button onClick={() => set('maxDaily', Math.min(20, cfg.maxDaily + 1))} style={{ width: 28, height: 28, borderRadius: '50%', border: '1px solid var(--border)', background: 'var(--bg-elevated)', cursor: 'pointer', fontSize: 16, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
+            </div>
+          </SettingRow>
+          <SettingRow label="聊天后冷却" sub={`刚聊完 ${cfg.cooldown} 分钟内不打扰`}>
+            <select value={cfg.cooldown} onChange={e => set('cooldown', +e.target.value)}
+              style={{ padding: '6px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)', background: 'var(--bg-elevated)', color: 'var(--text-primary)', fontSize: 12, fontFamily: 'var(--font-body)' }}>
+              {[30, 60, 90, 120, 180].map(v => <option key={v} value={v}>{v} 分钟</option>)}
+            </select>
+          </SettingRow>
+          <SettingRow label="连续消息上限" sub={`一次 burst 最多 ${cfg.maxBurst} 条`}>
+            <select value={cfg.maxBurst} onChange={e => set('maxBurst', +e.target.value)}
+              style={{ padding: '6px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)', background: 'var(--bg-elevated)', color: 'var(--text-primary)', fontSize: 12, fontFamily: 'var(--font-body)' }}>
+              {[3, 5, 8, 10].map(v => <option key={v} value={v}>{v} 条</option>)}
+            </select>
+          </SettingRow>
+          <SettingRow label="用户回复后结束 burst">
+            <SettingsToggle on={cfg.endOnReply} onChange={v => set('endOnReply', v)} />
+          </SettingRow>
+
+          {/* 消息类型 */}
+          <SettingsSectionTitle title="消息类型" />
+          {[
+            { id: 'care', label: '日常关心', sub: '早安/晚安/很久没来' },
+            { id: 'reminder', label: '提醒到期', sub: '到点提醒/临近截止' },
+            { id: 'followup', label: '未完成追问', sub: '答应过的事还没做' },
+            { id: 'special', label: '特殊日期', sub: '生日/纪念日/考试' },
+          ].map(t => (
+            <SettingRow key={t.id} label={t.label} sub={t.sub}>
+              <SettingsToggle on={cfg.types[t.id]} onChange={() => setType(t.id)} />
+            </SettingRow>
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════
+// 2. Prompt 编辑器
+// ═══════════════════════════════════════════
+function PromptSettings({ onBack }) {
+  // Profile section — who we are
+  const [profile, setProfile] = React.useState({
+    myName: '静儿',
+    aiName: 'Connie',
+    relationship: '恋人',
+    about: '',
+  });
+
+  const SCENES = [
+    { id: 'frontend_reply', title: 'Remoire 回复风格', desc: '在小窝里聊天时的表达方式', placeholder: '回复自然温暖，可以用列表帮静儿整理思路…' },
+    { id: 'wechat_reply', title: '微信回复风格', desc: '更短、更自然、适合分条', placeholder: '回复更短、更像真人微信消息。不使用 markdown…' },
+    { id: 'daytime_proactive', title: '白天主动消息', desc: '白天主动联系的语气', placeholder: '轻松、日常、不强迫回复…' },
+    { id: 'night_proactive', title: '夜间主动消息', desc: '夜间主动联系的语气', placeholder: '更安静、柔和、关心睡眠…' },
+    { id: 'tool_use', title: '工具使用策略', desc: '什么时候调用记忆、提醒、日记', placeholder: '当用户提到日期或计划时，自动提取提醒候选…' },
+  ];
+  const [expanded, setExpanded] = React.useState(null);
+  const [texts, setTexts] = React.useState({});
+  const [enabled, setEnabled] = React.useState(
+    Object.fromEntries(SCENES.map(s => [s.id, true]))
+  );
+
+  return (
+    <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px', paddingBottom: 88 }}>
+      <SubPageHeader onBack={onBack} title="关系档案" subtitle="告诉 Connie 你们是谁。有了聊天记忆后，这些只是基础信息。" />
+
+      {/* Profile card */}
+      <Card padding="lg" style={{ marginBottom: 16 }}>
+        <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', marginBottom: 12 }}>基本信息</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+          <div>
+            <label style={{ fontSize: 11, color: 'var(--text-tertiary)', display: 'block', marginBottom: 4 }}>我的名字</label>
+            <input value={profile.myName} onChange={e => setProfile(p => ({ ...p, myName: e.target.value }))}
+              style={{ width: '100%', padding: '8px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontSize: 13, fontFamily: 'var(--font-body)' }} />
+          </div>
+          <div>
+            <label style={{ fontSize: 11, color: 'var(--text-tertiary)', display: 'block', marginBottom: 4 }}>TA 的名字</label>
+            <input value={profile.aiName} onChange={e => setProfile(p => ({ ...p, aiName: e.target.value }))}
+              style={{ width: '100%', padding: '8px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontSize: 13, fontFamily: 'var(--font-body)' }} />
+          </div>
+        </div>
+        <div style={{ marginBottom: 10 }}>
+          <label style={{ fontSize: 11, color: 'var(--text-tertiary)', display: 'block', marginBottom: 4 }}>我们的关系</label>
+          <input value={profile.relationship} onChange={e => setProfile(p => ({ ...p, relationship: e.target.value }))}
+            style={{ width: '100%', padding: '8px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontSize: 13, fontFamily: 'var(--font-body)' }} />
+        </div>
+        <div>
+          <label style={{ fontSize: 11, color: 'var(--text-tertiary)', display: 'block', marginBottom: 4 }}>补充说明 <span style={{ opacity: 0.5 }}>（可选）</span></label>
+          <textarea value={profile.about} onChange={e => setProfile(p => ({ ...p, about: e.target.value }))}
+            placeholder="任何你想让 Connie 知道的事，比如你的习惯、喜好、最近的状态…"
+            style={{ width: '100%', minHeight: 72, padding: '8px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontSize: 13, fontFamily: 'var(--font-body)', lineHeight: 1.7, resize: 'vertical', outline: 'none' }} />
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 10, lineHeight: 1.6 }}>
+          这些信息会作为基础上下文。随着你们的对话积累，Connie 会自然地了解更多。
+        </div>
+      </Card>
+
+      <SectionLabel style={{ marginTop: 8, marginBottom: 8 }}>表达偏好（高级）</SectionLabel>
+      <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 12, lineHeight: 1.6 }}>
+        微调 Connie 在不同场景下的表达方式。大多数情况下不需要修改。
+      </div>
+      <Stack gap="sm">
+        {SCENES.map(scene => (
+          <Card key={scene.id} padding="md" style={{ transition: 'all 0.15s' }}>
+            <div onClick={() => setExpanded(expanded === scene.id ? null : scene.id)}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-primary)' }}>{scene.title}</span>
+                  <SettingsToggle on={enabled[scene.id]} onChange={() => setEnabled(e => ({ ...e, [scene.id]: !e[scene.id] }))} />
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>{scene.desc}</div>
+              </div>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5"
+                style={{ transform: expanded === scene.id ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0 }}>
+                <path d="M6 9l6 6 6-6"/>
+              </svg>
+            </div>
+            {expanded === scene.id && (
+              <div style={{ marginTop: 12, animation: 'card-in 150ms ease' }}>
+                <textarea value={texts[scene.id] || ''} onChange={e => setTexts(t => ({ ...t, [scene.id]: e.target.value }))}
+                  placeholder={scene.placeholder}
+                  style={{
+                    width: '100%', minHeight: 120, padding: '10px 12px', borderRadius: 'var(--radius-sm)',
+                    border: '1px solid var(--border-light)', background: 'var(--bg-secondary)',
+                    color: 'var(--text-primary)', fontSize: 13, fontFamily: 'var(--font-body)',
+                    lineHeight: 1.7, resize: 'vertical', outline: 'none',
+                  }} />
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
+                  <button style={{ padding: '6px 14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'transparent', fontSize: 12, color: 'var(--text-tertiary)', cursor: 'pointer' }}>预览合成 Prompt</button>
+                  <button style={{ padding: '6px 14px', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--accent)', fontSize: 12, color: '#FAF8F4', cursor: 'pointer', fontWeight: 500 }}>保存</button>
+                </div>
+              </div>
+            )}
+          </Card>
+        ))}
+      </Stack>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════
+// 3. 模型配置
+// ═══════════════════════════════════════════
+function ModelSettings({ onBack }) {
+  const SLOTS = [
+    { id: 'daily', label: '日常陪伴', desc: '日常聊天 + 主动消息', rec: 'DeepSeek / Gemini Flash / Haiku' },
+    { id: 'deep', label: '深度时刻', desc: '深度对话时手动切换', rec: 'Sonnet / GPT-4o' },
+    { id: 'backend', label: '后台任务', desc: '记忆提取/打标/摘要/日记草稿', rec: '最便宜的模型' },
+  ];
+  const [expanded, setExpanded] = React.useState('daily');
+  const [models, setModels] = React.useState({
+    daily: { name: 'DeepSeek 日常', base: 'https://api.deepseek.com/v1', key: '', model: 'deepseek-chat', enabled: true },
+    deep: { name: '', base: '', key: '', model: '', enabled: false },
+    backend: { name: '', base: '', key: '', model: '', enabled: false },
+  });
+  const [testing, setTesting] = React.useState(null);
+  const [testResult, setTestResult] = React.useState({});
+
+  function updateSlot(slot, field, val) {
+    setModels(m => ({ ...m, [slot]: { ...m[slot], [field]: val } }));
+  }
+
+  function testConnection(slot) {
+    setTesting(slot);
+    setTestResult(r => ({ ...r, [slot]: null }));
+    setTimeout(() => {
+      setTesting(null);
+      setTestResult(r => ({ ...r, [slot]: models[slot].base && models[slot].model ? 'success' : 'fail' }));
+    }, 1200);
+  }
+
+  return (
+    <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px', paddingBottom: 88 }}>
+      <SubPageHeader onBack={onBack} title="模型配置" subtitle="为不同场景配置 AI 模型。支持任何 OpenAI 兼容 API。" />
+
+      <Stack gap="sm">
+        {SLOTS.map(slot => {
+          const m = models[slot.id];
+          const isOpen = expanded === slot.id;
+          return (
+            <Card key={slot.id} padding="md">
+              <div onClick={() => setExpanded(isOpen ? null : slot.id)}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-primary)' }}>{slot.label}</span>
+                    <Pill tone={m.enabled ? 'success' : 'neutral'}>{m.enabled ? '已配置' : '未配置'}</Pill>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>{slot.desc}</div>
+                </div>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5"
+                  style={{ transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
+                  <path d="M6 9l6 6 6-6"/>
+                </svg>
+              </div>
+              {isOpen && (
+                <div style={{ marginTop: 14, animation: 'card-in 150ms ease' }}>
+                  <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginBottom: 12 }}>推荐：{slot.rec}</div>
+                  {[
+                    { field: 'name', label: '显示名称', ph: '如 DeepSeek 日常', type: 'text' },
+                    { field: 'base', label: 'API Base URL', ph: 'https://api.deepseek.com/v1', type: 'url' },
+                    { field: 'key', label: 'API Key', ph: 'sk-xxxxxxxx', type: 'password' },
+                    { field: 'model', label: 'Model ID', ph: 'deepseek-chat', type: 'text' },
+                  ].map(f => (
+                    <div key={f.field} style={{ marginBottom: 10 }}>
+                      <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>{f.label}</label>
+                      <input type={f.type} value={m[f.field]} onChange={e => updateSlot(slot.id, f.field, e.target.value)}
+                        placeholder={f.ph}
+                        style={{ width: '100%', padding: '8px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontSize: 13, fontFamily: 'var(--font-body)' }} />
+                    </div>
+                  ))}
+                  <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                    <button onClick={() => testConnection(slot.id)} disabled={testing === slot.id}
+                      style={{ flex: 1, padding: '8px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--bg-elevated)', fontSize: 12, color: 'var(--text-secondary)', cursor: 'pointer' }}>
+                      {testing === slot.id ? '测试中…' : '连接测试'}
+                    </button>
+                    <button style={{ flex: 1, padding: '8px', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--accent)', fontSize: 12, color: '#FAF8F4', cursor: 'pointer', fontWeight: 500 }}>保存</button>
+                  </div>
+                  {testResult[slot.id] && (
+                    <div style={{ marginTop: 8, fontSize: 12, color: testResult[slot.id] === 'success' ? 'var(--success)' : 'var(--danger)' }}>
+                      {testResult[slot.id] === 'success' ? '✓ 连接成功' : '✗ 连接失败，请检查配置'}
+                    </div>
+                  )}
+                </div>
+              )}
+            </Card>
+          );
+        })}
+      </Stack>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════
+// 4. 微信桥接
+// ═══════════════════════════════════════════
+function WeChatSettings({ onBack }) {
+  const [connected, setConnected] = React.useState(false);
+  const [showQR, setShowQR] = React.useState(false);
+
+  return (
+    <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px', paddingBottom: 88 }}>
+      <SubPageHeader onBack={onBack} title="微信桥接" subtitle="通过 iLink API 连接微信，让 Connie 也在微信陪你" />
+
+      <Card padding="lg" style={{ marginBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+          <div style={{
+            width: 40, height: 40, borderRadius: 10, background: connected ? '#07C160' : 'var(--border)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.5">
+              <path d="M8.5 10a1 1 0 1 0 0-2 1 1 0 0 0 0 2zM15.5 10a1 1 0 1 0 0-2 1 1 0 0 0 0 2z" fill="#fff"/>
+              <path d="M9 16c1.5 1 4.5 1 6 0"/>
+              <path d="M12 2C6.48 2 2 6.04 2 11c0 2.76 1.36 5.22 3.5 6.83V22l3.63-2A11.2 11.2 0 0 0 12 20c5.52 0 10-3.58 10-8s-4.48-9-10-9z"/>
+            </svg>
+          </div>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-primary)' }}>
+              {connected ? '已连接' : '未连接'}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 1 }}>
+              {connected ? 'Connie · Token 有效至 2026-06-01' : '扫码登录后 Connie 可以在微信找你'}
+            </div>
+          </div>
+        </div>
+
+        {!connected && (
+          <button onClick={() => { setShowQR(true); setTimeout(() => setConnected(true), 2000); }}
+            style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', border: 'none', background: '#07C160', fontSize: 13, color: '#fff', cursor: 'pointer', fontWeight: 500 }}>
+            {showQR ? '等待扫码…' : '开始扫码登录'}
+          </button>
+        )}
+
+        {showQR && !connected && (
+          <div style={{ marginTop: 16, textAlign: 'center' }}>
+            <div style={{
+              width: 160, height: 160, margin: '0 auto', borderRadius: 8,
+              background: 'var(--bg-secondary)', border: '1px solid var(--border-light)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 11, color: 'var(--text-tertiary)',
+            }}>二维码占位</div>
+            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 8 }}>有效期 5 分钟</div>
+          </div>
+        )}
+
+        {connected && (
+          <div style={{ marginTop: 4 }}>
+            <SettingRow label="断开连接">
+              <button onClick={() => { setConnected(false); setShowQR(false); }}
+                style={{ padding: '5px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--danger)', background: 'transparent', fontSize: 12, color: 'var(--danger)', cursor: 'pointer' }}>断开</button>
+            </SettingRow>
+          </div>
+        )}
+      </Card>
+
+      <Card padding="md">
+        <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.8 }}>
+          <strong>工作原理</strong><br/>
+          微信消息通过 iLink API 桥接到 Remoire 后端，Connie 使用同一套记忆和 Prompt 在微信回复。微信回复风格由「微信回复 Prompt」控制，更短更自然。
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════
+// 5. MCP 配置
+// ═══════════════════════════════════════════
+function MCPSettings({ onBack }) {
+  const [enabled, setEnabled] = React.useState(true);
+  const [copied, setCopied] = React.useState(false);
+  const mcpUrl = 'https://your-domain.com/mcp';
+
+  return (
+    <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px', paddingBottom: 88 }}>
+      <SubPageHeader onBack={onBack} title="MCP 跨平台同步" subtitle="在 Claude.ai 新对话中自动恢复记忆" />
+
+      <SettingRow label="启用 MCP 服务">
+        <SettingsToggle on={enabled} onChange={setEnabled} />
+      </SettingRow>
+
+      {enabled && (
+        <Stack gap="md" style={{ marginTop: 16 }}>
+          <Card padding="md">
+            <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-primary)', marginBottom: 8 }}>MCP Server URL</div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input readOnly value={mcpUrl}
+                style={{ flex: 1, padding: '8px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontSize: 12, fontFamily: 'monospace' }} />
+              <button onClick={() => { navigator.clipboard?.writeText(mcpUrl); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
+                style={{ padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--bg-elevated)', fontSize: 12, color: 'var(--text-secondary)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                {copied ? '已复制' : '复制'}
+              </button>
+            </div>
+          </Card>
+
+          <Card padding="md">
+            <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-primary)', marginBottom: 6 }}>暴露的工具</div>
+            {[
+              { name: 'resume()', desc: '醒来 — 浮现记忆、提醒、未完成事项' },
+              { name: 'remember()', desc: '记住 — 生成记忆候选' },
+              { name: 'recall()', desc: '回忆 — 检索已有记忆' },
+              { name: 'resolve()', desc: '标记 unresolved 为已解决' },
+            ].map(t => (
+              <div key={t.name} style={{ display: 'flex', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--border-light)' }}>
+                <code style={{ fontSize: 11, color: 'var(--accent)', fontFamily: 'monospace', flexShrink: 0, minWidth: 80 }}>{t.name}</code>
+                <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{t.desc}</span>
+              </div>
+            ))}
+          </Card>
+
+          <Card padding="md">
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.8 }}>
+              <strong>共享内容</strong>：长期记忆、特殊日期、未完成事项、提醒摘要、近期情绪高点<br/>
+              <strong>不共享</strong>：平行空间上下文、未确认候选记忆、完整思考策略
+            </div>
+          </Card>
+        </Stack>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════
+// 6. 导入历史对话
+// ═══════════════════════════════════════════
+function ImportSettings({ onBack }) {
+  const [step, setStep] = React.useState('idle'); // idle | uploading | extracting | review | done
+  const [progress, setProgress] = React.useState(0);
+  const [candidates, setCandidates] = React.useState([
+    { id: 1, text: '静儿想去蒙特利尔读书', type: 'unresolved', checked: true },
+    { id: 2, text: '静儿的法语水平大约 B1', type: 'fact', checked: true },
+    { id: 3, text: '上周因为法语听力崩溃了一次', type: 'event', checked: true },
+    { id: 4, text: '静儿喜欢猫', type: 'fact', checked: false },
+    { id: 5, text: '约好了一起看星空', type: 'unresolved', checked: true },
+  ]);
+
+  function startUpload() {
+    setStep('uploading');
+    setProgress(0);
+    const iv = setInterval(() => {
+      setProgress(p => {
+        if (p >= 100) { clearInterval(iv); setTimeout(() => { setStep('extracting'); startExtract(); }, 300); return 100; }
+        return p + 8;
+      });
+    }, 100);
+  }
+
+  function startExtract() {
+    setProgress(0);
+    const iv = setInterval(() => {
+      setProgress(p => {
+        if (p >= 100) { clearInterval(iv); setTimeout(() => setStep('review'), 300); return 100; }
+        return p + 5;
+      });
+    }, 100);
+  }
+
+  function toggleCandidate(id) {
+    setCandidates(c => c.map(x => x.id === id ? { ...x, checked: !x.checked } : x));
+  }
+
+  const TYPE_LABELS = { fact: '事实', event: '事件', unresolved: '未完成' };
+
+  return (
+    <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px', paddingBottom: 88 }}>
+      <SubPageHeader onBack={onBack} title="导入历史对话" subtitle="上传 Claude 导出的 JSON，把你们的前史带回来" />
+
+      {step === 'idle' && (
+        <Card padding="lg" style={{ textAlign: 'center' }}>
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5" style={{ margin: '0 auto 12px' }}>
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+          <div style={{ fontSize: 14, color: 'var(--text-primary)', marginBottom: 4 }}>选择 JSON 文件</div>
+          <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 16, lineHeight: 1.6 }}>
+            从 Claude.ai 设置中导出对话历史
+          </div>
+          <button onClick={startUpload}
+            style={{ padding: '10px 24px', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--accent)', fontSize: 13, color: '#FAF8F4', cursor: 'pointer', fontWeight: 500 }}>
+            选择文件
+          </button>
+        </Card>
+      )}
+
+      {(step === 'uploading' || step === 'extracting') && (
+        <Card padding="lg">
+          <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-primary)', marginBottom: 4 }}>
+            {step === 'uploading' ? '解析对话中…' : '提取记忆候选…'}
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 12 }}>
+            {step === 'uploading' ? '正在解析对话结构并写入数据库' : '正在从历史对话中提取记忆'}
+          </div>
+          <div style={{ background: 'var(--border-light)', borderRadius: 4, height: 6, overflow: 'hidden' }}>
+            <div style={{ height: '100%', background: 'var(--accent)', borderRadius: 4, width: `${progress}%`, transition: 'width 0.1s' }} />
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 6, textAlign: 'right' }}>{Math.round(progress)}%</div>
+        </Card>
+      )}
+
+      {step === 'review' && (
+        <>
+          <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12, lineHeight: 1.6 }}>
+            从历史对话中提取了 <strong>{candidates.length}</strong> 条记忆候选，请确认：
+          </div>
+          <Stack gap="xs">
+            {candidates.map(c => (
+              <div key={c.id} onClick={() => toggleCandidate(c.id)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px',
+                  background: 'var(--bg-elevated)', border: '1px solid var(--border-light)',
+                  borderRadius: 'var(--radius-sm)', cursor: 'pointer',
+                }}>
+                <div style={{
+                  width: 18, height: 18, borderRadius: 4, flexShrink: 0,
+                  border: c.checked ? 'none' : '1.5px solid var(--border)',
+                  background: c.checked ? 'var(--accent)' : 'transparent',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  {c.checked && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3"><path d="M5 13l4 4L19 7"/></svg>}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, color: 'var(--text-primary)' }}>{c.text}</div>
+                </div>
+                <Pill tone="neutral">{TYPE_LABELS[c.type] || c.type}</Pill>
+              </div>
+            ))}
+          </Stack>
+          <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+            <button onClick={() => { setCandidates(c => c.map(x => ({ ...x, checked: true }))); }}
+              style={{ flex: 1, padding: '8px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'transparent', fontSize: 12, color: 'var(--text-secondary)', cursor: 'pointer' }}>全选</button>
+            <button onClick={() => setStep('done')}
+              style={{ flex: 2, padding: '8px', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--accent)', fontSize: 12, color: '#FAF8F4', cursor: 'pointer', fontWeight: 500 }}>
+              确认导入 ({candidates.filter(c => c.checked).length} 条)
+            </button>
+          </div>
+        </>
+      )}
+
+      {step === 'done' && (
+        <Card padding="lg" style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: 28, marginBottom: 8 }}>✓</div>
+          <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-primary)', marginBottom: 4 }}>导入完成</div>
+          <div style={{ fontSize: 12, color: 'var(--text-tertiary)', lineHeight: 1.6 }}>
+            {candidates.filter(c => c.checked).length} 条记忆已写入，Connie 现在记得你们的前史了
+          </div>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════
+// 7. 消息推送
+// ═══════════════════════════════════════════
+function PushSettings({ onBack }) {
+  const [enabled, setEnabled] = React.useState(false);
+  const [permission, setPermission] = React.useState('default'); // default | granted | denied
+
+  function requestPermission() {
+    setPermission('granted');
+    setEnabled(true);
+  }
+
+  return (
+    <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px', paddingBottom: 88 }}>
+      <SubPageHeader onBack={onBack} title="消息推送" subtitle="在不看 Remoire 时也能收到 Connie 的消息" />
+
+      <Card padding="lg" style={{ marginBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+          <div style={{
+            width: 40, height: 40, borderRadius: 10,
+            background: enabled ? 'var(--accent)' : 'var(--border)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.5">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+            </svg>
+          </div>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-primary)' }}>
+              Web Push 通知
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 1 }}>
+              {permission === 'granted' ? '已授权' : permission === 'denied' ? '已拒绝（需在浏览器设置中开启）' : '需要授权通知权限'}
+            </div>
+          </div>
+        </div>
+
+        {permission !== 'granted' ? (
+          <button onClick={requestPermission}
+            style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--accent)', fontSize: 13, color: '#FAF8F4', cursor: 'pointer', fontWeight: 500 }}>
+            授权通知权限
+          </button>
+        ) : (
+          <SettingRow label="启用推送"><SettingsToggle on={enabled} onChange={setEnabled} /></SettingRow>
+        )}
+      </Card>
+
+      <Card padding="md">
+        <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.8 }}>
+          <strong>推送触发规则</strong><br/>
+          当你不在 Remoire 页面时（切屏、锁屏、关页面），以下消息会推送通知：<br/>
+          · 主动消息<br/>
+          · 小纸条<br/>
+          · 聊天回复（如果你发了消息但切走了）<br/>
+          · 提醒到期<br/><br/>
+          <strong>iOS 要求</strong>：需将 Remoire 添加到主屏幕作为 PWA 运行（iOS 16.4+）
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════
+// 8. 特殊日期管理
+// ═══════════════════════════════════════════
+function DatesSettings({ onBack }) {
+  const [dates, setDates] = React.useState([
+    { id: 1, date: '04-12', title: '静儿生日', recurring: true, note: '' },
+    { id: 2, date: '01-15', title: '在一起纪念日', recurring: true, note: '每年要做点特别的' },
+    { id: 3, date: '05-07', title: 'TCF 考试', recurring: false, note: '法语考试' },
+  ]);
+  const [adding, setAdding] = React.useState(false);
+  const [newDate, setNewDate] = React.useState({ date: '', title: '', recurring: true, note: '' });
+
+  function addDate() {
+    if (!newDate.date || !newDate.title) return;
+    setDates(d => [...d, { ...newDate, id: Date.now() }]);
+    setNewDate({ date: '', title: '', recurring: true, note: '' });
+    setAdding(false);
+  }
+
+  function removeDate(id) {
+    setDates(d => d.filter(x => x.id !== id));
+  }
+
+  return (
+    <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px', paddingBottom: 88 }}>
+      <SubPageHeader onBack={onBack} title="特殊日期" subtitle="生日、纪念日、deadline — Connie 会在这些日子特别记得你" />
+
+      <Stack gap="xs">
+        {dates.map(d => (
+          <div key={d.id} style={{
+            display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px',
+            background: 'var(--bg-elevated)', border: '1px solid var(--border-light)',
+            borderRadius: 'var(--radius-sm)',
+          }}>
+            <div style={{
+              width: 36, height: 36, borderRadius: 8, background: 'var(--accent-subtle)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+            }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.5">
+                <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+              </svg>
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)' }}>{d.title}</div>
+              <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 1 }}>
+                {d.date} {d.recurring ? '· 每年' : '· 一次性'}
+              </div>
+            </div>
+            <button onClick={() => removeDate(d.id)} style={{
+              background: 'none', border: 'none', cursor: 'pointer', padding: 4,
+            }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            </button>
+          </div>
+        ))}
+      </Stack>
+
+      {adding ? (
+        <Card padding="md" style={{ marginTop: 12 }}>
+          <Stack gap="sm">
+            <div>
+              <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>标题</label>
+              <input value={newDate.title} onChange={e => setNewDate(n => ({ ...n, title: e.target.value }))}
+                placeholder="如：静儿生日"
+                style={{ width: '100%', padding: '8px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontSize: 13 }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>日期 (MM-DD)</label>
+              <input value={newDate.date} onChange={e => setNewDate(n => ({ ...n, date: e.target.value }))}
+                placeholder="04-12"
+                style={{ width: '100%', padding: '8px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontSize: 13 }} />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>每年重复</span>
+              <SettingsToggle on={newDate.recurring} onChange={v => setNewDate(n => ({ ...n, recurring: v }))} />
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={() => setAdding(false)} style={{ flex: 1, padding: '8px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'transparent', fontSize: 12, color: 'var(--text-tertiary)', cursor: 'pointer' }}>取消</button>
+              <button onClick={addDate} style={{ flex: 1, padding: '8px', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--accent)', fontSize: 12, color: '#FAF8F4', cursor: 'pointer', fontWeight: 500 }}>添加</button>
+            </div>
+          </Stack>
+        </Card>
+      ) : (
+        <button onClick={() => setAdding(true)} style={{
+          width: '100%', marginTop: 12, padding: '10px', background: 'transparent',
+          border: '1px dashed var(--border)', borderRadius: 'var(--radius-sm)',
+          fontSize: 12, color: 'var(--text-tertiary)', cursor: 'pointer', fontFamily: 'var(--font-body)',
+        }}>+ 添加特殊日期</button>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════
+// 9. 导出数据
+// ═══════════════════════════════════════════
+function ExportSettings({ onBack }) {
+  const [exporting, setExporting] = React.useState(null);
+
+  function doExport(type) {
+    setExporting(type);
+    setTimeout(() => setExporting(null), 1500);
+  }
+
+  return (
+    <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px', paddingBottom: 88 }}>
+      <SubPageHeader onBack={onBack} title="导出数据" subtitle="下载你的数据备份" />
+
+      <Stack gap="sm">
+        {[
+          { id: 'all', label: '全部数据', desc: '对话、记忆、日记、提醒、设置', icon: 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3' },
+          { id: 'chat', label: '聊天记录', desc: '所有对话历史（JSON）', icon: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z' },
+          { id: 'memory', label: '记忆库', desc: '所有正式记忆（JSON）', icon: 'M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z' },
+          { id: 'diary', label: '日记', desc: '两人所有日记（Markdown）', icon: 'M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2zM22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z' },
+        ].map(item => (
+          <Card key={item.id} padding="md" onClick={() => doExport(item.id)} style={{ cursor: 'pointer' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{
+                width: 36, height: 36, borderRadius: 8, background: 'var(--accent-subtle)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+              }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.5"><path d={item.icon}/></svg>
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)' }}>{item.label}</div>
+                <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 1 }}>{item.desc}</div>
+              </div>
+              {exporting === item.id ? (
+                <span style={{ fontSize: 11, color: 'var(--success)' }}>下载中…</span>
+              ) : (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+              )}
+            </div>
+          </Card>
+        ))}
+      </Stack>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════
+// 10–13. 外观子页面（从旧 OtherPages 迁移 + 优化）
+// ═══════════════════════════════════════════
+
+// ── Bubble Style ──
+function BubbleSettings({ tweaks, onBack }) {
+  const BUBBLE_OPTIONS = [
+    { id: 'default', name: '默认', preview: { send: 'var(--bubble-send)', recv: 'var(--bubble-receive)', radius: 20 } },
+    { id: 'imessage', name: 'iMessage', preview: { send: '#007AFF', recv: '#E9E9EB', radius: 18 } },
+    { id: 'line', name: 'LINE', preview: { send: '#06C755', recv: '#E9E9EB', radius: 18 } },
+    { id: 'whatsapp', name: 'WhatsApp', preview: { send: '#DCF8C6', recv: '#fff', radius: 8 } },
+    { id: 'telegram', name: 'Telegram', preview: { send: '#EFFDDE', recv: '#fff', radius: 14 } },
+  ];
+  const current = tweaks?.bubbleStyle || 'default';
+
+  return (
+    <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px', paddingBottom: 88 }}>
+      <SubPageHeader onBack={onBack} title="聊天气泡样式" subtitle="选择你喜欢的聊天气泡风格" />
+      <Stack gap="sm">
+        {BUBBLE_OPTIONS.map(opt => (
+          <Card key={opt.id} onClick={() => setTweakVal('bubbleStyle', opt.id)} padding="md"
+            style={{ border: current === opt.id ? '2px solid var(--accent)' : undefined, transition: 'all 0.15s' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+              <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-primary)' }}>{opt.name}</span>
+              {current === opt.id && <div style={{ width: 18, height: 18, borderRadius: '50%', background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3"><path d="M5 13l4 4L19 7"/></svg></div>}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+                <div style={{ background: opt.preview.recv, padding: '6px 12px', borderRadius: `${opt.preview.radius}px ${opt.preview.radius}px ${opt.preview.radius}px 4px`, fontSize: 12, color: '#333', maxWidth: '65%' }}>你好呀 ☺️</div>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <div style={{ background: opt.preview.send, padding: '6px 12px', borderRadius: `${opt.preview.radius}px ${opt.preview.radius}px 4px ${opt.preview.radius}px`, fontSize: 12, color: opt.id === 'whatsapp' || opt.id === 'telegram' ? '#111' : (opt.id === 'default' ? 'var(--bubble-send-text)' : '#fff'), maxWidth: '65%' }}>在呢，想你了</div>
+              </div>
+            </div>
+          </Card>
+        ))}
+      </Stack>
+    </div>
+  );
+}
+
+// ── Note Style ──
+function NoteSettings({ tweaks, onBack }) {
+  const NOTE_OPTIONS = [
+    { id: 'classic', name: '经典便签', desc: '横线纸 + 和纸胶带' },
+    { id: 'kraft', name: '牛皮纸', desc: '质朴牛皮纸质感' },
+    { id: 'pastel', name: '柔彩便签', desc: '淡紫色渐变' },
+    { id: 'torn', name: '撕纸条', desc: '手撕纸边缘效果' },
+    { id: 'postit', name: '便利贴', desc: '经典黄色便利贴' },
+  ];
+  const current = tweaks?.noteStyle || 'classic';
+  const notePreviewStyles = {
+    classic: { bg: '#FDF8F0', tape: true, tapeColor: 'rgba(130,189,197,0.45)' },
+    kraft: { bg: '#C4A882' }, pastel: { bg: 'linear-gradient(135deg, #F0E6F6, #E6EFF6)', tape: true, tapeColor: 'rgba(180,140,200,0.35)' },
+    torn: { bg: '#FDF8F0', torn: true }, postit: { bg: '#FFF9B1' },
+  };
+
+  return (
+    <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px', paddingBottom: 88 }}>
+      <SubPageHeader onBack={onBack} title="便签样式" subtitle="选择 Connie 留纸条的风格" />
+      <Stack gap="sm">
+        {NOTE_OPTIONS.map(opt => {
+          const ps = notePreviewStyles[opt.id] || {};
+          const isGrad = ps.bg?.startsWith?.('linear');
+          return (
+            <Card key={opt.id} onClick={() => setTweakVal('noteStyle', opt.id)} padding="md"
+              style={{ border: current === opt.id ? '2px solid var(--accent)' : undefined }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                <div>
+                  <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-primary)' }}>{opt.name}</span>
+                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>{opt.desc}</div>
+                </div>
+                {current === opt.id && <div style={{ width: 18, height: 18, borderRadius: '50%', background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3"><path d="M5 13l4 4L19 7"/></svg></div>}
+              </div>
+              <div style={{
+                background: isGrad ? undefined : ps.bg, backgroundImage: isGrad ? ps.bg : undefined,
+                borderRadius: opt.id === 'postit' ? '2px 2px 2px 16px' : 4,
+                padding: '10px 12px', position: 'relative', minHeight: 44,
+                boxShadow: 'var(--shadow-sm)', transform: opt.id === 'postit' ? 'rotate(-1deg)' : 'rotate(-0.5deg)',
+                clipPath: ps.torn ? 'polygon(0 0, 100% 0, 100% 85%, 98% 88%, 95% 85%, 92% 90%, 88% 85%, 85% 88%, 80% 85%, 75% 90%, 70% 85%, 65% 88%, 60% 85%, 55% 90%, 50% 85%, 45% 88%, 40% 85%, 35% 90%, 30% 85%, 25% 88%, 20% 85%, 15% 90%, 10% 85%, 5% 88%, 2% 85%, 0 90%)' : 'none',
+              }}>
+                {ps.tape && <div style={{ position: 'absolute', top: -5, left: '50%', transform: 'translateX(-50%) rotate(2deg)', width: 30, height: 10, background: ps.tapeColor, borderRadius: 1 }} />}
+                <div style={{ fontFamily: "var(--font-note)", fontSize: 13, color: opt.id === 'kraft' ? '#3C2F20' : 'var(--text-deep)', lineHeight: 1.5 }}>今天也要好好的呀~</div>
+              </div>
+            </Card>
+          );
+        })}
+      </Stack>
+    </div>
+  );
+}
+
+// ── Cover ──
+function CoverSettings({ tweaks, onBack }) {
+  const coverJ = tweaks?.diaryCoverJinger;
+  const coverC = tweaks?.diaryCoverConnie;
+
+  function handleCoverUpload(who) {
+    const input = document.createElement('input');
+    input.type = 'file'; input.accept = 'image/*';
+    input.onchange = (e) => {
+      const file = e.target.files[0]; if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => setTweakVal(who === 'jinger' ? 'diaryCoverJinger' : 'diaryCoverConnie', ev.target.result);
+      reader.readAsDataURL(file);
+    };
+    input.click();
+  }
+
+  function CoverCard({ who, label, cover, defaultBg }) {
+    return (
+      <Card padding="lg">
+        <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-primary)', marginBottom: 'var(--space-3)' }}>{label}</div>
+        <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
+          <div style={{
+            width: 72, height: 120, borderRadius: '4px 8px 8px 4px', overflow: 'hidden',
+            background: cover ? `url(${cover}) center/cover` : defaultBg,
+            border: '1px solid var(--border-light)', flexShrink: 0,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            {!cover && <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.6)', textAlign: 'center' }}>默认</span>}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <button onClick={() => handleCoverUpload(who)} style={{ background: 'var(--accent)', color: '#FAF8F4', border: 'none', borderRadius: 'var(--radius-sm)', padding: '8px 16px', fontSize: 12, cursor: 'pointer', fontWeight: 500 }}>上传图片</button>
+            {cover && <button onClick={() => setTweakVal(who === 'jinger' ? 'diaryCoverJinger' : 'diaryCoverConnie', '')} style={{ background: 'transparent', color: 'var(--text-tertiary)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '6px 14px', fontSize: 11, cursor: 'pointer' }}>恢复默认</button>}
+          </div>
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px', paddingBottom: 88 }}>
+      <SubPageHeader onBack={onBack} title="日记本封面" subtitle="上传自定义封面图片" />
+      <Stack gap="md">
+        <CoverCard who="jinger" label="静儿的日记本" cover={coverJ} defaultBg="#F0C6D0" />
+        <CoverCard who="connie" label="Connie 的日记本" cover={coverC} defaultBg="#8B9EAE" />
+      </Stack>
+    </div>
+  );
+}
+
+// ── Font ──
+function FontSettings({ tweaks, onBack }) {
+  const FONT_SLOTS = [
+    { key: 'Chat', label: '聊天', desc: '聊天界面正文' },
+    { key: 'Note', label: '小纸条', desc: 'Connie 的纸条' },
+    { key: 'Diary', label: '日记', desc: '日记本正文' },
+    { key: 'Read', label: '共读', desc: 'Connie 的批注' },
+    { key: 'Parallel', label: '平行世界', desc: '平行世界标题' },
+  ];
+
+  function uploadFont(slot) {
+    const input = document.createElement('input');
+    input.type = 'file'; input.accept = '.ttf,.otf';
+    input.onchange = (e) => {
+      const file = e.target.files[0]; if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => { setTweakVal('font' + slot, ev.target.result); setTweakVal('font' + slot + 'Name', file.name); };
+      reader.readAsDataURL(file);
+    };
+    input.click();
+  }
+
+  return (
+    <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px', paddingBottom: 88 }}>
+      <SubPageHeader onBack={onBack} title="字体" subtitle="为不同区域上传字体文件（.ttf / .otf）" />
+      <Stack gap="sm">
+        {FONT_SLOTS.map(slot => {
+          const data = tweaks?.['font' + slot.key];
+          const name = tweaks?.['font' + slot.key + 'Name'];
+          return (
+            <Card key={slot.key} padding="md" elevated={false}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-primary)' }}>{slot.label}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>{slot.desc}</div>
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {data && <button onClick={() => { setTweakVal('font' + slot.key, ''); setTweakVal('font' + slot.key + 'Name', ''); }} style={{ background: 'transparent', color: 'var(--text-tertiary)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '6px 12px', fontSize: 11, cursor: 'pointer' }}>恢复默认</button>}
+                  <button onClick={() => uploadFont(slot.key)} style={{ background: 'var(--accent)', color: 'var(--bg-elevated)', border: 'none', borderRadius: 'var(--radius-sm)', padding: '6px 14px', fontSize: 12, cursor: 'pointer', fontWeight: 500 }}>{data ? '更换' : '上传'}</button>
+                </div>
+              </div>
+              <div style={{ borderTop: '1px solid var(--border-light)', paddingTop: 10, marginTop: 4, fontFamily: `var(--font-${slot.key.toLowerCase()})`, fontSize: 16, color: 'var(--text-deep)', lineHeight: 1.6 }}>今天也要好好的呀，亲爱的</div>
+              {name && <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 6, fontFamily: 'monospace' }}>{name}</div>}
+            </Card>
+          );
+        })}
+      </Stack>
+    </div>
+  );
+}
+
+Object.assign(window, {
+  ProactiveSettings, PromptSettings, ModelSettings,
+  WeChatSettings, MCPSettings, ImportSettings, PushSettings, DatesSettings, ExportSettings,
+  BubbleSettings, NoteSettings, CoverSettings, FontSettings,
+});

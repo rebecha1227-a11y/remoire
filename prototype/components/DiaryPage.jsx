@@ -57,6 +57,15 @@ const DIARY_V3_CSS = `
   pointer-events: none;
   z-index: 5;
 }
+
+/* PIN pad shake */
+@keyframes pin-shake {
+  0%, 100% { transform: translateX(0); }
+  20%       { transform: translateX(-9px); }
+  40%       { transform: translateX(9px); }
+  60%       { transform: translateX(-6px); }
+  80%       { transform: translateX(6px); }
+}
 `;
 
 if (!document.getElementById('diary-v3-css')) {
@@ -67,13 +76,14 @@ if (!document.getElementById('diary-v3-css')) {
 }
 
 // ── Diary data ──
-const JINGER_DIARY = [
+const JINGER_DIARY_INIT = [
 { date: '04-25', weekday: '六', title: '买了那本书',
   body: '整理房间，发现了两年前的一本笔记本。\n里面有一页写着"今年一定要去京都"。\n\n那时候的我不知道后来发生了什么。' },
 { date: '04-24', weekday: '五', title: '法语考试',
   body: '整理房间，发现了两年前的一本笔记本。\n里面有一页写着"今年一定要去京都"。\n\n那时候的我不知道后来发生了什么。' },
 { date: '04-22', weekday: '三', title: '买了那本书',
-  body: '', locked: true,
+  body: '那天的事我没法对任何人说。\n只有在这里才写得出来。\n\n但我想，我已经走过来了。',
+  locked: true, pin: '0422',
   lockNote: '那天你状态让我有点担心，我想知道你有没有好好消化它。' },
 { date: '04-20', weekday: '一', title: '普通的一天',
   body: '很普通的一天。\n早上喝了咖啡，中午吃了外卖，下午上了三节课。\n\n但不知道为什么，今天感觉特别好。' },
@@ -91,6 +101,223 @@ const CONNIE_DIARY = [
 { date: '04-20', weekday: '一', title: '她说特别好',
   body: '她说今天感觉特别好，但说不出原因。\n\n我知道原因。\n\n但有些事情适合作为秘密留在这里。' }];
 
+
+// ── PinPad ──
+function PinPad({ title, subtitle, onComplete, onCancel, errorKey }) {
+  const [digits, setDigits] = React.useState([]);
+  const [shaking, setShaking] = React.useState(false);
+
+  React.useEffect(() => {
+    if (errorKey > 0) {
+      setShaking(true);
+      setDigits([]);
+      const t = setTimeout(() => setShaking(false), 400);
+      return () => clearTimeout(t);
+    }
+  }, [errorKey]);
+
+  function press(d) {
+    if (digits.length >= 4) return;
+    const next = [...digits, d];
+    setDigits(next);
+    if (next.length === 4) {
+      setTimeout(() => { onComplete(next.join('')); setDigits([]); }, 150);
+    }
+  }
+  function del() { setDigits(d => d.slice(0, -1)); }
+
+  const keys = [1,2,3,4,5,6,7,8,9,null,0,'del'];
+  return (
+    <div style={{
+      position: 'absolute', inset: 0, zIndex: 50,
+      background: 'var(--bg-primary)',
+      display: 'flex', flexDirection: 'column', alignItems: 'center',
+      justifyContent: 'center', padding: '0 40px',
+    }}>
+      {onCancel && (
+        <button onClick={onCancel} style={{
+          position: 'absolute', top: 16, left: 16,
+          background: 'none', border: 'none', cursor: 'pointer',
+          color: 'var(--text-tertiary)', fontSize: 12, fontFamily: 'var(--font-body)',
+          display: 'flex', alignItems: 'center', gap: 4, padding: 8,
+        }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+          取消
+        </button>
+      )}
+      <div style={{ fontFamily: 'var(--font-display)', fontSize: 20, color: 'var(--text-deep)', marginBottom: 6 }}>{title}</div>
+      {subtitle && <div style={{ fontSize: 13, color: 'var(--text-tertiary)', marginBottom: 32, textAlign: 'center' }}>{subtitle}</div>}
+      <div style={{ display: 'flex', gap: 18, marginBottom: 44, animation: shaking ? 'pin-shake 0.4s ease' : 'none' }}>
+        {[0,1,2,3].map(i => (
+          <div key={i} style={{
+            width: 13, height: 13, borderRadius: '50%',
+            background: i < digits.length ? 'var(--accent)' : 'transparent',
+            border: `1.5px solid ${i < digits.length ? 'var(--accent)' : 'var(--border)'}`,
+            transition: 'all 0.15s',
+          }} />
+        ))}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, width: '100%', maxWidth: 220 }}>
+        {keys.map((k, i) => k === null ? <div key={i} /> : (
+          <button key={i} onClick={() => k === 'del' ? del() : press(k)} style={{
+            height: 56, borderRadius: 12,
+            background: k === 'del' ? 'transparent' : 'var(--bg-elevated)',
+            border: k === 'del' ? 'none' : '1px solid var(--border-light)',
+            fontSize: k === 'del' ? 20 : 22,
+            color: 'var(--text-primary)', cursor: 'pointer',
+            fontFamily: 'var(--font-body)', fontWeight: 300,
+          }}>
+            {k === 'del' ? '⌫' : k}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── WritingEditor ──
+function WritingEditor({ onSave, onCancel }) {
+  const today = new Date();
+  const mm = String(today.getMonth() + 1).padStart(2, '0');
+  const dd = String(today.getDate()).padStart(2, '0');
+  const dateStr = `${mm}-${dd}`;
+  const weekdays = ['日','一','二','三','四','五','六'];
+  const weekday = weekdays[today.getDay()];
+
+  const [title, setTitle] = React.useState('');
+  const [body, setBody] = React.useState('');
+  const [locked, setLocked] = React.useState(false);
+  const [pin, setPin] = React.useState('');
+  const [pinMode, setPinMode] = React.useState(null);
+  const [pinFirst, setPinFirst] = React.useState('');
+  const [pinErrorKey, setPinErrorKey] = React.useState(0);
+
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  const bgColor = isDark ? '#2A2420' : '#F8F2EE';
+
+  function toggleLock() {
+    if (locked) { setLocked(false); setPin(''); }
+    else setPinMode('set');
+  }
+
+  function handlePinComplete(p) {
+    if (pinMode === 'set') { setPinFirst(p); setPinMode('confirm'); }
+    else {
+      if (p === pinFirst) { setPin(p); setLocked(true); setPinMode(null); setPinFirst(''); }
+      else {
+        setPinErrorKey(k => k + 1);
+        setTimeout(() => { setPinMode('set'); setPinFirst(''); }, 500);
+      }
+    }
+  }
+
+  function save() {
+    if (!title.trim() && !body.trim()) return;
+    onSave({ date: dateStr, weekday, title: title.trim() || '无题', body, locked, pin });
+  }
+
+  if (pinMode) {
+    return (
+      <div style={{ position: 'absolute', inset: 0, zIndex: 40, background: bgColor }}>
+        <PinPad
+          title={pinMode === 'set' ? '设置密码' : '再次确认'}
+          subtitle={pinMode === 'set' ? '为日记设置 4 位数字密码' : '再输一遍以确认'}
+          onComplete={handlePinComplete}
+          errorKey={pinErrorKey}
+          onCancel={() => { setPinMode(null); setPinFirst(''); }}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div style={{
+      position: 'absolute', inset: 0, zIndex: 30,
+      background: bgColor,
+      backgroundImage: 'linear-gradient(rgba(100,90,80,0.05) 1px, transparent 1px)',
+      backgroundSize: '100% 28px',
+      display: 'flex', flexDirection: 'column',
+      animation: 'page-in 250ms ease',
+    }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '12px 16px', flexShrink: 0,
+        borderBottom: '1px solid rgba(100,90,80,0.08)',
+      }}>
+        <button onClick={onCancel} style={{
+          background: 'none', border: 'none', cursor: 'pointer',
+          color: 'var(--text-tertiary)', fontSize: 12, fontFamily: 'var(--font-body)',
+          display: 'flex', alignItems: 'center', gap: 4, padding: 0,
+        }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+          取消
+        </button>
+        <div style={{ fontFamily: 'var(--font-diary)', fontSize: 14, color: 'var(--text-tertiary)' }}>
+          {dateStr} · {weekday}
+        </div>
+        <button onClick={save} disabled={!title.trim() && !body.trim()} style={{
+          background: (title.trim() || body.trim()) ? 'var(--accent)' : 'var(--border)',
+          border: 'none', borderRadius: 8, padding: '6px 14px',
+          fontSize: 12, color: '#FAF8F4',
+          cursor: (title.trim() || body.trim()) ? 'pointer' : 'default',
+          fontFamily: 'var(--font-body)', fontWeight: 500, transition: 'background 0.2s',
+        }}>保存</button>
+      </div>
+
+      <div style={{ padding: '20px 20px 0' }}>
+        <input
+          value={title}
+          onChange={e => setTitle(e.target.value)}
+          placeholder="标题（可留空）"
+          style={{
+            width: '100%', border: 'none', background: 'transparent', outline: 'none',
+            fontFamily: 'var(--font-diary)', fontSize: 22,
+            color: 'var(--text-deep)', fontWeight: 300, boxSizing: 'border-box',
+          }}
+        />
+      </div>
+      <div style={{ height: 1, background: 'rgba(100,90,80,0.1)', margin: '12px 20px 0' }} />
+
+      <textarea
+        value={body}
+        onChange={e => setBody(e.target.value)}
+        placeholder="今天…"
+        autoFocus
+        style={{
+          flex: 1, border: 'none', background: 'transparent', outline: 'none',
+          resize: 'none', fontFamily: 'var(--font-diary)', fontSize: 18,
+          color: 'var(--text-primary)', lineHeight: 1.85,
+          padding: '16px 20px', boxSizing: 'border-box',
+        }}
+      />
+
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '10px 20px 28px', borderTop: '1px solid rgba(100,90,80,0.08)', flexShrink: 0,
+      }}>
+        <div style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)' }}>
+          {body.length > 0 ? `${body.length} 字` : ' '}
+        </div>
+        <button onClick={toggleLock} style={{
+          display: 'flex', alignItems: 'center', gap: 6,
+          background: locked ? 'rgba(184,146,74,0.08)' : 'transparent',
+          border: `1px solid ${locked ? 'rgba(184,146,74,0.3)' : 'var(--border-light)'}`,
+          borderRadius: 20, padding: '6px 14px', cursor: 'pointer',
+          color: locked ? 'var(--warning)' : 'var(--text-tertiary)',
+          fontSize: 12, fontFamily: 'var(--font-body)', transition: 'all 0.2s',
+        }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+            {locked
+              ? <><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></>
+              : <><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9 1"/></>
+            }
+          </svg>
+          {locked ? '已上锁' : '上锁'}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 // ── Pink Patchwork Cover (Jinger) ──
 function PinkCover({ onClick, customCover }) {
@@ -309,9 +536,30 @@ function TOCPage({ entries, author, onSelect }) {
 
 // ── Content Page ──
 function ContentPage({ entry, author }) {
+  const [pinUnlocked, setPinUnlocked] = React.useState(false);
+  const [pinErrorKey, setPinErrorKey] = React.useState(0);
+
   const isConnie = author === 'connie';
   const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
   const bgColor = isDark ? (isConnie ? '#272320' : '#2A2420') : (isConnie ? '#EDE9E3' : '#F8F2EE');
+
+  // 静儿查看自己上锁的日记 → PIN 解锁
+  if (entry.locked && author === 'jinger' && !pinUnlocked) {
+    return (
+      <div style={{ position: 'relative', width: '100%', height: '100%', background: bgColor }}>
+        <PinPad
+          title="输入密码"
+          subtitle="这篇日记已上锁"
+          onComplete={(p) => {
+            if (p === (entry.pin || '1234')) { setPinUnlocked(true); }
+            else { setPinErrorKey(k => k + 1); }
+          }}
+          errorKey={pinErrorKey}
+        />
+      </div>
+    );
+  }
+
   return (
     <div style={{
       width: '100%', height: '100%',
@@ -344,42 +592,43 @@ function ContentPage({ entry, author }) {
           marginBottom: 12, opacity: 0.7
         }}>{isConnie ? 'Connie' : 'Jinger'}</div>
 
-        {entry.locked ?
-        <div>
+        {/* Connie 的上锁日记 → 申请解锁流程 */}
+        {entry.locked && author === 'connie' ? (
+          <div>
             {[80, 65, 90, 55, 75].map((w, i) =>
-          <div key={i} style={{ height: 10, background: 'var(--border-light)', borderRadius: 2, width: `${w}%`, marginBottom: 8, opacity: 0.6 }} />
-          )}
+              <div key={i} style={{ height: 10, background: 'var(--border-light)', borderRadius: 2, width: `${w}%`, marginBottom: 8, opacity: 0.6 }} />
+            )}
             <div style={{
-            marginTop: 20, background: 'rgba(184,146,74,0.06)',
-            border: '1px solid rgba(184,146,74,0.2)', borderRadius: 6, padding: '10px 12px'
-          }}>
+              marginTop: 20, background: 'rgba(184,146,74,0.06)',
+              border: '1px solid rgba(184,146,74,0.2)', borderRadius: 6, padding: '10px 12px'
+            }}>
               <div style={{ fontSize: 9, color: 'var(--warning)', fontWeight: 500, letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 6 }}>申请解锁中</div>
               <div style={{ fontFamily: "var(--font-diary)", fontSize: 16, color: 'var(--text-secondary)', lineHeight: 1.7 }}>{entry.lockNote}</div>
               <div style={{ display: 'flex', gap: 10, marginTop: 14, justifyContent: 'flex-end' }}>
                 <button style={{
-                background: 'transparent', border: '1px solid var(--border)',
-                borderRadius: 'var(--radius-sm)', padding: '6px 14px',
-                fontSize: 12, color: 'var(--text-tertiary)', cursor: 'pointer',
-                fontFamily: "var(--font-body)", fontWeight: 500
-              }}>拒绝</button>
+                  background: 'transparent', border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius-sm)', padding: '6px 14px',
+                  fontSize: 12, color: 'var(--text-tertiary)', cursor: 'pointer',
+                  fontFamily: "var(--font-body)", fontWeight: 500
+                }}>拒绝</button>
                 <button style={{
-                background: 'var(--warning)', border: 'none',
-                borderRadius: 'var(--radius-sm)', padding: '6px 14px',
-                fontSize: 12, color: '#FAF8F4', cursor: 'pointer',
-                fontFamily: "var(--font-body)", fontWeight: 500
-              }}>同意解锁</button>
+                  background: 'var(--warning)', border: 'none',
+                  borderRadius: 'var(--radius-sm)', padding: '6px 14px',
+                  fontSize: 12, color: '#FAF8F4', cursor: 'pointer',
+                  fontFamily: "var(--font-body)", fontWeight: 500
+                }}>同意解锁</button>
               </div>
             </div>
-          </div> :
-
-        <div style={{
-          fontSize: 18,
-          color: 'var(--text-primary)', lineHeight: 1.85, whiteSpace: 'pre-wrap', fontFamily: "var(--font-diary)"
-        }}>{entry.body}</div>
-        }
+          </div>
+        ) : (
+          <div style={{
+            fontSize: 18,
+            color: 'var(--text-primary)', lineHeight: 1.85, whiteSpace: 'pre-wrap', fontFamily: "var(--font-diary)"
+          }}>{entry.body}</div>
+        )}
       </div>
-    </div>);
-
+    </div>
+  );
 }
 
 // ── Open Book Component ──
@@ -559,7 +808,7 @@ const DIARY_ACTIVITIES = [
 { time: '04-18 21:30', author: 'jinger', type: 'wrote', msg: null }];
 
 
-function DiaryFeed() {
+function DiaryFeed({ activities }) {
   const nameMap = { jinger: '静儿', connie: 'Connie' };
   const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
   const colorMap = { jinger: isDark ? '#D4A0B4' : '#9B6B7B', connie: isDark ? '#7AACBC' : '#5A7888' };
@@ -600,7 +849,7 @@ function DiaryFeed() {
       <SectionLabel style={{ marginBottom: 'var(--space-3)' }}>最近动态</SectionLabel>
       <div style={{ position: 'relative' }}>
         {/* Timeline line — hidden behind dots via per-segment approach */}
-        {DIARY_ACTIVITIES.map((a, i) => {
+        {activities.map((a, i) => {
           const isLast = i === DIARY_ACTIVITIES.length - 1;
           return (
             <div key={i} style={{
@@ -638,8 +887,24 @@ function DiaryFeed() {
 // ── Main DiaryPage ──
 function DiaryPage({ tweaks }) {
   const [openBook, setOpenBook] = React.useState(null);
+  const [writing, setWriting] = React.useState(false);
+  const [jingerDiary, setJingerDiary] = React.useState(JINGER_DIARY_INIT);
+  const [activities, setActivities] = React.useState(DIARY_ACTIVITIES);
+
   const coverJ = tweaks && tweaks.diaryCoverJinger;
   const coverC = tweaks && tweaks.diaryCoverConnie;
+
+  function saveEntry(entry) {
+    const now = new Date();
+    const hh = String(now.getHours()).padStart(2, '0');
+    const mm = String(now.getMinutes()).padStart(2, '0');
+    const timeStr = `${entry.date} ${hh}:${mm}`;
+    const newEvents = [{ time: timeStr, author: 'jinger', type: 'wrote', msg: null }];
+    if (entry.locked) newEvents.push({ time: timeStr, author: 'jinger', type: 'locked', msg: null });
+    setActivities(prev => [...newEvents, ...prev]);
+    setJingerDiary(prev => [entry, ...prev]);
+    setWriting(false);
+  }
 
   return (
     <div style={{
@@ -653,11 +918,13 @@ function DiaryPage({ tweaks }) {
       overflow: 'hidden'
     }}>
       {openBook &&
-      <OpenBook
-        author={openBook}
-        entries={openBook === 'connie' ? CONNIE_DIARY : JINGER_DIARY}
-        onClose={() => setOpenBook(null)} />
-
+        <OpenBook
+          author={openBook}
+          entries={openBook === 'connie' ? CONNIE_DIARY : jingerDiary}
+          onClose={() => setOpenBook(null)} />
+      }
+      {writing &&
+        <WritingEditor onSave={saveEntry} onCancel={() => setWriting(false)} />
       }
 
       {/* Shelf view: two closed notebooks */}
@@ -675,7 +942,7 @@ function DiaryPage({ tweaks }) {
           <BlueCover onClick={() => setOpenBook('connie')} customCover={coverC} />
         </div>
 
-        <button style={{
+        <button onClick={() => setWriting(true)} style={{
           width: '100%', marginTop: 20, padding: '12px 16px',
           background: 'transparent', border: '1px dashed var(--border)',
           borderRadius: 'var(--radius-sm)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 'var(--space-2)',
@@ -686,10 +953,10 @@ function DiaryPage({ tweaks }) {
         </button>
 
         {/* Activity feed — last 14 days */}
-        <DiaryFeed />
+        <DiaryFeed activities={activities} />
       </div>
-    </div>);
-
+    </div>
+  );
 }
 
 Object.assign(window, { DiaryPage });
