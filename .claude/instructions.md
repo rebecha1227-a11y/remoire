@@ -76,11 +76,57 @@ router → service → database
 {"ok": True, "data": {"items": [...], "total": 100, "page": 1, "limit": 20, "has_more": True}}
 ```
 
+### 后端文件结构
+
+```
+backend/app/
+├── main.py           # FastAPI 入口 + CORS + auth middleware
+├── auth.py           # Bearer token 校验
+├── config.py         # 环境变量（API_SECRET_KEY / DEVICE_SECRET_KEY / DB 路径等）
+├── database.py       # SQLite + WAL + init_db()
+├── llm.py            # 统一 LLM 调用（OpenAI 兼容）
+├── identity.py       # AI 人设 profile 加载
+├── routers/
+│   ├── chat.py       # /api/chat — 发消息、历史、图片上传
+│   ├── memory.py     # /api/memory — 候选、确认、检索
+│   ├── diary.py      # /api/diary — 日记 CRUD、上锁、解锁
+│   ├── reminder.py   # /api/reminder — 提醒 / 待办 / 事件
+│   ├── calendar.py   # /api/calendar — 共同日历
+│   ├── import_.py    # /api/import — 历史对话导入（与 import 关键字冲突加下划线）
+│   ├── model.py      # /api/model — 模型槽位配置
+│   ├── note.py       # /api/note — 小纸条
+│   ├── stream.py     # /api/stream — SSE 推流
+│   ├── settings.py   # /api/settings — 主动消息设置 / Prompt 编辑器
+│   ├── play.py       # /api/play — 共读 / 平行空间
+│   ├── signal.py     # /api/signal — 轻量生活信号
+│   ├── device.py     # /api/device — iPhone 设备快照 / 屏幕时间（URL key 认证）
+│   └── push.py       # /api/push — Web Push 订阅管理 + 推送发送
+├── services/
+│   ├── memory_service.py     # 记忆候选提取、确认、关联计算
+│   ├── association.py        # 关联旧记忆（写就是读）
+│   ├── reminder_service.py   # 提醒触发逻辑
+│   ├── diary_service.py      # 日记草稿生成
+│   ├── nudge_service.py      # 主动消息生成 + burst 状态机
+│   └── digest_service.py     # 摘要压缩（合并重复记忆）
+├── scheduler/
+│   └── jobs.py       # APScheduler 定时任务（nudge / digest / 设备数据清理）
+└── prompts/
+    ├── identity.md        # Connie 核心人设
+    ├── tagging.md         # 记忆打标签
+    ├── nudge.md           # 主动消息生成
+    ├── thinking.md        # thinking block 风格要求
+    ├── reply_wechat.md    # 微信回复语境（待写）
+    ├── reply_remoire.md   # Remoire 前端回复语境（待写）
+    ├── reply_daytime.md   # 白天语气（待写）
+    └── reply_nighttime.md # 夜晚语气（待写）
+```
+
 ### prompt 管理
 
 - 所有 system prompt 模板放在 `app/prompts/` 目录下，用 .md 文件存储
 - prompt 中的变量用 `{variable_name}` 占位，运行时 f-string 替换
-- 身份人设（identity.md）不要散落在业务代码里
+- 调用时按场景拼接：每次都有 `identity` + `thinking`，按入口选 `reply_wechat/remoire`，按时间选 `reply_daytime/nighttime`
+- 不要把人设散落在业务代码里
 
 ---
 
@@ -231,5 +277,6 @@ backend/uploads/
 - `.env` 文件永远不进 git
 - API Key 不在前端代码中出现
 - 前端存的 auth token 放 localStorage（单用户产品可接受）
-- 后端 model_configs 表的 api_key 字段首发明文存储，后续可改进
+- 后端 `model_settings` 表的 api_key 字段首发明文存储，后续可改进
 - CORS 只允许自己的域名
+- `/api/device/*` 用独立的 `DEVICE_SECRET_KEY`（URL 查询参数 `?key=xxx`），不用 Bearer Header——iOS 快捷指令无法方便设置 Header

@@ -57,7 +57,9 @@ our-nest/
 │       ├── services/         # memory_service, association, reminder_service,
 │       │                     # diary_service, nudge_service, digest_service
 │       ├── scheduler/jobs.py # APScheduler 定时任务
-│       └── prompts/          # identity.md, tagging.md, nudge.md
+│       └── prompts/          # identity.md, tagging.md, nudge.md, thinking.md
+│                             # reply_wechat.md, reply_remoire.md（待写）
+│                             # reply_daytime.md, reply_nighttime.md（待写）
 ```
 
 ## 核心设计原则
