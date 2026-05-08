@@ -309,6 +309,11 @@ function ChatPage({ tweaks }) {
   const [showPlus, setShowPlus] = useState(false);
   const [breathIdx, setBreathIdx] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
+  const [settingsView, setSettingsView] = useState('main');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [noteHistory, setNoteHistory] = useState([]);
+  const [noteHistoryLoading, setNoteHistoryLoading] = useState(false);
   const [connName, setConnName] = useState('Connie');
   const [nameInput, setNameInput] = useState('Connie');
   const [chatBg, setChatBg] = useState('');
@@ -375,16 +380,28 @@ function ChatPage({ tweaks }) {
     }
   }, [messages, typing]);
 
-  async function sendMessage() {
-    if (!input.trim()) return;
-    const txt = input;
-    setInput('');
-    setShowPlus(false);
-    const time = formatBJTime(new Date().toISOString());
-    const userMsg = { id: ++msgIdRef.current, role: 'user', text: txt, time, isNew: true };
-    setMessages((m) => [...m, userMsg]);
-    setTyping(true);
+  function doSearch(q) {
+    setSearchQuery(q);
+    if (!q.trim()) { setSearchResults([]); return; }
+    const lower = q.toLowerCase();
+    setSearchResults(messages.filter(m => m.text && m.text.toLowerCase().includes(lower)));
+  }
 
+  async function loadNoteHistory() {
+    setNoteHistoryLoading(true);
+    try {
+      const res = await fetch('http://localhost:8000/api/note?limit=50', {
+        headers: { 'Authorization': 'Bearer remoire-rebechalovesconnie-4ever' }
+      });
+      const data = await res.json();
+      if (data.ok && data.data?.notes) setNoteHistory(data.data.notes);
+    } catch (e) {}
+    setNoteHistoryLoading(false);
+  }
+
+  async function fetchReply(txt) {
+    const time = formatBJTime(new Date().toISOString());
+    setTyping(true);
     try {
       const res = await fetch('http://localhost:8000/api/chat/send', {
         method: 'POST',
@@ -446,6 +463,17 @@ function ChatPage({ tweaks }) {
       setTyping(false);
       setMessages((m) => [...m, { id: ++msgIdRef.current, role: 'ai', text: '连不上后端，请确认后端在运行中。', time, type: 'normal', isNew: true }]);
     }
+  }
+
+  async function sendMessage() {
+    if (!input.trim()) return;
+    const txt = input;
+    setInput('');
+    setShowPlus(false);
+    const time = formatBJTime(new Date().toISOString());
+    const userMsg = { id: ++msgIdRef.current, role: 'user', text: txt, time, isNew: true };
+    setMessages((m) => [...m, userMsg]);
+    await fetchReply(txt);
   }
 
   function toggleThinking(id) {
@@ -610,7 +638,7 @@ function ChatPage({ tweaks }) {
       {showSettings && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 200, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
           {/* Backdrop */}
-          <div onClick={() => setShowSettings(false)} style={{ position: 'absolute', inset: 0, background: 'rgba(40,33,28,0.35)' }} />
+          <div onClick={() => { setShowSettings(false); setSettingsView('main'); }} style={{ position: 'absolute', inset: 0, background: 'rgba(40,33,28,0.35)' }} />
           {/* Panel */}
           <div style={{
             position: 'relative', background: 'var(--bg-primary)',
@@ -621,6 +649,66 @@ function ChatPage({ tweaks }) {
             <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 0 4px' }}>
               <div style={{ width: 36, height: 4, borderRadius: 2, background: 'var(--border)' }} />
             </div>
+
+            {settingsView === 'search' && (
+              <div style={{ padding: '4px 20px 24px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                  <button onClick={() => setSettingsView('main')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: 'var(--text-tertiary)' }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M19 12H5M12 5l-7 7 7 7" /></svg>
+                  </button>
+                  <span style={{ fontSize: 'var(--text-md)', fontWeight: 500, color: 'var(--text-deep)' }}>查找聊天内容</span>
+                </div>
+                <input
+                  autoFocus
+                  value={searchQuery}
+                  onChange={e => doSearch(e.target.value)}
+                  placeholder="输入关键词搜索…"
+                  style={{ width: '100%', background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-sm)', padding: '10px 14px', fontSize: 'var(--text-sm)', color: 'var(--text-primary)', fontFamily: 'var(--font-body)', outline: 'none', marginBottom: 4 }}
+                />
+                <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginBottom: 12 }}>搜索范围：当前已加载的消息</div>
+                {searchQuery && searchResults.length === 0 && (
+                  <div style={{ textAlign: 'center', padding: 20, color: 'var(--text-tertiary)', fontSize: 'var(--text-sm)' }}>没有找到相关内容</div>
+                )}
+                <div style={{ maxHeight: 320, overflowY: 'auto' }}>
+                  {searchResults.map(m => (
+                    <div key={m.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--border-light)' }}>
+                      <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginBottom: 3 }}>{m.role === 'user' ? '静儿' : 'Connie'} · {m.time}</div>
+                      <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)', lineHeight: 1.6 }}>{m.text}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {settingsView === 'notes' && (
+              <div style={{ padding: '4px 20px 24px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+                  <button onClick={() => setSettingsView('main')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: 'var(--text-tertiary)' }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M19 12H5M12 5l-7 7 7 7" /></svg>
+                  </button>
+                  <span style={{ fontSize: 'var(--text-md)', fontWeight: 500, color: 'var(--text-deep)' }}>小纸条历史</span>
+                </div>
+                {noteHistoryLoading && (
+                  <div style={{ textAlign: 'center', padding: 20, color: 'var(--text-tertiary)', fontSize: 'var(--text-sm)' }}>加载中…</div>
+                )}
+                {!noteHistoryLoading && noteHistory.length === 0 && (
+                  <div style={{ textAlign: 'center', padding: 20, color: 'var(--text-tertiary)', fontSize: 'var(--text-sm)' }}>还没有纸条呢</div>
+                )}
+                <div style={{ maxHeight: 400, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {noteHistory.map(n => (
+                    <div key={n.id} style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-sm)', padding: '12px 14px' }}>
+                      <div style={{ fontFamily: 'var(--font-note, var(--font-diary))', fontSize: 14, color: 'var(--text-deep)', lineHeight: 1.7, marginBottom: 6 }}>{n.content}</div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-tertiary)' }}>
+                        <span>{formatBJTime(n.created_at)}</span>
+                        <span style={{ color: n.is_read ? 'var(--text-tertiary)' : 'var(--accent-pop)' }}>{n.is_read ? (n.kept ? '已收藏' : '已读') : '未读'}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {settingsView === 'main' && (<>
             <div style={{ padding: '4px 20px 16px', fontSize: 'var(--text-md)', fontWeight: 500, color: 'var(--text-deep)', textAlign: 'center' }}>聊天设置</div>
 
             {/* 我们 */}
@@ -670,10 +758,15 @@ function ChatPage({ tweaks }) {
                   style={{ flex: 1, background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-sm)', padding: '8px 12px', fontSize: 'var(--text-sm)', color: 'var(--text-primary)', fontFamily: 'var(--font-body)', outline: 'none' }}
                 />
                 <button onClick={() => {
-                  if (nameInput.trim() && nameInput !== connName) {
-                    const old = connName;
-                    setConnName(nameInput.trim());
-                    setMessages(m => [...m, { id: ++msgIdRef.current, role: 'system', text: `静儿修改你的备注为「${nameInput.trim()}」` }]);
+                  const newName = nameInput.trim();
+                  if (newName && newName !== connName) {
+                    setConnName(newName);
+                    const sysText = `静儿修改你的备注为「${newName}」`;
+                    const time = formatBJTime(new Date().toISOString());
+                    setMessages(m => [...m, { id: ++msgIdRef.current, role: 'system', text: sysText, time, isNew: true }]);
+                    setShowSettings(false);
+                    fetchReply(sysText);
+                    return;
                   }
                   setShowSettings(false);
                 }} style={{ background: 'var(--accent)', color: '#FAF8F4', border: 'none', borderRadius: 'var(--radius-sm)', padding: '8px 14px', fontSize: 'var(--text-sm)', cursor: 'pointer', flexShrink: 0 }}>保存</button>
@@ -685,13 +778,16 @@ function ChatPage({ tweaks }) {
             {/* 内容管理 */}
             <div style={{ padding: '0 20px 8px' }}>
               <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', letterSpacing: '0.06em', marginBottom: 8 }}>内容管理</div>
-              {[['查找聊天内容', 'M21 21l-6-6m2-5a7 7 0 1 1-14 0 7 7 0 0 1 14 0z'], ['小纸条历史', 'M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z']].map(([label, path]) => (
-                <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 0', borderBottom: '1px solid var(--border-light)', cursor: 'pointer' }}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.5"><path d={path} /></svg>
-                  <span style={{ flex: 1, fontSize: 'var(--text-base)', color: 'var(--text-primary)' }}>{label}</span>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5"><path d="M9 18l6-6-6-6" /></svg>
-                </div>
-              ))}
+              <div onClick={() => setSettingsView('search')} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 0', borderBottom: '1px solid var(--border-light)', cursor: 'pointer' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.5"><path d="M21 21l-6-6m2-5a7 7 0 1 1-14 0 7 7 0 0 1 14 0z" /></svg>
+                <span style={{ flex: 1, fontSize: 'var(--text-base)', color: 'var(--text-primary)' }}>查找聊天内容</span>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5"><path d="M9 18l6-6-6-6" /></svg>
+              </div>
+              <div onClick={() => { setSettingsView('notes'); loadNoteHistory(); }} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 0', borderBottom: '1px solid var(--border-light)', cursor: 'pointer' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.5"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" /></svg>
+                <span style={{ flex: 1, fontSize: 'var(--text-base)', color: 'var(--text-primary)' }}>小纸条历史</span>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5"><path d="M9 18l6-6-6-6" /></svg>
+              </div>
             </div>
 
             <div style={{ height: 1, background: 'var(--border-light)', margin: '12px 0' }} />
@@ -728,12 +824,14 @@ function ChatPage({ tweaks }) {
                 if (window.confirm('确定清除所有聊天记录？')) {
                   setMessages([]);
                   setShowSettings(false);
+                  setSettingsView('main');
                 }
               }}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" strokeWidth="1.5"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
                 <span style={{ flex: 1, fontSize: 'var(--text-base)', color: 'var(--danger)' }}>清除聊天记录</span>
               </div>
             </div>
+            </>)}
           </div>
         </div>
       )}

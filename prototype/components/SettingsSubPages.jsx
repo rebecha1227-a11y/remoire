@@ -960,8 +960,161 @@ function FontSettings({ tweaks, onBack }) {
   );
 }
 
+// ═══════════════════════════════════════════
+// 10. 小纸条历史
+// ═══════════════════════════════════════════
+function NoteHistorySettings({ onBack }) {
+  const [notes, setNotes] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    async function load() {
+      try {
+        const res = await fetch('http://localhost:8000/api/note?limit=50', {
+          headers: { 'Authorization': 'Bearer remoire-rebechalovesconnie-4ever' }
+        });
+        const data = await res.json();
+        if (data.ok && data.data?.notes) {
+          setNotes(data.data.notes);
+        }
+      } catch (e) {}
+      setLoading(false);
+    }
+    load();
+  }, []);
+
+  function formatDate(iso) {
+    if (!iso) return '';
+    const d = new Date(iso.endsWith('Z') || iso.includes('+') ? iso : iso + 'Z');
+    const bj = new Date(d.getTime() + 8 * 3600000);
+    const mm = String(bj.getUTCMonth() + 1).padStart(2, '0');
+    const dd = String(bj.getUTCDate()).padStart(2, '0');
+    const hh = String(bj.getUTCHours()).padStart(2, '0');
+    const mi = String(bj.getUTCMinutes()).padStart(2, '0');
+    return `${mm}-${dd} ${hh}:${mi}`;
+  }
+
+  return (
+    <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px', paddingBottom: 88 }}>
+      <SubPageHeader onBack={onBack} title="小纸条历史" subtitle="Connie 留过的所有纸条" />
+
+      {loading && <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-tertiary)', fontSize: 13 }}>加载中…</div>}
+
+      {!loading && notes.length === 0 && (
+        <Card padding="lg" style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>还没有纸条呢</div>
+        </Card>
+      )}
+
+      <Stack gap="sm">
+        {notes.map(n => (
+          <Card key={n.id} padding="md">
+            <div style={{ fontFamily: 'var(--font-note, var(--font-diary))', fontSize: 15, color: 'var(--text-deep)', lineHeight: 1.7, marginBottom: 8 }}>
+              {n.content}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{formatDate(n.created_at)}</span>
+              <span style={{ fontSize: 11, color: n.is_read ? 'var(--text-tertiary)' : 'var(--accent-pop)' }}>
+                {n.is_read ? (n.kept ? '已收藏' : '已读') : '未读'}
+              </span>
+            </div>
+          </Card>
+        ))}
+      </Stack>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════
+// 11. 记忆候选审核
+// ═══════════════════════════════════════════
+function MemoryCandidatesSettings({ onBack }) {
+  const [candidates, setCandidates] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+
+  async function load() {
+    try {
+      const res = await fetch('http://localhost:8000/api/memory/candidates?status=pending&limit=50', {
+        headers: { 'Authorization': 'Bearer remoire-rebechalovesconnie-4ever' }
+      });
+      const data = await res.json();
+      if (data.ok && Array.isArray(data.data)) {
+        setCandidates(data.data);
+      }
+    } catch (e) {}
+    setLoading(false);
+  }
+
+  React.useEffect(() => { load(); }, []);
+
+  async function accept(id) {
+    try {
+      const res = await fetch(`http://localhost:8000/api/memory/candidates/${id}/accept`, {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer remoire-rebechalovesconnie-4ever', 'Content-Type': 'application/json' },
+        body: '{}',
+      });
+      const data = await res.json();
+      if (data.ok) setCandidates(c => c.filter(x => x.id !== id));
+    } catch (e) {}
+  }
+
+  async function reject(id) {
+    try {
+      const res = await fetch(`http://localhost:8000/api/memory/candidates/${id}/reject`, {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer remoire-rebechalovesconnie-4ever' },
+      });
+      const data = await res.json();
+      if (data.ok) setCandidates(c => c.filter(x => x.id !== id));
+    } catch (e) {}
+  }
+
+  return (
+    <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px', paddingBottom: 88 }}>
+      <SubPageHeader onBack={onBack} title="记忆候选" subtitle="低置信度的候选需要你确认才会进入正式记忆库" />
+
+      {loading && <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-tertiary)', fontSize: 13 }}>加载中…</div>}
+
+      {!loading && candidates.length === 0 && (
+        <Card padding="lg" style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>没有待审核的候选</div>
+        </Card>
+      )}
+
+      <Stack gap="sm">
+        {candidates.map(c => (
+          <Card key={c.id} padding="md">
+            <div style={{ fontSize: 14, color: 'var(--text-primary)', lineHeight: 1.6, marginBottom: 8 }}>
+              {c.content}
+            </div>
+            {c.tags && c.tags.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 10 }}>
+                {c.tags.map((t, i) => <Pill key={i} tone="neutral">{t}</Pill>)}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button onClick={() => reject(c.id)} style={{
+                padding: '6px 14px', borderRadius: 'var(--radius-sm)',
+                border: '1px solid var(--border)', background: 'transparent',
+                fontSize: 12, color: 'var(--text-tertiary)', cursor: 'pointer', fontFamily: 'var(--font-body)',
+              }}>不要</button>
+              <button onClick={() => accept(c.id)} style={{
+                padding: '6px 14px', borderRadius: 'var(--radius-sm)',
+                border: 'none', background: 'var(--accent)',
+                fontSize: 12, color: '#FAF8F4', cursor: 'pointer', fontWeight: 500, fontFamily: 'var(--font-body)',
+              }}>记住</button>
+            </div>
+          </Card>
+        ))}
+      </Stack>
+    </div>
+  );
+}
+
 Object.assign(window, {
   ProactiveSettings, PromptSettings, ModelSettings,
   WeChatSettings, MCPSettings, ImportSettings, PushSettings, DatesSettings, ExportSettings,
   BubbleSettings, NoteSettings, CoverSettings, FontSettings,
+  NoteHistorySettings, MemoryCandidatesSettings,
 });

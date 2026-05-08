@@ -19,7 +19,7 @@ def _load_prompt(filename: str) -> str:
 # ──────────────────────────────────────
 
 async def extract_candidates(conversation_id: str, messages: list[dict]) -> list[dict]:
-    """分析最近的聊天消息，提取记忆候选。"""
+    """分析最近的聊天消息，提取记忆候选。confidence >= 0.7 自动入库，其余留 pending。"""
     tagging_prompt = _load_prompt("tagging.md")
     if not tagging_prompt:
         return []
@@ -47,19 +47,43 @@ async def extract_candidates(conversation_id: str, messages: list[dict]) -> list
         return []
 
     saved = []
-    async with get_db() as db:
-        for c in candidates:
+    for c in candidates:
+        content = c["content"]
+        tags = c.get("tags", [])
+        confidence = c.get("confidence", 0.5)
+
+        if await _is_duplicate(content):
+            continue
+
+        if confidence >= 0.7:
+            result = await create_memory(content, tags=tags)
+            saved.append({
+                "id": result["memory"]["id"],
+                "content": content,
+                "tags": tags,
+                "memory_type": c.get("memory_type", "fact"),
+                "confidence": confidence,
+                "status": "accepted",
+            })
+        else:
             cid = str(uuid.uuid4())
             now = datetime.utcnow().isoformat()
-            await db.execute(
-                """INSERT INTO memory_candidates
-                   (id, conversation_id, content, tags_json, status, created_at)
-                   VALUES (?, ?, ?, ?, 'pending', ?)""",
-                (cid, conversation_id, c["content"], json.dumps(c.get("tags", []), ensure_ascii=False), now),
-            )
-            saved.append({"id": cid, "content": c["content"], "tags": c.get("tags", []),
-                          "memory_type": c.get("memory_type", "fact"), "confidence": c.get("confidence", 0.5)})
-        await db.commit()
+            async with get_db() as db:
+                await db.execute(
+                    """INSERT INTO memory_candidates
+                       (id, conversation_id, content, tags_json, status, created_at)
+                       VALUES (?, ?, ?, ?, 'pending', ?)""",
+                    (cid, conversation_id, content, json.dumps(tags, ensure_ascii=False), now),
+                )
+                await db.commit()
+            saved.append({
+                "id": cid,
+                "content": content,
+                "tags": tags,
+                "memory_type": c.get("memory_type", "fact"),
+                "confidence": confidence,
+                "status": "pending",
+            })
 
     return saved
 
@@ -82,6 +106,27 @@ def _bigrams(text: str) -> set[str]:
     """把文本拆成双字词组的集合。比如 '静儿喜欢咖啡' → {'静儿', '儿喜', '喜欢', '欢咖', '咖啡'}"""
     text = text.strip()
     return {text[i:i+2] for i in range(len(text) - 1)}
+
+
+async def _is_duplicate(content: str, threshold: float = 0.6) -> bool:
+    """检查新内容是否与已有记忆高度重复。"""
+    async with get_db() as db:
+        async with db.execute("SELECT content FROM memories ORDER BY created_at DESC LIMIT 200") as cur:
+            rows = await cur.fetchall()
+    if not rows:
+        return False
+    new_grams = _bigrams(content)
+    if not new_grams:
+        return False
+    for row in rows:
+        existing_grams = _bigrams(row["content"])
+        if not existing_grams:
+            continue
+        overlap = len(new_grams & existing_grams)
+        similarity = overlap / min(len(new_grams), len(existing_grams))
+        if similarity >= threshold:
+            return True
+    return False
 
 
 # ──────────────────────────────────────
@@ -261,6 +306,35 @@ async def recall(query: str, limit: int = 5) -> list[dict]:
         }
         for item in results
     ]
+
+
+# ──────────────────────────────────────
+#  直接写入记忆（MCP / 手动）
+# ──────────────────────────────────────
+
+async def create_memory(content: str, tags: list[str] | None = None) -> dict:
+    """直接写入正式记忆（跳过候选流程），写入前去重，返回记忆 + 关联旧记忆。"""
+    tags = tags or []
+
+    if await _is_duplicate(content):
+        return {"memory": {"id": None, "content": content, "tags": tags, "duplicate": True}, "associated": []}
+
+    mem_id = str(uuid.uuid4())
+    now = datetime.utcnow().isoformat()
+
+    async with get_db() as db:
+        await db.execute(
+            """INSERT INTO memories (id, content, tags_json, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (mem_id, content, json.dumps(tags, ensure_ascii=False), now, now),
+        )
+        await db.commit()
+
+    associated = await find_associated(content, tags, limit=3, exclude_id=mem_id)
+    return {
+        "memory": {"id": mem_id, "content": content, "tags": tags},
+        "associated": associated,
+    }
 
 
 # ──────────────────────────────────────

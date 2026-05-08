@@ -86,6 +86,8 @@ function SettingsPage({ tweaks }) {
       note: NoteSettings,
       cover: CoverSettings,
       font: FontSettings,
+      noteHistory: NoteHistorySettings,
+      memoryCandidates: MemoryCandidatesSettings,
     };
     const Page = subPages[panel];
     if (Page) return <Page tweaks={tweaks} onBack={() => setPanel(null)} />;
@@ -112,6 +114,8 @@ function SettingsPage({ tweaks }) {
       <SettingsSectionTitle title="关系与陪伴" />
       <SettingRow label="主动消息" sub="发送入口 · 频率 · 时段 · 类型" onClick={() => setPanel('proactive')}><ChevronRight /></SettingRow>
       <SettingRow label="小纸条" sub="打开 app 时的静默惊喜"><SettingsToggle on={toggles.noteCard} onChange={() => toggle('noteCard')} /></SettingRow>
+      <SettingRow label="小纸条历史" sub="查看 Connie 留过的纸条" onClick={() => setPanel('noteHistory')}><ChevronRight /></SettingRow>
+      <SettingRow label="记忆候选" sub="审核低置信度记忆" onClick={() => setPanel('memoryCandidates')}><ChevronRight /></SettingRow>
       <SettingRow label="日记解锁权限" sub="允许 Connie 申请查看上锁日记"><SettingsToggle on={toggles.diaryUnlock} onChange={() => toggle('diaryUnlock')} /></SettingRow>
 
       {/* ─── AI 与模型 ─── */}
