@@ -63,7 +63,7 @@ function Bubble({ msg, isNew, bubbleStyle, showAvatar, showTail, thinkingExpande
     default: {
       sendBg: 'var(--bubble-send)', sendColor: 'var(--bubble-send-text)',
       recvBg: 'var(--bubble-receive)', recvColor: 'var(--bubble-receive-text)',
-      sendRadius: '18px 18px 4px 18px', recvRadius: '18px 18px 18px 4px',
+      sendRadius: '18px', recvRadius: '18px',
       padding: '10px 14px', sendShadow: 'none', recvShadow: 'none',
     },
     imessage: {
@@ -314,8 +314,8 @@ function ChatPage({ tweaks }) {
   const [searchResults, setSearchResults] = useState([]);
   const [noteHistory, setNoteHistory] = useState([]);
   const [noteHistoryLoading, setNoteHistoryLoading] = useState(false);
-  const [connName, setConnName] = useState('Connie');
-  const [nameInput, setNameInput] = useState('Connie');
+  const [connName, setConnName] = useState(() => localStorage.getItem('remoire_conn_name') || 'Connie');
+  const [nameInput, setNameInput] = useState(() => localStorage.getItem('remoire_conn_name') || 'Connie');
   const [chatBg, setChatBg] = useState('');
   const [connieAvatar, setConnieAvatar] = useState(null);
   const [jingAvatar, setJingAvatar] = useState(null);
@@ -340,15 +340,16 @@ function ChatPage({ tweaks }) {
         if (data.ok && data.data.messages.length > 0) {
           const loaded = [];
           for (const m of data.data.messages) {
-            const role = m.role === 'assistant' ? 'ai' : 'user';
             const time = formatBJTime(m.created_at);
-            if (role === 'ai') {
+            if (m.role === 'assistant') {
               const segments = m.content.split('\n\n').map(s => s.trim()).filter(s => s.length > 0);
               for (const seg of segments) {
-                loaded.push({ id: ++msgIdRef.current, role, text: seg, time, type: 'normal' });
+                loaded.push({ id: ++msgIdRef.current, role: 'ai', text: seg, time, type: 'normal' });
               }
+            } else if (m.content.startsWith('静儿修改')) {
+              loaded.push({ id: ++msgIdRef.current, role: 'system', text: m.content, time });
             } else {
-              loaded.push({ id: ++msgIdRef.current, role, text: m.content, time, type: 'normal' });
+              loaded.push({ id: ++msgIdRef.current, role: 'user', text: m.content, time, type: 'normal' });
             }
           }
           setMessages(loaded);
@@ -761,6 +762,7 @@ function ChatPage({ tweaks }) {
                   const newName = nameInput.trim();
                   if (newName && newName !== connName) {
                     setConnName(newName);
+                    localStorage.setItem('remoire_conn_name', newName);
                     const sysText = `静儿修改你的备注为「${newName}」`;
                     const time = formatBJTime(new Date().toISOString());
                     setMessages(m => [...m, { id: ++msgIdRef.current, role: 'system', text: sysText, time, isNew: true }]);
