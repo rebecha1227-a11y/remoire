@@ -343,6 +343,13 @@ CREATE TABLE IF NOT EXISTS memories (
 weight(t) = weight₀ × e^(-decay_rate × t / (1 + arousal × 5 + revisit_bonus))
 ```
 
+其中：
+- `t`：距 `created_at` 的天数
+- `weight₀`：初始权重，默认 1.0
+- `decay_rate`：衰减速率，按 memory_type 不同取值（见上表）
+- `arousal`：情感强度 0.0~1.0，高 arousal 记忆遗忘更慢
+- `revisit_bonus`：激活续命加成，计算方式为 `min(trigger_count × 0.1, 1.0)`。每次被 `recall()` 或 `find_associated()` 命中时 `trigger_count` +1，同时 `last_triggered_at` 更新为当前时间。这意味着经常被唤起的记忆衰减更慢（分母更大），但 bonus 封顶为 1.0 防止无限续命
+
 ### 关联记忆机制（写就是读）
 
 这是记忆系统最核心的设计之一，灵感来自"AI不需要决定要想什么——它写什么，系统就让它看见什么"。
@@ -360,10 +367,9 @@ score = relevance × (1 + arousal × 0.3) × weight_factor
 
 **被关联浮现时的副作用**：
 - `last_triggered_at` 更新为当前时间
-- `trigger_count` +1
-- `weight` 获得 revisit_bonus（+0.1，上限不超过初始值）
+- `trigger_count` +1（通过衰减公式中的 `revisit_bonus` 自动减缓遗忘，不直接修改 `weight`）
 
-这意味着：经常被新记忆关联到的旧记忆会持续"活着"，不会被自然遗忘杀死。
+这意味着：经常被新记忆关联到的旧记忆衰减更慢，持续"活着"，不会被自然遗忘杀死。
 
 **向量检索升级路径**：
 
@@ -644,10 +650,6 @@ CREATE INDEX IF NOT EXISTS idx_delivery_message
 -- 成本记录：按用途和时间查询
 CREATE INDEX IF NOT EXISTS idx_usage_source
     ON usage_logs(source, created_at);
-
--- 聊天：按会话和时间查询
-CREATE INDEX IF NOT EXISTS idx_conv_session
-    ON conversations(session_id, created_at);
 
 -- 聊天：按时间查询（全局）
 CREATE INDEX IF NOT EXISTS idx_conv_created

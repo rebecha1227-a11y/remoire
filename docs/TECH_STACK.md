@@ -241,10 +241,37 @@ Phase 1 用 SQLite 先跑通。但表结构从一开始就按"多入口"设计�
 | 中期（300-2000 条） | 向量语义检索 | 本地 nomic-embed-text 或 sentence-transformers | ¥0 |
 | 后期（> 2000 条） | 向量语义检索 | 云端 embedding API | 按量 |
 
+**Embedding 服务部署方案**：
+
+| 方案 | 模型 | 部署方式 | 调用接口 | 向量维度 | 成本 |
+|---|---|---|---|---|---|
+| 本地（推荐首选） | nomic-embed-text | Ollama（`ollama pull nomic-embed-text`） | `POST http://localhost:11434/api/embeddings`，body: `{"model":"nomic-embed-text","prompt":"文本"}` | 768 | ¥0 |
+| 本地备选 | sentence-transformers | Python 进程内加载（`SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')` | `model.encode("文本")` 返回 numpy 数组 | 384 | ¥0 |
+| 云端 | 硅基流动 / OpenAI | OpenAI 兼容 API | `POST {api_base}/embeddings`，body: `{"model":"...","input":"文本"}` | 各模型不同 | 按量 |
+
+Ollama embedding 调用示例（与 `llm.py` 的 httpx 客户端一致）：
+```python
+async def get_embedding(text: str) -> list[float]:
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        resp = await client.post(
+            "http://localhost:11434/api/embeddings",
+            json={"model": "nomic-embed-text", "prompt": text}
+        )
+        return resp.json()["embedding"]  # 768 维 float 列表
+```
+
+超时 5 秒，失败不重试直接回退关键词召回。embedding 计算与记忆写入解耦——写入先完成，embedding 异步补填，失败时该条记忆的 `embedding` 保持 NULL。
+
+存储：`embedding` 字段类型为 BLOB，写入时用 `struct.pack` 序列化 float 数组，读取时反序列化后计算余弦相似度。不使用额外的向量数据库。embedding 计算失败（Ollama 未启动、超时等）时回退到关键词召回，不阻塞记忆写入链路。
+
 关联打分考虑三个维度：
 - **语义相关度**（首发用关键词重叠，后续用余弦相似度）
 - **情绪强度**（高 arousal 的旧记忆更容易被关联浮现）
 - **当前权重**（经常被关联到的记忆会"活"得更久）
+
+**防编造机制**：规则权威来源是 `backend/app/prompts/identity.md` 的"记忆与连续性"部分。实现层面，`chat_service.py` 的 `_build_system_prompt()` 在召回为空时注入明确的"不要编造"提示。
+
+**参考架构**：Ombre Brain（长期情感记忆系统）的多维搜索打分、艾宾浩斯遗忘曲线、activation count 续命机制。详见 `docs/MEMORY_UPGRADE_PLAN.md`。
 
 ---
 

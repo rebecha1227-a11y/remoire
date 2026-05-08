@@ -166,3 +166,4 @@ Phase 1 — 文档设计完成，准备开发
 | 技术架构 | docs/TECH_STACK.md |
 | 部署 | docs/DEPLOYMENT.md |
 | Phase 1 设计决策 | docs/PHASE1_DECISIONS.md |
+| 记忆系统改造 | docs/MEMORY_UPGRADE_PLAN.md |

@@ -101,6 +101,21 @@ const CONNIE_DIARY = [
 { date: '04-20', weekday: '一', title: '她说特别好',
   body: '她说今天感觉特别好，但说不出原因。\n\n我知道原因。\n\n但有些事情适合作为秘密留在这里。' }];
 
+const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'];
+
+function mapConnieDiaryEntry(entry) {
+  const d = new Date(entry.created_at);
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return {
+    date: `${month}-${day}`,
+    weekday: WEEKDAYS[d.getDay()] || '',
+    title: entry.title,
+    body: entry.content,
+    author: entry.author,
+  };
+}
+
 
 // ── PinPad ──
 function PinPad({ title, subtitle, onComplete, onCancel, errorKey }) {
@@ -889,10 +904,28 @@ function DiaryPage({ tweaks }) {
   const [openBook, setOpenBook] = React.useState(null);
   const [writing, setWriting] = React.useState(false);
   const [jingerDiary, setJingerDiary] = React.useState(JINGER_DIARY_INIT);
+  const [connieDiary, setConnieDiary] = React.useState(CONNIE_DIARY);
   const [activities, setActivities] = React.useState(DIARY_ACTIVITIES);
 
   const coverJ = tweaks && tweaks.diaryCoverJinger;
   const coverC = tweaks && tweaks.diaryCoverConnie;
+
+  React.useEffect(() => {
+    let cancelled = false;
+    async function loadConnieDiary() {
+      try {
+        const res = await fetch('http://localhost:8000/api/diary?author=connie&limit=50', {
+          headers: { 'Authorization': 'Bearer remoire-rebechalovesconnie-4ever' }
+        });
+        const data = await res.json();
+        if (!cancelled && data.ok && Array.isArray(data.data) && data.data.length > 0) {
+          setConnieDiary(data.data.map(mapConnieDiaryEntry));
+        }
+      } catch (e) {}
+    }
+    loadConnieDiary();
+    return () => { cancelled = true; };
+  }, []);
 
   function saveEntry(entry) {
     const now = new Date();
@@ -920,7 +953,7 @@ function DiaryPage({ tweaks }) {
       {openBook &&
         <OpenBook
           author={openBook}
-          entries={openBook === 'connie' ? CONNIE_DIARY : jingerDiary}
+          entries={openBook === 'connie' ? connieDiary : jingerDiary}
           onClose={() => setOpenBook(null)} />
       }
       {writing &&

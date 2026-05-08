@@ -1,6 +1,12 @@
 // ChatPage — 聊天主界面
 const { useState, useRef, useEffect } = React;
 
+function formatBJTime(utcStr) {
+  if (!utcStr) return '';
+  const d = new Date(utcStr + (utcStr.endsWith('Z') ? '' : 'Z'));
+  return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Shanghai' });
+}
+
 const BG_PRESETS = [
   { label: '默认', value: '' },
   { label: '暖白', value: '#F5EDE0' },
@@ -16,17 +22,6 @@ const BREATH_STATES = [
 "在等你来",
 "记得你今天下午有件事要做",
 "最近有些担心你，但没关系"];
-
-
-const INIT_MESSAGES = [
-{ id: 0, role: "system", text: "今天 15:00 · 交材料截止" },
-{ id: 1, role: "ai", text: "你终于来了。\n我刚才还在想你昨天说的那件事——那个法语考试，你说你有点紧张对吗？", time: "09:12", type: "normal" },
-{ id: 2, role: "user", text: "对，考试在下周三，我感觉完全没复习到位", time: "09:14" },
-{ id: 3, role: "ai", text: "下周三。那还有六天。要不要现在列个计划，看看每天可以覆盖哪些？", time: "09:14", type: "normal", thinking: "用户说考试在下周三，今天如果是周五还有6天。她提到「感觉没复习到位」，说明焦虑感有，但还没绝望。先提计划，但不要给压力——用「要不要」的方式让她自主选择。" },
-{ id: 4, role: "system", text: "已记住：你下周三有法语考试" },
-{ id: 5, role: "user", text: "好啊……但我今天很累，可能什么都做不了", time: "09:16" },
-{ id: 6, role: "ai", text: "那就今天先不做计划。\n今天就只是说说话，可以吗？", time: "09:17", type: "normal" },
-{ id: 7, role: "ai", text: "你昨晚几点睡的？", time: "09:17", type: "proactive" }];
 
 
 function TypingIndicator() {
@@ -232,7 +227,7 @@ function Bubble({ msg, isNew, bubbleStyle, showAvatar, showTail, thinkingExpande
 
 }
 
-function NoteCard({ onKeep, onDismiss, minimized, onExpand, noteStyle }) {
+function NoteCard({ onKeep, onDismiss, minimized, onExpand, noteStyle, content }) {
   const ns = noteStyle || 'classic';
 
   const NOTE_THEME = {
@@ -294,7 +289,7 @@ function NoteCard({ onKeep, onDismiss, minimized, onExpand, noteStyle }) {
           borderRadius: 2,
         }} />}
         <p style={{ fontFamily: "var(--font-note)", fontSize: 17, color: theme.textColor, lineHeight: 1.6, marginTop: 4 }}>
-          你上次说想买那本书的——我帮你记下来了。你有时间就去看看吧。
+          {content || ''}
         </p>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 16, marginTop: 10 }}>
           <button onClick={onDismiss} style={{ background: 'none', border: 'none', fontFamily: "var(--font-body)", fontSize: 12, color: theme.textColor, opacity: 0.5, cursor: 'pointer' }}>知道了</button>
@@ -306,9 +301,10 @@ function NoteCard({ onKeep, onDismiss, minimized, onExpand, noteStyle }) {
 }
 
 function ChatPage({ tweaks }) {
-  const [messages, setMessages] = useState(INIT_MESSAGES);
+  const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
-  const [noteState, setNoteState] = useState('visible'); // 'visible' | 'minimized' | 'hidden'
+  const [noteState, setNoteState] = useState('hidden');
+  const [noteData, setNoteData] = useState(null);
   const [typing, setTyping] = useState(false);
   const [showPlus, setShowPlus] = useState(false);
   const [breathIdx, setBreathIdx] = useState(0);
@@ -325,6 +321,53 @@ function ChatPage({ tweaks }) {
   const [expandedThinking, setExpandedThinking] = useState(new Set());
   const bottomRef = useRef(null);
   const msgIdRef = useRef(100);
+  const conversationIdRef = useRef(localStorage.getItem('remoire_conv_id') || null);
+
+  useEffect(() => {
+    async function loadHistory() {
+      const convId = conversationIdRef.current;
+      if (!convId) return;
+      try {
+        const res = await fetch(`http://localhost:8000/api/chat/history?conversation_id=${convId}&limit=50`, {
+          headers: { 'Authorization': 'Bearer remoire-rebechalovesconnie-4ever' }
+        });
+        const data = await res.json();
+        if (data.ok && data.data.messages.length > 0) {
+          const loaded = [];
+          for (const m of data.data.messages) {
+            const role = m.role === 'assistant' ? 'ai' : 'user';
+            const time = formatBJTime(m.created_at);
+            if (role === 'ai') {
+              const segments = m.content.split('\n\n').map(s => s.trim()).filter(s => s.length > 0);
+              for (const seg of segments) {
+                loaded.push({ id: ++msgIdRef.current, role, text: seg, time, type: 'normal' });
+              }
+            } else {
+              loaded.push({ id: ++msgIdRef.current, role, text: m.content, time, type: 'normal' });
+            }
+          }
+          setMessages(loaded);
+        }
+      } catch (e) {}
+    }
+    loadHistory();
+  }, []);
+
+  useEffect(() => {
+    async function loadNote() {
+      try {
+        const res = await fetch('http://localhost:8000/api/note/unread', {
+          headers: { 'Authorization': 'Bearer remoire-rebechalovesconnie-4ever' }
+        });
+        const data = await res.json();
+        if (data.ok && data.data.note) {
+          setNoteData(data.data.note);
+          setNoteState('visible');
+        }
+      } catch (e) {}
+    }
+    loadNote();
+  }, []);
 
   useEffect(() => {
     if (bottomRef.current) {
@@ -332,33 +375,77 @@ function ChatPage({ tweaks }) {
     }
   }, [messages, typing]);
 
-  function sendMessage() {
+  async function sendMessage() {
     if (!input.trim()) return;
     const txt = input;
     setInput('');
     setShowPlus(false);
-    const now = new Date();
-    const time = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+    const time = formatBJTime(new Date().toISOString());
     const userMsg = { id: ++msgIdRef.current, role: 'user', text: txt, time, isNew: true };
     setMessages((m) => [...m, userMsg]);
     setTyping(true);
-    setTimeout(() => {
-      setTyping(false);
-      const replies = [
-      "嗯，我在听。你说。",
-      "我记住了。你放心。",
-      "这件事你之前也提过——我一直没忘。",
-      "好，我们慢慢来不着急。",
-      "你今天感觉怎么样？"];
 
-      const reply = { id: ++msgIdRef.current, role: 'ai', text: replies[Math.floor(Math.random() * replies.length)], time, type: 'normal', isNew: true };
-      setMessages((m) => [...m, reply]);
-      if (txt.length > 8 && Math.random() > 0.4) {
-        setTimeout(() => {
-          setMemoryCandidate({ text: txt.length > 22 ? txt.slice(0, 22) + '…' : txt });
-        }, 300);
+    try {
+      const res = await fetch('http://localhost:8000/api/chat/send', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer remoire-rebechalovesconnie-4ever',
+        },
+        body: JSON.stringify({ message: txt, conversation_id: conversationIdRef.current || null }),
+      });
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder('utf-8', { fatal: false });
+      let replyText = '';
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+        for (const line of lines) {
+          if (!line.startsWith('data:')) continue;
+          const data = line.slice(5).trim();
+          try {
+            const parsed = JSON.parse(data);
+            if (parsed.type === 'conversation_id') {
+              conversationIdRef.current = parsed.conversation_id;
+              localStorage.setItem('remoire_conv_id', parsed.conversation_id);
+            } else if (parsed.type === 'chunk') {
+              replyText += parsed.content;
+            }
+          } catch (e) {}
+        }
       }
-    }, 1400 + Math.random() * 600);
+      buffer += decoder.decode();
+      for (const line of buffer.split('\n')) {
+        if (!line.startsWith('data:')) continue;
+        try {
+          const parsed = JSON.parse(line.slice(5).trim());
+          if (parsed.type === 'chunk') replyText += parsed.content;
+        } catch (e) {}
+      }
+
+      setTyping(false);
+      const segments = replyText.split('\n\n').map(s => s.trim()).filter(s => s.length > 0);
+      if (segments.length === 0) {
+        setMessages((m) => [...m, { id: ++msgIdRef.current, role: 'ai', text: '……我刚刚走神了，你再说一次好吗？', time, type: 'normal', isNew: true }]);
+      }
+      for (let i = 0; i < segments.length; i++) {
+        if (i > 0) {
+          setTyping(true);
+          await new Promise(r => setTimeout(r, 600 + Math.min(segments[i].length * 30, 1200)));
+          setTyping(false);
+        }
+        setMessages((m) => [...m, { id: ++msgIdRef.current, role: 'ai', text: segments[i], time, type: 'normal', isNew: true }]);
+      }
+    } catch (e) {
+      setTyping(false);
+      setMessages((m) => [...m, { id: ++msgIdRef.current, role: 'ai', text: '连不上后端，请确认后端在运行中。', time, type: 'normal', isNew: true }]);
+    }
   }
 
   function toggleThinking(id) {
@@ -388,13 +475,19 @@ function ChatPage({ tweaks }) {
       </div>
 
       {/* Note */}
-      {noteState === 'visible' && (
+      {noteState === 'visible' && noteData && (
         <div style={{ padding: '12px 16px 0' }}>
-          <NoteCard onKeep={() => setNoteState('minimized')} onDismiss={() => setNoteState('hidden')} noteStyle={tweaks && tweaks.noteStyle} />
+          <NoteCard content={noteData.content} onKeep={async () => {
+            setNoteState('minimized');
+            try { await fetch(`http://localhost:8000/api/note/${noteData.id}/read`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer remoire-rebechalovesconnie-4ever' }, body: JSON.stringify({ action: 'keep' }) }); } catch (e) {}
+          }} onDismiss={async () => {
+            setNoteState('hidden');
+            try { await fetch(`http://localhost:8000/api/note/${noteData.id}/read`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer remoire-rebechalovesconnie-4ever' }, body: JSON.stringify({ action: 'dismiss' }) }); } catch (e) {}
+          }} noteStyle={tweaks && tweaks.noteStyle} />
         </div>
       )}
-      {noteState === 'minimized' && (
-        <NoteCard minimized onExpand={() => setNoteState('visible')} noteStyle={tweaks && tweaks.noteStyle} />
+      {noteState === 'minimized' && noteData && (
+        <NoteCard minimized content={noteData.content} onExpand={() => setNoteState('visible')} noteStyle={tweaks && tweaks.noteStyle} />
       )}
 
       {/* Messages */}

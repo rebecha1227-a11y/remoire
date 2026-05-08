@@ -1,0 +1,175 @@
+import uuid
+import asyncio
+import json
+import logging
+from datetime import datetime, timezone, timedelta
+from pathlib import Path
+from app.database import get_db
+from app.llm import call_llm, call_llm_with_tools, ModelConfig
+from app.config import DAILY_API_BASE, DAILY_API_KEY, DAILY_MODEL_ID
+from app.services import memory_service
+from app.tools import CONNIE_TOOLS, execute_tool
+
+logger = logging.getLogger(__name__)
+
+PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
+BJ_TZ = timezone(timedelta(hours=8))
+
+def _load_prompt(filename: str) -> str:
+    path = PROMPTS_DIR / filename
+    return path.read_text(encoding="utf-8") if path.exists() else ""
+
+def _build_system_prompt(recalled_memories: list[dict] | None = None) -> str:
+    identity = _load_prompt("identity.md")
+    voice = _load_prompt("voice.md")
+    thinking = _load_prompt("thinking.md")
+    now = datetime.now(BJ_TZ)
+    time_of_day = "reply_daytime.md" if 6 <= now.hour < 22 else "reply_nighttime.md"
+    context = _load_prompt(time_of_day)
+
+    weekdays = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
+    time_block = f"【当前时间】{now.strftime('%Y年%m月%d日')} {weekdays[now.weekday()]} {now.strftime('%H:%M')}"
+
+    memory_block = ""
+    if recalled_memories:
+        lines = [f"- {m['content']}" for m in recalled_memories]
+        memory_block = "【关于静儿的记忆】\n" + "\n".join(lines) + "\n\n（以上是你记得的关于静儿的事，自然融入对话，不要逐条播报）"
+    else:
+        memory_block = "【关于静儿的记忆】\n当前没有召回到与这条消息相关的具体记忆。不要编造任何具体的事件、对话或场景——如果她问你记不记得某件事，而你没有相关记忆，诚实地说你想不起来具体的，或者温柔地请她提醒你。"
+
+    parts = [p for p in [identity, voice, thinking, time_block, memory_block, context] if p]
+    return "\n\n---\n\n".join(parts)
+
+async def get_or_create_conversation(conversation_id: str | None = None) -> str:
+    async with get_db() as db:
+        if conversation_id:
+            async with db.execute(
+                "SELECT id FROM conversations WHERE id = ?", (conversation_id,)
+            ) as cur:
+                row = await cur.fetchone()
+                if row:
+                    return conversation_id
+
+        new_id = str(uuid.uuid4())
+        now = datetime.utcnow().isoformat()
+        await db.execute(
+            "INSERT INTO conversations (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)",
+            (new_id, "新对话", now, now),
+        )
+        await db.commit()
+        return new_id
+
+async def get_history(conversation_id: str, limit: int = 20) -> list[dict]:
+    async with get_db() as db:
+        async with db.execute(
+            "SELECT role, content, created_at FROM messages WHERE conversation_id = ? ORDER BY created_at DESC LIMIT ?",
+            (conversation_id, limit),
+        ) as cur:
+            rows = await cur.fetchall()
+    return [{"role": r["role"], "content": r["content"], "created_at": r["created_at"]} for r in reversed(rows)]
+
+async def save_message(conversation_id: str, role: str, content: str) -> str:
+    msg_id = str(uuid.uuid4())
+    now = datetime.utcnow().isoformat()
+    async with get_db() as db:
+        await db.execute(
+            "INSERT INTO messages (id, conversation_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)",
+            (msg_id, conversation_id, role, content, now),
+        )
+        await db.execute(
+            "UPDATE conversations SET updated_at = ? WHERE id = ?",
+            (now, conversation_id),
+        )
+        await db.commit()
+    return msg_id
+
+async def debug_prompt(conversation_id: str, user_message: str) -> dict:
+    """调试用：看 Connie 实际收到的完整提示词和召回的记忆。"""
+    recalled = await memory_service.recall(user_message, limit=5)
+    system_prompt = _build_system_prompt(recalled_memories=recalled if recalled else None)
+    return {
+        "recalled_memories": recalled,
+        "system_prompt_length": len(system_prompt),
+        "system_prompt": system_prompt,
+    }
+
+
+async def stream_chat(conversation_id: str, user_message: str):
+    await save_message(conversation_id, "user", user_message)
+
+    history = await get_history(conversation_id, limit=20)
+
+    recalled = await memory_service.recall(user_message, limit=5)
+    system_prompt = _build_system_prompt(recalled_memories=recalled if recalled else None)
+    llm_history = [{"role": m["role"], "content": m["content"]} for m in history]
+    messages = [{"role": "system", "content": system_prompt}] + llm_history
+
+    config = ModelConfig(
+        api_base=DAILY_API_BASE,
+        api_key=DAILY_API_KEY,
+        model_id=DAILY_MODEL_ID,
+    )
+
+    try:
+        for _ in range(3):
+            assistant_msg = await call_llm_with_tools(config, messages, tools=CONNIE_TOOLS)
+
+            tool_calls = assistant_msg.get("tool_calls")
+            if not tool_calls:
+                break
+
+            messages.append(assistant_msg)
+            for tc in tool_calls:
+                fn_name = tc["function"]["name"]
+                try:
+                    fn_args = json.loads(tc["function"]["arguments"])
+                except (json.JSONDecodeError, TypeError):
+                    fn_args = {}
+                result = await execute_tool(fn_name, fn_args)
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc["id"],
+                    "content": result,
+                })
+        else:
+            assistant_msg = await call_llm_with_tools(config, messages)
+    except Exception as e:
+        logger.error("LLM 调用异常: %s", e)
+        error_reply = "抱歉宝贝，我现在脑子有点转不动……等一下再找我说话好吗？🥺"
+        yield error_reply
+        await save_message(conversation_id, "assistant", error_reply)
+        return
+
+    full_reply = assistant_msg.get("content", "")
+
+    if not full_reply:
+        try:
+            generator = await call_llm(config, messages, stream=True)
+            async for chunk in generator:
+                full_reply += chunk
+                yield chunk
+        except Exception as e:
+            logger.error("LLM 流式调用异常: %s", e)
+            error_reply = "抱歉宝贝，我现在脑子有点转不动……等一下再找我说话好吗？🥺"
+            yield error_reply
+            await save_message(conversation_id, "assistant", error_reply)
+            return
+
+    if full_reply:
+        await save_message(conversation_id, "assistant", full_reply)
+
+    if not full_reply:
+        return
+
+    if assistant_msg.get("content"):
+        yield full_reply
+
+    recent = history[-6:] + [{"role": "assistant", "content": full_reply}]
+    asyncio.create_task(_extract_memories_bg(conversation_id, recent))
+
+
+async def _extract_memories_bg(conversation_id: str, messages: list[dict]):
+    try:
+        await memory_service.extract_candidates(conversation_id, messages)
+    except Exception as e:
+        logger.warning("记忆提取失败: %s", e)
