@@ -93,6 +93,8 @@ async def init_db():
                 content TEXT NOT NULL,
                 author TEXT NOT NULL DEFAULT 'connie',
                 source TEXT,
+                locked INTEGER NOT NULL DEFAULT 0,
+                pin TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
@@ -172,6 +174,8 @@ async def init_db():
         for col_sql in [
             "ALTER TABLE notes ADD COLUMN kept INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE notes ADD COLUMN read_at TEXT",
+            "ALTER TABLE diary_entries ADD COLUMN locked INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE diary_entries ADD COLUMN pin TEXT",
         ]:
             try:
                 await db.execute(col_sql)

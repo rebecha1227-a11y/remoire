@@ -6,7 +6,7 @@ from app.database import get_db
 async def list_diaries(author: str = "connie", limit: int = 50, offset: int = 0) -> list[dict]:
     async with get_db() as db:
         async with db.execute(
-            """SELECT id, title, content, author, source, created_at, updated_at
+            """SELECT id, title, content, author, source, locked, pin, created_at, updated_at
                FROM diary_entries
                WHERE author = ?
                ORDER BY created_at DESC
@@ -22,6 +22,8 @@ async def list_diaries(author: str = "connie", limit: int = 50, offset: int = 0)
             "content": r["content"],
             "author": r["author"],
             "source": r["source"],
+            "locked": bool(r["locked"]),
+            "pin": r["pin"],
             "created_at": r["created_at"],
             "updated_at": r["updated_at"],
         }
@@ -29,15 +31,15 @@ async def list_diaries(author: str = "connie", limit: int = 50, offset: int = 0)
     ]
 
 
-async def create_diary(title: str, content: str, author: str = "connie", source: str | None = None) -> dict:
+async def create_diary(title: str, content: str, author: str = "connie", source: str | None = None, locked: bool = False, pin: str | None = None) -> dict:
     diary_id = str(uuid.uuid4())
     now = datetime.utcnow().isoformat()
 
     async with get_db() as db:
         await db.execute(
-            """INSERT INTO diary_entries (id, title, content, author, source, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (diary_id, title, content, author, source, now, now),
+            """INSERT INTO diary_entries (id, title, content, author, source, locked, pin, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (diary_id, title, content, author, source, int(locked), pin, now, now),
         )
         await db.commit()
 
@@ -47,6 +49,8 @@ async def create_diary(title: str, content: str, author: str = "connie", source:
         "content": content,
         "author": author,
         "source": source,
+        "locked": locked,
+        "pin": pin,
         "created_at": now,
         "updated_at": now,
     }

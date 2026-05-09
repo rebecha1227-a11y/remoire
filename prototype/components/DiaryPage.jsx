@@ -89,12 +89,15 @@ function mapDiaryEntry(entry) {
   const hh = String(bj.getUTCHours()).padStart(2, '0');
   const mm = String(bj.getUTCMinutes()).padStart(2, '0');
   return {
+    id: entry.id,
     date: `${month}-${day}`,
     time: `${month}-${day} ${hh}:${mm}`,
     weekday: WEEKDAYS[bj.getUTCDay()] || '',
     title: entry.title,
     body: entry.content,
     author: entry.author,
+    locked: entry.locked || false,
+    pin: entry.pin || null,
   };
 }
 
@@ -912,11 +915,27 @@ function DiaryPage({ tweaks }) {
     return items.slice(0, 20);
   }, [connieDiary, jingerDiary]);
 
-  function saveEntry(entry) {
-    const now = new Date();
-    const hh = String(now.getHours()).padStart(2, '0');
-    const mm = String(now.getMinutes()).padStart(2, '0');
-    setJingerDiary(prev => [{ ...entry, time: `${entry.date} ${hh}:${mm}` }, ...prev]);
+  async function saveEntry(entry) {
+    try {
+      const res = await fetch('http://localhost:8000/api/diary', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer remoire-rebechalovesconnie-4ever'
+        },
+        body: JSON.stringify({
+          title: entry.title || '无题',
+          content: entry.body,
+          author: 'jinger',
+          locked: entry.locked || false,
+          pin: entry.pin || null
+        })
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setJingerDiary(prev => [mapDiaryEntry(data.data), ...prev]);
+      }
+    } catch (e) {}
     setWriting(false);
   }
 
