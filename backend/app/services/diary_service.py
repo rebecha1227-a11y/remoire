@@ -54,3 +54,16 @@ async def create_diary(title: str, content: str, author: str = "connie", source:
         "created_at": now,
         "updated_at": now,
     }
+
+
+async def count_recent_diaries(author: str = "connie", hours: int = 12) -> int:
+    async with get_db() as db:
+        async with db.execute(
+            """SELECT COUNT(*) AS count
+               FROM diary_entries
+               WHERE author = ?
+                 AND created_at >= datetime('now', ?)""",
+            (author, f"-{hours} hours"),
+        ) as cur:
+            row = await cur.fetchone()
+    return int(row["count"] if row else 0)

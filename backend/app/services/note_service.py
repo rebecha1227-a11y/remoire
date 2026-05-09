@@ -15,6 +15,18 @@ async def create_note(content: str) -> dict:
     return {"id": note_id, "content": content, "created_at": now}
 
 
+async def count_recent_notes(hours: int = 4) -> int:
+    async with get_db() as db:
+        async with db.execute(
+            """SELECT COUNT(*) AS count
+               FROM notes
+               WHERE created_at >= datetime('now', ?)""",
+            (f"-{hours} hours",),
+        ) as cur:
+            row = await cur.fetchone()
+    return int(row["count"] if row else 0)
+
+
 async def get_unread() -> dict | None:
     async with get_db() as db:
         async with db.execute(

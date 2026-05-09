@@ -99,6 +99,16 @@ async def init_db():
                 updated_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS diary_interactions (
+                id TEXT PRIMARY KEY,
+                diary_id TEXT NOT NULL REFERENCES diary_entries(id) ON DELETE CASCADE,
+                actor TEXT NOT NULL,
+                type TEXT NOT NULL,
+                content TEXT,
+                status TEXT NOT NULL DEFAULT 'visible',
+                created_at TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS model_settings (
                 slot TEXT PRIMARY KEY,
                 api_base TEXT NOT NULL,
@@ -163,6 +173,10 @@ async def init_db():
                 ON reminders(status, remind_at);
             CREATE INDEX IF NOT EXISTS idx_diary_entries_author_created
                 ON diary_entries(author, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_diary_interactions_diary_created
+                ON diary_interactions(diary_id, created_at);
+            CREATE INDEX IF NOT EXISTS idx_diary_interactions_created
+                ON diary_interactions(created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_device_snapshots_created
                 ON device_snapshots(created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_app_usage_app_created

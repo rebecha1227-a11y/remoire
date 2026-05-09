@@ -98,6 +98,7 @@ function mapDiaryEntry(entry) {
     author: entry.author,
     locked: entry.locked || false,
     pin: entry.pin || null,
+    interactions: entry.interactions || [],
   };
 }
 
@@ -535,7 +536,93 @@ function TOCPage({ entries, author, onSelect }) {
 }
 
 // ── Content Page ──
-function ContentPage({ entry, author }) {
+function DiaryMessageBoard({ entry, author, lockedConnie, onAddInteraction }) {
+  const [text, setText] = React.useState('');
+  const [sending, setSending] = React.useState(false);
+  const [error, setError] = React.useState('');
+  const interactions = entry.interactions || [];
+  const isConnieDiary = author === 'connie';
+
+  function labelFor(item) {
+    if (item.type === 'unlock_request') return item.actor === 'jinger' ? '申请查看' : '解锁请求';
+    if (item.type === 'unlock_granted') return '已同意';
+    if (item.type === 'unlock_rejected') return '已拒绝';
+    if (item.type === 'lock_changed') return '锁状态';
+    if (item.type === 'comment') return item.actor === 'connie' ? '回复' : '留言';
+    if (item.type === 'wrote') return '动态';
+    return '留言';
+  }
+
+  async function submit(type) {
+    const content = text.trim();
+    if (!content || sending) return;
+    setError('');
+    setSending(true);
+    try {
+      await onAddInteraction(entry.id, type, content);
+      setText('');
+    } catch (e) {
+      setError('没送出去。先别关，我把文字留在这里。');
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <div style={{ marginTop: 24, paddingTop: 14, borderTop: '1px dashed rgba(100,90,80,0.18)' }}>
+      <div style={{ fontFamily: 'var(--font-body)', fontSize: 10, letterSpacing: 1.2, color: 'var(--text-tertiary)', textTransform: 'uppercase', marginBottom: 10 }}>
+        留言板
+      </div>
+      {interactions.filter(i => i.type !== 'wrote').length > 0 ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+          {interactions.filter(i => i.type !== 'wrote').map(item => (
+            <div key={item.id} style={{
+              background: item.actor === 'connie' ? 'rgba(122,138,154,0.10)' : 'rgba(155,107,123,0.10)',
+              border: '1px solid rgba(100,90,80,0.10)', borderRadius: 8, padding: '8px 10px'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginBottom: 4 }}>
+                <span style={{ fontSize: 10, color: item.actor === 'connie' ? '#5A7888' : '#9B6B7B', fontFamily: 'var(--font-body)' }}>
+                  {item.actor === 'connie' ? 'Connie' : '静儿'} · {labelFor(item)}
+                </span>
+              </div>
+              {item.content && <div style={{ fontFamily: 'var(--font-diary)', fontSize: 15, color: 'var(--text-secondary)', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{item.content}</div>}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 12, fontFamily: 'var(--font-body)' }}>
+          还没有留言。可以在这里把话轻轻放下。
+        </div>
+      )}
+
+      {lockedConnie && (
+        <div style={{ marginBottom: 10, padding: 10, borderRadius: 8, background: 'rgba(184,146,74,0.07)', border: '1px solid rgba(184,146,74,0.18)' }}>
+          <div style={{ fontSize: 12, color: 'var(--warning)', fontFamily: 'var(--font-body)', marginBottom: 8 }}>
+            这篇日记上锁了。你可以留一句话，请 Connie 打开给你看。
+          </div>
+
+        </div>
+      )}
+
+      <textarea value={text} onChange={e => setText(e.target.value)} placeholder={lockedConnie ? '写给 Connie：我想看看这篇，可以吗…' : (isConnieDiary ? '写给 Connie…' : '写下给这篇日记的话…')} style={{
+        width: '100%', minHeight: 58, resize: 'vertical', boxSizing: 'border-box',
+        border: '1px solid var(--border-light)', borderRadius: 8, padding: '9px 10px',
+        background: 'rgba(250,248,244,0.62)', color: 'var(--text-primary)', fontFamily: 'var(--font-body)', fontSize: 13, lineHeight: 1.5,
+      }} />
+      {error && <div style={{ marginTop: 6, fontSize: 11, color: 'var(--warning)', fontFamily: 'var(--font-body)' }}>{error}</div>}
+      <button onClick={() => submit(lockedConnie ? 'unlock_request' : 'comment')} disabled={!text.trim() || sending} style={{
+        marginTop: 8, width: '100%', minHeight: 34, border: 'none', borderRadius: 8,
+        background: text.trim() && !sending ? 'var(--accent)' : 'var(--border)', color: '#FAF8F4',
+        fontSize: 12, fontFamily: 'var(--font-body)', cursor: text.trim() && !sending ? 'pointer' : 'default'
+      }}>
+        {sending ? '送出中…' : (lockedConnie ? '留言申请查看' : '留下这句话')}
+      </button>
+    </div>
+  );
+}
+
+// ── Content Page ──
+function ContentPage({ entry, author, onAddInteraction }) {
   const [pinUnlocked, setPinUnlocked] = React.useState(false);
   const [pinErrorKey, setPinErrorKey] = React.useState(0);
 
@@ -560,6 +647,8 @@ function ContentPage({ entry, author }) {
     );
   }
 
+  const lockedConnie = entry.locked && author === 'connie';
+
   return (
     <div style={{
       width: '100%', height: '100%',
@@ -571,7 +660,6 @@ function ContentPage({ entry, author }) {
       backgroundSize: '14px 14px',
       display: 'flex'
     }}>
-      {/* Left date column */}
       <div style={{
         width: '20%', minWidth: 48, borderRight: '1px solid rgba(100,90,80,0.1)',
         padding: '24px 6px 16px 12px',
@@ -584,7 +672,6 @@ function ContentPage({ entry, author }) {
         <div style={{ fontSize: 9, color: 'var(--text-tertiary)', marginTop: 3, letterSpacing: 1, fontFamily: "var(--font-body)" }}>{entry.weekday}</div>
       </div>
 
-      {/* Right content */}
       <div style={{ flex: 1, padding: '22px 16px 16px 14px', overflowY: 'auto' }}>
         <div style={{
           fontFamily: "var(--font-body)", fontSize: 9, letterSpacing: 1.5,
@@ -592,33 +679,15 @@ function ContentPage({ entry, author }) {
           marginBottom: 12, opacity: 0.7
         }}>{isConnie ? 'Connie' : 'Jinger'}</div>
 
-        {/* Connie 的上锁日记 → 申请解锁流程 */}
-        {entry.locked && author === 'connie' ? (
+        <div style={{ fontFamily: 'var(--font-diary)', fontSize: 18, color: 'var(--text-deep)', marginBottom: 12 }}>
+          {entry.title}
+        </div>
+
+        {lockedConnie ? (
           <div>
             {[80, 65, 90, 55, 75].map((w, i) =>
               <div key={i} style={{ height: 10, background: 'var(--border-light)', borderRadius: 2, width: `${w}%`, marginBottom: 8, opacity: 0.6 }} />
             )}
-            <div style={{
-              marginTop: 20, background: 'rgba(184,146,74,0.06)',
-              border: '1px solid rgba(184,146,74,0.2)', borderRadius: 6, padding: '10px 12px'
-            }}>
-              <div style={{ fontSize: 9, color: 'var(--warning)', fontWeight: 500, letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 6 }}>申请解锁中</div>
-              <div style={{ fontFamily: "var(--font-diary)", fontSize: 16, color: 'var(--text-secondary)', lineHeight: 1.7 }}>{entry.lockNote}</div>
-              <div style={{ display: 'flex', gap: 10, marginTop: 14, justifyContent: 'flex-end' }}>
-                <button style={{
-                  background: 'transparent', border: '1px solid var(--border)',
-                  borderRadius: 'var(--radius-sm)', padding: '6px 14px',
-                  fontSize: 12, color: 'var(--text-tertiary)', cursor: 'pointer',
-                  fontFamily: "var(--font-body)", fontWeight: 500
-                }}>拒绝</button>
-                <button style={{
-                  background: 'var(--warning)', border: 'none',
-                  borderRadius: 'var(--radius-sm)', padding: '6px 14px',
-                  fontSize: 12, color: '#FAF8F4', cursor: 'pointer',
-                  fontFamily: "var(--font-body)", fontWeight: 500
-                }}>同意解锁</button>
-              </div>
-            </div>
           </div>
         ) : (
           <div style={{
@@ -626,13 +695,20 @@ function ContentPage({ entry, author }) {
             color: 'var(--text-primary)', lineHeight: 1.85, whiteSpace: 'pre-wrap', fontFamily: "var(--font-diary)"
           }}>{entry.body}</div>
         )}
+
+        <DiaryMessageBoard
+          entry={entry}
+          author={author}
+          lockedConnie={lockedConnie}
+          onAddInteraction={onAddInteraction}
+        />
       </div>
     </div>
   );
 }
 
 // ── Open Book Component ──
-function OpenBook({ author, entries, onClose }) {
+function OpenBook({ author, entries, onClose, onAddInteraction }) {
   const isConnie = author === 'connie';
   const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
   // pages[0] = TOC, pages[1..n] = content pages
@@ -734,7 +810,7 @@ function OpenBook({ author, entries, onClose }) {
                 }}>
                   {pageIdx === 0 ?
                   <TOCPage entries={entries} author={author} onSelect={(i) => flipToPage(i + 1)} /> :
-                  <ContentPage entry={entries[pageIdx - 1]} author={author} />
+                  <ContentPage entry={entries[pageIdx - 1]} author={author} onAddInteraction={onAddInteraction} />
                   }
                 </div>
                 {/* Back face */}
@@ -799,9 +875,22 @@ function DiaryFeed({ activities }) {
     const name = nameMap[a.author];
     if (a.type === 'wrote') return <span><strong style={{ color: colorMap[a.author] }}>{name}</strong> 写了一篇日记{a.title ? `「${a.title}」` : ''}</span>;
     if (a.type === 'locked') return <span><strong style={{ color: colorMap[a.author] }}>{name}</strong> 给日记上了锁</span>;
-    if (a.type === 'unlock_attempt') return (
+    if (a.type === 'lock_changed') return <span><strong style={{ color: colorMap[a.author] }}>{name}</strong> {a.msg || '调整了日记锁'}</span>;
+    if (a.type === 'unlock_granted') return <span><strong style={{ color: colorMap[a.author] }}>{name}</strong> 同意解锁日记{a.title ? `「${a.title}」` : ''}</span>;
+    if (a.type === 'unlock_rejected') return <span><strong style={{ color: colorMap[a.author] }}>{name}</strong> 暂时没有打开日记{a.title ? `「${a.title}」` : ''}</span>;
+    if (a.type === 'comment') return (
       <span>
-        <strong style={{ color: colorMap[a.author] }}>{name}</strong> 尝试解锁并留言
+        <strong style={{ color: colorMap[a.author] }}>{name}</strong> 在日记下留言
+        <span style={{
+          display: 'block', marginTop: 4,
+          fontFamily: "var(--font-diary)", fontSize: 14,
+          color: 'var(--text-secondary)', lineHeight: 1.6,
+          paddingLeft: 8, borderLeft: '2px solid rgba(124,99,80,0.15)'
+        }}>"{a.msg}"</span>
+      </span>);
+    if (a.type === 'unlock_request') return (
+      <span>
+        <strong style={{ color: colorMap[a.author] }}>{name}</strong> 申请查看上锁日记
         <span style={{
           display: 'block', marginTop: 4,
           fontFamily: "var(--font-diary)", fontSize: 14,
@@ -820,7 +909,10 @@ function DiaryFeed({ activities }) {
     if (a.type === 'locked') return (
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--warning)" strokeWidth="1.5"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>);
 
-    if (a.type === 'unlock_attempt') return (
+    if (a.type === 'comment') return (
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={colorMap[a.author]} strokeWidth="1.5"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" /></svg>);
+
+    if (a.type === 'unlock_request' || a.type === 'unlock_granted' || a.type === 'unlock_rejected' || a.type === 'lock_changed') return (
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--warning)" strokeWidth="1.5"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 9 1" /></svg>);
 
     return null;
@@ -847,9 +939,9 @@ function DiaryFeed({ activities }) {
               {/* Dot */}
               <div style={{
                 width: 11, height: 11, borderRadius: '50%', flexShrink: 0,
-                background: a.type === 'unlock_attempt' || a.type === 'locked' ?
+                background: a.type === 'unlock_request' || a.type === 'unlock_granted' || a.type === 'unlock_rejected' || a.type === 'lock_changed' || a.type === 'locked' ?
                 'rgba(184,146,74,0.25)' : 'var(--bg-elevated)',
-                border: `1.5px solid ${a.type === 'unlock_attempt' || a.type === 'locked' ? 'var(--warning)' : 'var(--border)'}`,
+                border: `1.5px solid ${a.type === 'unlock_request' || a.type === 'unlock_granted' || a.type === 'unlock_rejected' || a.type === 'lock_changed' || a.type === 'locked' ? 'var(--warning)' : 'var(--border)'}`,
                 marginTop: 2, zIndex: 1
               }} />
               <div style={{ flex: 1, minWidth: 0 }}>
@@ -904,12 +996,18 @@ function DiaryPage({ tweaks }) {
     const items = [];
     connieDiary.forEach(e => {
       items.push({ time: e.time || e.date, author: 'connie', type: 'wrote', msg: null, title: e.title });
+      (e.interactions || []).forEach(i => {
+        if (i.type !== 'wrote') items.push({ time: e.time || e.date, author: i.actor, type: i.type, msg: i.content, title: e.title });
+      });
     });
     jingerDiary.forEach(e => {
       items.push({ time: e.time || e.date, author: 'jinger', type: 'wrote', msg: null, title: e.title });
       if (e.locked) {
         items.push({ time: e.time || e.date, author: 'jinger', type: 'locked', msg: null });
       }
+      (e.interactions || []).forEach(i => {
+        if (i.type !== 'wrote') items.push({ time: e.time || e.date, author: i.actor, type: i.type, msg: i.content, title: e.title });
+      });
     });
     items.sort((a, b) => b.time.localeCompare(a.time));
     return items.slice(0, 20);
@@ -939,6 +1037,29 @@ function DiaryPage({ tweaks }) {
     setWriting(false);
   }
 
+  function updateEntry(diaryId, updater) {
+    setConnieDiary(prev => prev.map(entry => entry.id === diaryId ? updater(entry) : entry));
+    setJingerDiary(prev => prev.map(entry => entry.id === diaryId ? updater(entry) : entry));
+  }
+
+  async function addInteraction(diaryId, type, content) {
+    const res = await fetch(`http://localhost:8000/api/diary/${diaryId}/interactions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer remoire-rebechalovesconnie-4ever'
+      },
+      body: JSON.stringify({ actor: 'jinger', type, content })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok || !data.data || !Array.isArray(data.data.items)) {
+      throw new Error('interaction_failed');
+    }
+    updateEntry(diaryId, entry => ({ ...entry, interactions: data.data.items }));
+  }
+
+
+
   return (
     <div style={{
       position: 'relative', height: '100%',
@@ -954,7 +1075,8 @@ function DiaryPage({ tweaks }) {
         <OpenBook
           author={openBook}
           entries={openBook === 'connie' ? connieDiary : jingerDiary}
-          onClose={() => setOpenBook(null)} />
+          onClose={() => setOpenBook(null)}
+          onAddInteraction={addInteraction} />
       }
       {writing &&
         <WritingEditor onSave={saveEntry} onCancel={() => setWriting(false)} />

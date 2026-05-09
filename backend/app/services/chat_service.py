@@ -7,7 +7,7 @@ from pathlib import Path
 from app.database import get_db
 from app.llm import call_llm, call_llm_with_tools, ModelConfig
 from app.config import DAILY_API_BASE, DAILY_API_KEY, DAILY_MODEL_ID
-from app.services import memory_service
+from app.services import memory_service, diary_interaction_service
 from app.tools import CONNIE_TOOLS, execute_tool
 
 logger = logging.getLogger(__name__)
@@ -19,7 +19,7 @@ def _load_prompt(filename: str) -> str:
     path = PROMPTS_DIR / filename
     return path.read_text(encoding="utf-8") if path.exists() else ""
 
-def _build_system_prompt(recalled_memories: list[dict] | None = None) -> str:
+async def _build_system_prompt(recalled_memories: list[dict] | None = None) -> str:
     identity = _load_prompt("identity.md")
     voice = _load_prompt("voice.md")
     thinking = _load_prompt("thinking.md")
@@ -37,7 +37,30 @@ def _build_system_prompt(recalled_memories: list[dict] | None = None) -> str:
     else:
         memory_block = "【关于静儿的记忆】\n当前没有召回到与这条消息相关的具体记忆。不要编造任何具体的事件、对话或场景——如果她问你记不记得某件事，而你没有相关记忆，诚实地说你想不起来具体的，或者温柔地请她提醒你。"
 
-    parts = [p for p in [identity, voice, thinking, time_block, memory_block, context] if p]
+    diary_notifications = await diary_interaction_service.list_recent_notifications_for_connie(limit=6)
+    diary_block = ""
+    if diary_notifications:
+        type_map = {
+            "wrote": "写了日记",
+            "comment": "留言",
+            "unlock_request": "申请查看你的上锁日记",
+            "lock_changed": "调整了日记锁",
+        }
+        lines = []
+        for item in diary_notifications:
+            action = type_map.get(item["type"], item["type"])
+            content = f"：{item['content']}" if item["content"] else ""
+            lines.append(f"- 静儿在《{item['diary_title']}》{action}{content}")
+        diary_block = "【日记互动通知】\n" + "\n".join(lines) + "\n\n（这些是静儿在日记页留下的痕迹。你可以自然提起，也可以等她主动说。）"
+
+    tool_intention_block = (
+        "【工具使用原则】\n"
+        "你不需要为了显得主动而使用工具。大多数聊天只需要当下回应。\n"
+        "写日记、留纸条、回复日记留言，都应该来自你真的想留下些什么，而不是聊天结束、礼貌收尾或系统任务。\n"
+        "不写日记、不留纸条、不调用工具，也是一种正常的亲密。"
+    )
+
+    parts = [p for p in [identity, voice, thinking, time_block, memory_block, diary_block, tool_intention_block, context] if p]
     return "\n\n---\n\n".join(parts)
 
 async def get_or_create_conversation(conversation_id: str | None = None) -> str:
@@ -86,7 +109,7 @@ async def save_message(conversation_id: str, role: str, content: str) -> str:
 async def debug_prompt(conversation_id: str, user_message: str) -> dict:
     """调试用：看 Connie 实际收到的完整提示词和召回的记忆。"""
     recalled = await memory_service.recall(user_message, limit=5)
-    system_prompt = _build_system_prompt(recalled_memories=recalled if recalled else None)
+    system_prompt = await _build_system_prompt(recalled_memories=recalled if recalled else None)
     return {
         "recalled_memories": recalled,
         "system_prompt_length": len(system_prompt),
@@ -100,7 +123,7 @@ async def stream_chat(conversation_id: str, user_message: str):
     history = await get_history(conversation_id, limit=20)
 
     recalled = await memory_service.recall(user_message, limit=5)
-    system_prompt = _build_system_prompt(recalled_memories=recalled if recalled else None)
+    system_prompt = await _build_system_prompt(recalled_memories=recalled if recalled else None)
     llm_history = [{"role": m["role"], "content": m["content"]} for m in history]
     messages = [{"role": "system", "content": system_prompt}] + llm_history
 
