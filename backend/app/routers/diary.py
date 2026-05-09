@@ -60,14 +60,13 @@ async def create_diary(body: DiaryCreate, _=Depends(verify_token)):
         type="wrote",
         content=body.title,
     )
-    if body.author == "jinger":
-        await diary_interaction_service.create_with_optional_connie_reply(
-            diary_id=entry["id"],
-            actor="jinger",
-            type="comment",
-            content="我写了一篇新的日记。",
-        )
     return {"ok": True, "data": entry}
+
+
+@router.post("/unlock-decisions")
+async def process_unlock_decisions(limit: int = Query(3), _=Depends(verify_token)):
+    decisions = await diary_interaction_service.decide_unlock_requests(limit=limit)
+    return {"ok": True, "data": decisions}
 
 
 @router.get("/activities")

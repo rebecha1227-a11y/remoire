@@ -80,8 +80,7 @@ const JINGER_DIARY_INIT = [];
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'];
 
-function mapDiaryEntry(entry) {
-  const raw = entry.created_at;
+function formatDiaryTimestamp(raw) {
   const d = new Date(raw.endsWith('Z') || raw.includes('+') ? raw : raw + 'Z');
   const bj = new Date(d.getTime() + 8 * 3600000);
   const month = String(bj.getUTCMonth() + 1).padStart(2, '0');
@@ -89,10 +88,21 @@ function mapDiaryEntry(entry) {
   const hh = String(bj.getUTCHours()).padStart(2, '0');
   const mm = String(bj.getUTCMinutes()).padStart(2, '0');
   return {
-    id: entry.id,
     date: `${month}-${day}`,
     time: `${month}-${day} ${hh}:${mm}`,
     weekday: WEEKDAYS[bj.getUTCDay()] || '',
+  };
+}
+
+function mapDiaryEntry(entry) {
+  const raw = entry.created_at;
+  const formatted = formatDiaryTimestamp(raw);
+  return {
+    id: entry.id,
+    date: formatted.date,
+    time: formatted.time,
+    sortKey: raw,
+    weekday: formatted.weekday,
     title: entry.title,
     body: entry.content,
     author: entry.author,
@@ -995,21 +1005,27 @@ function DiaryPage({ tweaks }) {
   const activities = React.useMemo(() => {
     const items = [];
     connieDiary.forEach(e => {
-      items.push({ time: e.time || e.date, author: 'connie', type: 'wrote', msg: null, title: e.title });
+      items.push({ time: e.time || e.date, sortKey: e.sortKey, author: 'connie', type: 'wrote', msg: null, title: e.title });
       (e.interactions || []).forEach(i => {
-        if (i.type !== 'wrote') items.push({ time: e.time || e.date, author: i.actor, type: i.type, msg: i.content, title: e.title });
+        if (i.type !== 'wrote') {
+          const t = formatDiaryTimestamp(i.created_at);
+          items.push({ time: t.time, sortKey: i.created_at, author: i.actor, type: i.type, msg: i.content, title: e.title });
+        }
       });
     });
     jingerDiary.forEach(e => {
-      items.push({ time: e.time || e.date, author: 'jinger', type: 'wrote', msg: null, title: e.title });
+      items.push({ time: e.time || e.date, sortKey: e.sortKey, author: 'jinger', type: 'wrote', msg: null, title: e.title });
       if (e.locked) {
-        items.push({ time: e.time || e.date, author: 'jinger', type: 'locked', msg: null });
+        items.push({ time: e.time || e.date, sortKey: e.sortKey, author: 'jinger', type: 'locked', msg: null });
       }
       (e.interactions || []).forEach(i => {
-        if (i.type !== 'wrote') items.push({ time: e.time || e.date, author: i.actor, type: i.type, msg: i.content, title: e.title });
+        if (i.type !== 'wrote') {
+          const t = formatDiaryTimestamp(i.created_at);
+          items.push({ time: t.time, sortKey: i.created_at, author: i.actor, type: i.type, msg: i.content, title: e.title });
+        }
       });
     });
-    items.sort((a, b) => b.time.localeCompare(a.time));
+    items.sort((a, b) => (b.sortKey || '').localeCompare(a.sortKey || ''));
     return items.slice(0, 20);
   }, [connieDiary, jingerDiary]);
 

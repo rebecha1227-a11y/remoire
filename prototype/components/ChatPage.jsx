@@ -63,8 +63,8 @@ function Bubble({ msg, isNew, bubbleStyle, showAvatar, showTail, thinkingExpande
     default: {
       sendBg: 'var(--bubble-send)', sendColor: 'var(--bubble-send-text)',
       recvBg: 'var(--bubble-receive)', recvColor: 'var(--bubble-receive-text)',
-      sendRadius: '18px', recvRadius: '18px',
-      padding: '10px 14px', sendShadow: 'none', recvShadow: 'none',
+      sendRadius: '22px', recvRadius: '22px',
+      padding: '6px 12px', sendShadow: 'none', recvShadow: 'none',
     },
     imessage: {
       sendBg: '#007AFF', sendColor: '#fff',
@@ -116,14 +116,14 @@ function Bubble({ msg, isNew, bubbleStyle, showAvatar, showTail, thinkingExpande
     ? 'color-mix(in oklch, var(--accent-pop) 10%, var(--bubble-receive))'
     : s.recvBg;
 
-  const tailSendR = showTail ? '18px 18px 0 18px' : s.sendRadius;
-  const tailRecvR = showTail ? '18px 18px 18px 0' : s.recvRadius;
+  const tailSendR = showTail ? '22px 22px 6px 22px' : s.sendRadius;
+  const tailRecvR = showTail ? '22px 22px 22px 6px' : s.recvRadius;
 
   return (
     <div style={{
       display: 'flex',
       flexDirection: isSend ? 'row-reverse' : 'row',
-      alignItems: 'flex-end',
+      alignItems: showAvatar ? 'flex-start' : 'flex-end',
       gap: 8,
       animation: isNew ? 'bubble-in 160ms ease forwards' : undefined,
       transformOrigin: isSend ? 'bottom right' : 'bottom left',
@@ -131,13 +131,13 @@ function Bubble({ msg, isNew, bubbleStyle, showAvatar, showTail, thinkingExpande
       {/* Avatar slot */}
       {isSend ? (
         showJingAvatarInChat && showTail ? (
-          <div style={{ width: 28, height: 28, borderRadius: '50%', flexShrink: 0, overflow: 'hidden', background: 'var(--accent-subtle)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontFamily: 'var(--font-display)', color: 'var(--accent)', position: 'relative', zIndex: 2 }}>
+          <div style={{ width: 34, height: 34, borderRadius: '50%', flexShrink: 0, overflow: 'hidden', background: 'var(--accent-subtle)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontFamily: 'var(--font-display)', color: 'var(--accent)', position: 'relative', zIndex: 2 }}>
             {jingAvatar ? <img src={jingAvatar} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : '静'}
           </div>
-        ) : (showJingAvatarInChat ? <div style={{ width: 28, flexShrink: 0 }} /> : null)
+        ) : (showJingAvatarInChat ? <div style={{ width: 34, flexShrink: 0 }} /> : null)
       ) : (
         showConnieAvatarInChat ? (
-          <div style={{ width: 28, height: 28, borderRadius: '50%', flexShrink: 0, overflow: 'hidden', background: showAvatar ? 'var(--accent-subtle)' : 'transparent', border: showAvatar ? '1px solid var(--border)' : 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontFamily: 'var(--font-display)', color: 'var(--accent)', position: 'relative', zIndex: 2 }}>
+          <div style={{ width: 34, height: 34, borderRadius: '50%', flexShrink: 0, overflow: 'hidden', background: showAvatar ? 'var(--accent-subtle)' : 'transparent', border: showAvatar ? '1px solid var(--border)' : 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontFamily: 'var(--font-display)', color: 'var(--accent)', position: 'relative', zIndex: 2 }}>
             {showAvatar ? (connieAvatar ? <img src={connieAvatar} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : 'C') : ''}
           </div>
         ) : null
@@ -146,30 +146,34 @@ function Bubble({ msg, isNew, bubbleStyle, showAvatar, showTail, thinkingExpande
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: isSend ? 'flex-end' : 'flex-start', maxWidth: '72%' }}>
         <div style={{ position: 'relative', display: 'inline-block' }}>
           <div style={{
+            position: 'relative',
+            zIndex: 2,
             background: isSend ? s.sendBg : recvBg,
             color: isSend ? s.sendColor : s.recvColor,
             borderRadius: isSend ? tailSendR : tailRecvR,
             padding: s.padding,
             fontSize: 'var(--text-base)',
-            lineHeight: 1.6,
+            lineHeight: 1.5,
             boxShadow: isSend ? s.sendShadow : s.recvShadow,
             whiteSpace: 'pre-wrap',
           }}>{msg.text}</div>
-          {/* iMessage tail: inner (bubble color) + outer (bg color cutaway) */}
           {showTail && bs === 'default' && isSend && (
             <>
               <div style={{
                 position: 'absolute', bottom: 0, right: -6,
-                width: 20, height: 22,
+                width: 18, height: 20,
                 background: s.sendBg,
+                borderTopLeftRadius: '18px 10px',
                 borderBottomLeftRadius: '16px 14px',
+                zIndex: 0,
                 pointerEvents: 'none',
               }} />
               <div style={{
-                position: 'absolute', bottom: 0, right: -26,
-                width: 26, height: 22,
+                position: 'absolute', bottom: 0, right: -18,
+                width: 18, height: 20,
                 background: bgColor || 'var(--bg-primary)',
                 borderBottomLeftRadius: 10,
+                zIndex: 1,
                 pointerEvents: 'none',
               }} />
             </>
@@ -178,16 +182,19 @@ function Bubble({ msg, isNew, bubbleStyle, showAvatar, showTail, thinkingExpande
             <>
               <div style={{
                 position: 'absolute', bottom: 0, left: -6,
-                width: 20, height: 22,
+                width: 18, height: 20,
                 background: recvBg,
+                borderTopRightRadius: '18px 10px',
                 borderBottomRightRadius: '16px 14px',
+                zIndex: 0,
                 pointerEvents: 'none',
               }} />
               <div style={{
-                position: 'absolute', bottom: 0, left: -26,
-                width: 26, height: 22,
+                position: 'absolute', bottom: 0, left: -18,
+                width: 18, height: 20,
                 background: bgColor || 'var(--bg-primary)',
                 borderBottomRightRadius: 10,
+                zIndex: 1,
                 pointerEvents: 'none',
               }} />
             </>

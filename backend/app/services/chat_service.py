@@ -37,9 +37,10 @@ async def _build_system_prompt(recalled_memories: list[dict] | None = None) -> s
     else:
         memory_block = "【关于静儿的记忆】\n当前没有召回到与这条消息相关的具体记忆。不要编造任何具体的事件、对话或场景——如果她问你记不记得某件事，而你没有相关记忆，诚实地说你想不起来具体的，或者温柔地请她提醒你。"
 
+    unlock_decisions = await diary_interaction_service.decide_unlock_requests(limit=3)
     diary_notifications = await diary_interaction_service.list_recent_notifications_for_connie(limit=6)
     diary_block = ""
-    if diary_notifications:
+    if unlock_decisions or diary_notifications:
         type_map = {
             "wrote": "写了日记",
             "comment": "留言",
@@ -47,6 +48,11 @@ async def _build_system_prompt(recalled_memories: list[dict] | None = None) -> s
             "lock_changed": "调整了日记锁",
         }
         lines = []
+        for item in unlock_decisions:
+            decision = item["decision"]
+            request = item["request"]
+            action = "同意了" if decision.get("grant") else "拒绝了"
+            lines.append(f"- 你刚刚{action}静儿查看《{request['diary_title']}》的请求：{decision.get('note', '')}")
         for item in diary_notifications:
             action = type_map.get(item["type"], item["type"])
             content = f"：{item['content']}" if item["content"] else ""

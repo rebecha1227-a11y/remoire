@@ -106,6 +106,8 @@ async def init_db():
                 type TEXT NOT NULL,
                 content TEXT,
                 status TEXT NOT NULL DEFAULT 'visible',
+                seen_by_connie INTEGER NOT NULL DEFAULT 0,
+                seen_by_jinger INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL
             );
 
@@ -190,6 +192,8 @@ async def init_db():
             "ALTER TABLE notes ADD COLUMN read_at TEXT",
             "ALTER TABLE diary_entries ADD COLUMN locked INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE diary_entries ADD COLUMN pin TEXT",
+            "ALTER TABLE diary_interactions ADD COLUMN seen_by_connie INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE diary_interactions ADD COLUMN seen_by_jinger INTEGER NOT NULL DEFAULT 0",
         ]:
             try:
                 await db.execute(col_sql)

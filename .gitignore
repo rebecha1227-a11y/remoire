@@ -25,6 +25,10 @@ backend/data/
 .vscode/
 .idea/
 
+# Claude Code 临时文件
+.claude/worktrees/
+.playwright-mcp/
+
 .bytro
 Remoire-v2-ia-design.md
 Remoire-v0.3.md
