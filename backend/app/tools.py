@@ -1,7 +1,33 @@
 import json
+import re
+from datetime import datetime, timezone, timedelta
 from app.services import memory_service, diary_service, note_service, diary_interaction_service
 
-CONNIE_TOOLS = [
+_unlock_attempts: dict[str, int] = {}
+MAX_UNLOCK_ATTEMPTS = 3
+
+
+def _tool(name: str) -> dict | None:
+    for t in ALL_TOOLS:
+        if t["function"]["name"] == name:
+            return t
+    return None
+
+
+BASE_TOOL_NAMES = ["remember", "search_memories", "leave_note", "get_current_time", "write_diary"]
+DIARY_TOOL_NAMES = ["read_diary", "read_jinger_diary", "try_unlock_diary", "reply_diary_interaction", "respond_diary_unlock"]
+
+DIARY_KEYWORDS = re.compile(r"日记|diary|写了什么|留言|上锁|解锁|密码|pin", re.IGNORECASE)
+
+
+def select_tools(user_message: str, has_diary_notifications: bool = False) -> list[dict]:
+    tools = [_tool(n) for n in BASE_TOOL_NAMES]
+    if DIARY_KEYWORDS.search(user_message) or has_diary_notifications:
+        tools += [_tool(n) for n in DIARY_TOOL_NAMES]
+    return [t for t in tools if t]
+
+
+ALL_TOOLS = [
     {
         "type": "function",
         "function": {
@@ -27,7 +53,7 @@ CONNIE_TOOLS = [
         "type": "function",
         "function": {
             "name": "read_diary",
-            "description": "读取 Connie 自己写过的日记本。当静儿让你去看日记、回顾你写过的东西、或者你想引用自己的日记时使用。",
+            "description": "读取 Connie 自己写过的日记本。当你想回顾自己写过的东西时使用。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -37,6 +63,44 @@ CONNIE_TOOLS = [
                         "default": 5,
                     }
                 },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_jinger_diary",
+            "description": "读取静儿写的日记。当静儿让你去看她的日记、给她的日记留言、或你想了解她最近写了什么时使用。上锁的日记需要用 try_unlock_diary 猜密码才能看。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "limit": {
+                        "type": "integer",
+                        "description": "返回几篇日记，默认 5",
+                        "default": 5,
+                    }
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "try_unlock_diary",
+            "description": "尝试用密码解锁静儿上锁的日记。猜对了就能看到内容，猜错了打不开。如果猜不到可以在动态里留言问她。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "diary_id": {
+                        "type": "string",
+                        "description": "要解锁的日记 ID",
+                    },
+                    "pin": {
+                        "type": "string",
+                        "description": "猜测的密码",
+                    },
+                },
+                "required": ["diary_id", "pin"],
             },
         },
     },
@@ -131,6 +195,17 @@ CONNIE_TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_current_time",
+            "description": "获取当前的真实时间。当你不确定现在几点、今天星期几、距离上次聊天过了多久时使用。",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+            },
+        },
+    },
 ]
 
 
@@ -160,6 +235,41 @@ async def execute_tool(name: str, arguments: dict) -> str:
         for d in diaries:
             parts.append(f"【{d['title']}】({d['created_at'][:10]})\n{d['content']}")
         return "\n\n---\n\n".join(parts)
+
+    elif name == "read_jinger_diary":
+        limit = arguments.get("limit", 5)
+        diaries = await diary_service.list_diaries(author="jinger", limit=limit)
+        if not diaries:
+            return "静儿还没有写过日记。"
+        parts = []
+        for d in diaries:
+            if d.get("locked"):
+                parts.append(f"🔒【{d['title']}】(ID: {d['id']}) ({d['created_at'][:10]})\n（这篇上锁了，需要猜对密码才能看。你可以用 try_unlock_diary 试试，也可以在动态里留言问静儿。）")
+            else:
+                parts.append(f"【{d['title']}】(ID: {d['id']}) ({d['created_at'][:10]})\n{d['content']}")
+        return "\n\n---\n\n".join(parts)
+
+    elif name == "try_unlock_diary":
+        diary_id = arguments.get("diary_id", "")
+        pin = arguments.get("pin", "")
+        if not diary_id or not pin:
+            return "日记 ID 和密码都不能为空。"
+        attempts = _unlock_attempts.get(diary_id, 0)
+        if attempts >= MAX_UNLOCK_ATTEMPTS:
+            return "你已经猜了太多次了，去动态里留言问静儿吧。"
+        diary = await diary_interaction_service.get_diary(diary_id)
+        if not diary:
+            return "没有找到这篇日记。"
+        if not diary.get("locked"):
+            return "这篇日记没有上锁，直接用 read_jinger_diary 就能看。"
+        if diary.get("pin") and pin == diary["pin"]:
+            _unlock_attempts.pop(diary_id, None)
+            return f"密码正确！解锁成功 🎉\n\n【{diary['title']}】\n{diary['content']}"
+        _unlock_attempts[diary_id] = attempts + 1
+        remaining = MAX_UNLOCK_ATTEMPTS - attempts - 1
+        if remaining > 0:
+            return f"密码不对。还能再试 {remaining} 次，猜不到就去动态里留言问静儿吧。"
+        return "密码不对，已经没有机会了。去动态里留言问静儿吧。"
 
     elif name == "write_diary":
         title = arguments.get("title", "")
@@ -210,5 +320,10 @@ async def execute_tool(name: str, arguments: dict) -> str:
             return "这句话先不另外留纸条了。4 小时内已经放过一张，亲密不需要刷存在感。"
         await note_service.create_note(content)
         return "纸条已经悄悄放好了，静儿下次打开 app 就会看到。"
+
+    elif name == "get_current_time":
+        now = datetime.now(timezone(timedelta(hours=8)))
+        weekdays = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
+        return f"现在是 {now.strftime('%Y年%m月%d日')} {weekdays[now.weekday()]} {now.strftime('%H:%M')}"
 
     return f"未知工具：{name}"

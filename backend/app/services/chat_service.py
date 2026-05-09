@@ -8,7 +8,7 @@ from app.database import get_db
 from app.llm import call_llm, call_llm_with_tools, ModelConfig
 from app.config import DAILY_API_BASE, DAILY_API_KEY, DAILY_MODEL_ID
 from app.services import memory_service, diary_interaction_service
-from app.tools import CONNIE_TOOLS, execute_tool
+from app.tools import select_tools, execute_tool
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +123,37 @@ async def debug_prompt(conversation_id: str, user_message: str) -> dict:
     }
 
 
+def _build_llm_history_with_time_gaps(history: list[dict]) -> list[dict]:
+    result = []
+    for i, msg in enumerate(history):
+        if i > 0 and msg.get("created_at") and history[i - 1].get("created_at"):
+            try:
+                prev_time = datetime.fromisoformat(history[i - 1]["created_at"])
+                curr_time = datetime.fromisoformat(msg["created_at"])
+                gap = curr_time - prev_time
+                gap_minutes = gap.total_seconds() / 60
+                if gap_minutes >= 30:
+                    label = _format_time_gap(gap)
+                    result.append({"role": "system", "content": f"（{label}）"})
+            except (ValueError, TypeError):
+                pass
+        result.append({"role": msg["role"], "content": msg["content"]})
+    return result
+
+
+def _format_time_gap(gap: timedelta) -> str:
+    total_minutes = int(gap.total_seconds() / 60)
+    if total_minutes < 60:
+        return f"过了 {total_minutes} 分钟"
+    hours = total_minutes // 60
+    if hours < 24:
+        return f"过了 {hours} 小时"
+    days = hours // 24
+    if days == 1:
+        return "第二天了"
+    return f"过了 {days} 天"
+
+
 async def stream_chat(conversation_id: str, user_message: str):
     await save_message(conversation_id, "user", user_message)
 
@@ -130,7 +161,9 @@ async def stream_chat(conversation_id: str, user_message: str):
 
     recalled = await memory_service.recall(user_message, limit=5)
     system_prompt = await _build_system_prompt(recalled_memories=recalled if recalled else None)
-    llm_history = [{"role": m["role"], "content": m["content"]} for m in history]
+    has_diary_notifs = "日记互动通知" in system_prompt
+    tools = select_tools(user_message, has_diary_notifications=has_diary_notifs)
+    llm_history = _build_llm_history_with_time_gaps(history)
     messages = [{"role": "system", "content": system_prompt}] + llm_history
 
     config = ModelConfig(
@@ -141,7 +174,7 @@ async def stream_chat(conversation_id: str, user_message: str):
 
     try:
         for _ in range(3):
-            assistant_msg = await call_llm_with_tools(config, messages, tools=CONNIE_TOOLS)
+            assistant_msg = await call_llm_with_tools(config, messages, tools=tools)
 
             tool_calls = assistant_msg.get("tool_calls")
             if not tool_calls:
