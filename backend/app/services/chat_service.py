@@ -91,7 +91,7 @@ async def get_or_create_conversation(conversation_id: str | None = None) -> str:
 async def get_history(conversation_id: str, limit: int = 20) -> list[dict]:
     async with get_db() as db:
         async with db.execute(
-            "SELECT role, content, thinking, created_at FROM messages WHERE conversation_id = ? ORDER BY created_at DESC LIMIT ?",
+            "SELECT role, content, thinking, image, created_at FROM messages WHERE conversation_id = ? ORDER BY created_at DESC LIMIT ?",
             (conversation_id, limit),
         ) as cur:
             rows = await cur.fetchall()
@@ -100,16 +100,18 @@ async def get_history(conversation_id: str, limit: int = 20) -> list[dict]:
         item = {"role": r["role"], "content": r["content"], "created_at": r["created_at"]}
         if r["thinking"]:
             item["thinking"] = r["thinking"]
+        if r["image"]:
+            item["image"] = r["image"]
         result.append(item)
     return result
 
-async def save_message(conversation_id: str, role: str, content: str, thinking: str = "") -> str:
+async def save_message(conversation_id: str, role: str, content: str, thinking: str = "", image: str = "") -> str:
     msg_id = str(uuid.uuid4())
     now = datetime.utcnow().isoformat()
     async with get_db() as db:
         await db.execute(
-            "INSERT INTO messages (id, conversation_id, role, content, thinking, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-            (msg_id, conversation_id, role, content, thinking or None, now),
+            "INSERT INTO messages (id, conversation_id, role, content, thinking, image, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (msg_id, conversation_id, role, content, thinking or None, image or None, now),
         )
         await db.execute(
             "UPDATE conversations SET updated_at = ? WHERE id = ?",
@@ -160,8 +162,8 @@ def _format_time_gap(gap: timedelta) -> str:
     return f"过了 {days} 天"
 
 
-async def stream_chat(conversation_id: str, user_message: str):
-    await save_message(conversation_id, "user", user_message)
+async def stream_chat(conversation_id: str, user_message: str, image: str | None = None):
+    await save_message(conversation_id, "user", user_message, image=image or "")
 
     history = await get_history(conversation_id, limit=20)
 
@@ -170,6 +172,15 @@ async def stream_chat(conversation_id: str, user_message: str):
     has_diary_notifs = "日记互动通知" in system_prompt
     tools = select_tools(user_message, has_diary_notifications=has_diary_notifs)
     llm_history = _build_llm_history_with_time_gaps(history)
+
+    if image:
+        last_user = llm_history[-1] if llm_history and llm_history[-1]["role"] == "user" else None
+        if last_user:
+            last_user["content"] = [
+                {"type": "image_url", "image_url": {"url": image}},
+                {"type": "text", "text": user_message},
+            ]
+
     messages = [{"role": "system", "content": system_prompt}] + llm_history
 
     config = ModelConfig(

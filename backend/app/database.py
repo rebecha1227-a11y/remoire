@@ -45,6 +45,7 @@ async def init_db():
                 role TEXT NOT NULL,
                 content TEXT NOT NULL,
                 thinking TEXT,
+                image TEXT,
                 channel TEXT,
                 created_at TEXT NOT NULL
             );
@@ -194,6 +195,7 @@ async def init_db():
             "ALTER TABLE diary_entries ADD COLUMN pin TEXT",
             "ALTER TABLE diary_interactions ADD COLUMN seen_by_connie INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE diary_interactions ADD COLUMN seen_by_jinger INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE messages ADD COLUMN image TEXT",
         ]:
             try:
                 await db.execute(col_sql)

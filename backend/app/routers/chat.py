@@ -10,6 +10,7 @@ router = APIRouter(prefix="/api/chat", tags=["chat"])
 class SendRequest(BaseModel):
     message: str
     conversation_id: str | None = None
+    image: str | None = None
 
 @router.post("/send")
 async def send_message(req: SendRequest, _=Depends(verify_token)):
@@ -17,7 +18,7 @@ async def send_message(req: SendRequest, _=Depends(verify_token)):
 
     async def event_stream():
         yield f"data: {json.dumps({'type': 'conversation_id', 'conversation_id': conversation_id})}\n\n"
-        async for item in stream_chat(conversation_id, req.message):
+        async for item in stream_chat(conversation_id, req.message, image=req.image):
             if isinstance(item, dict):
                 yield f"data: {json.dumps(item)}\n\n"
             else:

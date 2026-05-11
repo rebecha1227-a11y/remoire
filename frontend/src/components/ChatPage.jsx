@@ -128,7 +128,7 @@ function Bubble({ msg, isNew, bubbleStyle, showAvatar, showTail, thinkingExpande
     <div style={{
       display: 'flex',
       flexDirection: isSend ? 'row-reverse' : 'row',
-      alignItems: showAvatar ? 'flex-start' : 'flex-end',
+      alignItems: 'flex-end',
       gap: 8,
       animation: isNew ? 'bubble-in 160ms ease forwards' : undefined,
       transformOrigin: isSend ? 'bottom right' : 'bottom left',
@@ -136,20 +136,47 @@ function Bubble({ msg, isNew, bubbleStyle, showAvatar, showTail, thinkingExpande
       {/* Avatar slot */}
       {isSend ? (
         showJingAvatarInChat && showTail ? (
-          <div style={{ width: 34, height: 34, borderRadius: '50%', flexShrink: 0, overflow: 'hidden', background: 'var(--accent-subtle)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontFamily: 'var(--font-display)', color: 'var(--accent)', position: 'relative', zIndex: 2 }}>
+          <div style={{ width: 34, height: 34, borderRadius: '50%', flexShrink: 0, overflow: 'hidden', background: 'var(--accent-subtle)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontFamily: 'var(--font-display)', color: 'var(--accent)', position: 'relative', zIndex: 2, marginBottom: 18 }}>
             {jingAvatar ? <img src={jingAvatar} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : '静'}
           </div>
         ) : (showJingAvatarInChat ? <div style={{ width: 34, flexShrink: 0 }} /> : null)
       ) : (
         showConnieAvatarInChat ? (
-          <div style={{ width: 34, height: 34, borderRadius: '50%', flexShrink: 0, overflow: 'hidden', background: showAvatar ? 'var(--accent-subtle)' : 'transparent', border: showAvatar ? '1px solid var(--border)' : 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontFamily: 'var(--font-display)', color: 'var(--accent)', position: 'relative', zIndex: 2 }}>
+          <div style={{ width: 34, height: 34, borderRadius: '50%', flexShrink: 0, overflow: 'hidden', background: showAvatar ? 'var(--accent-subtle)' : 'transparent', border: showAvatar ? '1px solid var(--border)' : 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontFamily: 'var(--font-display)', color: 'var(--accent)', position: 'relative', zIndex: 2, marginBottom: 18 }}>
             {showAvatar ? (connieAvatar ? <img src={connieAvatar} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : 'C') : ''}
           </div>
         ) : null
       )}
       {/* Bubble content */}
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: isSend ? 'flex-end' : 'flex-start', maxWidth: '72%' }}>
-        <div style={{ position: 'relative', display: 'inline-block' }}>
+        {msg.thinking && (
+          <div style={{ marginBottom: 4, paddingLeft: isSend ? 0 : 4 }}>
+            <button onClick={onToggleThinking} style={{
+              background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+              display: 'flex', alignItems: 'center', gap: 3,
+              fontFamily: 'var(--font-body)', fontSize: 'var(--text-xs)',
+              color: 'var(--text-tertiary)', opacity: 0.65,
+            }}>
+              偷偷看他在想什么
+              <span style={{ display: 'inline-block', transition: 'transform 0.18s', transform: thinkingExpanded ? 'rotate(90deg)' : 'none', lineHeight: 1 }}>›</span>
+            </button>
+            {thinkingExpanded && (
+              <div style={{
+                marginTop: 6, padding: '8px 12px',
+                background: 'var(--bg-secondary)', borderRadius: 'var(--radius-sm)',
+                fontSize: 'var(--text-xs)', color: 'var(--text-secondary)',
+                lineHeight: 1.7, maxWidth: 240,
+                animation: 'card-in 160ms ease',
+              }}>
+                {msg.thinking}
+              </div>
+            )}
+          </div>
+        )}
+        {msg.image && (
+          <img src={msg.image} alt="" style={{ maxWidth: '100%', maxHeight: 240, borderRadius: 12, marginBottom: msg.text ? 6 : 0, display: 'block' }} />
+        )}
+        {msg.text && <div style={{ position: 'relative', display: 'inline-block' }}>
           <div style={{
             position: 'relative',
             zIndex: 2,
@@ -161,7 +188,9 @@ function Bubble({ msg, isNew, bubbleStyle, showAvatar, showTail, thinkingExpande
             lineHeight: 1.5,
             boxShadow: isSend ? s.sendShadow : s.recvShadow,
             whiteSpace: 'pre-wrap',
-          }}>{msg.text}</div>
+          }}>
+            {msg.text}
+          </div>
           {showTail && bs === 'default' && isSend && (
             <>
               <div style={{
@@ -204,34 +233,10 @@ function Bubble({ msg, isNew, bubbleStyle, showAvatar, showTail, thinkingExpande
               }} />
             </>
           )}
-        </div>
+        </div>}
         {msg.time && (
           <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', opacity: 0.45, marginTop: 3, paddingLeft: isSend ? 0 : 4, paddingRight: isSend ? 4 : 0 }}>
             {msg.time}
-          </div>
-        )}
-        {msg.thinking && (
-          <div style={{ marginTop: 4, paddingLeft: isSend ? 0 : 4 }}>
-            <button onClick={onToggleThinking} style={{
-              background: 'none', border: 'none', cursor: 'pointer', padding: 0,
-              display: 'flex', alignItems: 'center', gap: 3,
-              fontFamily: 'var(--font-body)', fontSize: 'var(--text-xs)',
-              color: 'var(--text-tertiary)', opacity: 0.65,
-            }}>
-              偷偷看他在想什么
-              <span style={{ display: 'inline-block', transition: 'transform 0.18s', transform: thinkingExpanded ? 'rotate(90deg)' : 'none', lineHeight: 1 }}>›</span>
-            </button>
-            {thinkingExpanded && (
-              <div style={{
-                marginTop: 6, padding: '8px 12px',
-                background: 'var(--bg-secondary)', borderRadius: 'var(--radius-sm)',
-                fontSize: 'var(--text-xs)', color: 'var(--text-secondary)',
-                lineHeight: 1.7, maxWidth: 240,
-                animation: 'card-in 160ms ease',
-              }}>
-                {msg.thinking}
-              </div>
-            )}
           </div>
         )}
       </div>
@@ -336,6 +341,8 @@ export default function ChatPage({ tweaks }) {
   const [showEmojiPanel, setShowEmojiPanel] = useState(false);
   const [memoryCandidate, setMemoryCandidate] = useState(null);
   const [expandedThinking, setExpandedThinking] = useState(new Set());
+  const [pendingImage, setPendingImage] = useState(null);
+  const fileInputRef = useRef(null);
   const bottomRef = useRef(null);
   const msgIdRef = useRef(100);
   const conversationIdRef = useRef(localStorage.getItem('remoire_conv_id') || null);
@@ -363,7 +370,9 @@ export default function ChatPage({ tweaks }) {
             } else if (m.content.startsWith('静儿修改')) {
               loaded.push({ id: ++msgIdRef.current, role: 'system', text: m.content, time });
             } else {
-              loaded.push({ id: ++msgIdRef.current, role: 'user', text: m.content, time, type: 'normal' });
+              const userMsg = { id: ++msgIdRef.current, role: 'user', text: m.content, time, type: 'normal' };
+              if (m.image) userMsg.image = m.image;
+              loaded.push(userMsg);
             }
           }
           setMessages(loaded);
@@ -414,17 +423,19 @@ export default function ChatPage({ tweaks }) {
     setNoteHistoryLoading(false);
   }
 
-  async function fetchReply(txt) {
+  async function fetchReply(txt, image) {
     const time = formatBJTime(new Date().toISOString());
     setTyping(true);
     try {
+      const body = { message: txt || '（发了一张图片）', conversation_id: conversationIdRef.current || null };
+      if (image) body.image = image;
       const res = await fetch('http://localhost:8000/api/chat/send', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer remoire-rebechalovesconnie-4ever',
         },
-        body: JSON.stringify({ message: txt, conversation_id: conversationIdRef.current || null }),
+        body: JSON.stringify(body),
       });
 
       const reader = res.body.getReader();
@@ -487,14 +498,17 @@ export default function ChatPage({ tweaks }) {
   }
 
   async function sendMessage() {
-    if (!input.trim()) return;
+    if (!input.trim() && !pendingImage) return;
     const txt = input;
+    const img = pendingImage;
     setInput('');
+    setPendingImage(null);
     setShowPlus(false);
     const time = formatBJTime(new Date().toISOString());
     const userMsg = { id: ++msgIdRef.current, role: 'user', text: txt, time, isNew: true };
+    if (img) userMsg.image = img;
     setMessages((m) => [...m, userMsg]);
-    await fetchReply(txt);
+    await fetchReply(txt, img);
   }
 
   function toggleThinking(id) {
@@ -610,11 +624,25 @@ export default function ChatPage({ tweaks }) {
       )}
 
       {/* Input area */}
+      <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => {
+        const f = e.target.files[0];
+        if (!f) return;
+        const reader = new FileReader();
+        reader.onload = () => setPendingImage(reader.result);
+        reader.readAsDataURL(f);
+        e.target.value = '';
+      }} />
       <div style={{ padding: '8px 12px 16px', background: 'var(--bg-primary)', borderTop: '1px solid var(--border-light)' }}>
+        {pendingImage && (
+          <div style={{ marginBottom: 8, position: 'relative', display: 'inline-block' }}>
+            <img src={pendingImage} alt="preview" style={{ maxHeight: 120, maxWidth: 200, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)' }} />
+            <button onClick={() => setPendingImage(null)} style={{ position: 'absolute', top: -6, right: -6, width: 20, height: 20, borderRadius: '50%', background: 'var(--text-secondary)', color: '#fff', border: 'none', fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>✕</button>
+          </div>
+        )}
         {showPlus &&
         <div style={{ display: 'flex', gap: 8, marginBottom: 10, animation: 'card-in 160ms ease' }}>
             {[['image', '图片'], ['map-pin', '位置'], ['bell', '提醒']].map(([icon, label]) =>
-          <button key={label} onClick={() => setShowPlus(false)} style={{ flex: 1, padding: '8px 4px', background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-sm)', fontSize: 11, color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+          <button key={label} onClick={() => { if (icon === 'image') { fileInputRef.current?.click(); } setShowPlus(false); }} style={{ flex: 1, padding: '8px 4px', background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-sm)', fontSize: 11, color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
                 <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   {icon === 'image' && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><path d="M21 15l-5-5L5 21" /></svg>}
                   {icon === 'map-pin' && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>}
@@ -646,7 +674,7 @@ export default function ChatPage({ tweaks }) {
               <circle cx="15" cy="10" r="1" fill={showEmojiPanel ? 'var(--accent)' : 'var(--text-tertiary)'} stroke="none" />
             </svg>
           </IconButton>
-          {input ?
+          {(input.trim() || pendingImage) ?
           <button onClick={sendMessage} style={{ background: 'var(--accent)', color: '#FAF8F4', border: 'none', borderRadius: 'var(--radius-sm)', padding: '8px 14px', fontSize: 14, fontWeight: 500, cursor: 'pointer', flexShrink: 0 }}>发送</button> :
 
           <IconButton>
