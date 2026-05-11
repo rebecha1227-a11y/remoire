@@ -1,0 +1,7 @@
+html, body { height: 100%; overflow: hidden; }
+body { margin: 0; }
+::-webkit-scrollbar { width: 3px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+input { outline: none; }
+button { -webkit-tap-highlight-color: transparent; }

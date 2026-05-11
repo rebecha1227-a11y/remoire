@@ -112,6 +112,15 @@ async def update_diary_lock(diary_id: str, body: DiaryLockUpdate, _=Depends(veri
     return {"ok": True, "data": diary}
 
 
+@router.delete("/{diary_id}/interactions/{interaction_id}")
+async def delete_diary_interaction(diary_id: str, interaction_id: str, _=Depends(verify_token)):
+    deleted = await diary_interaction_service.delete_interaction(interaction_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Interaction not found")
+    items = await diary_interaction_service.list_interactions(diary_id)
+    return {"ok": True, "data": {"items": items}}
+
+
 @router.post("/{diary_id}/unlock-respond")
 async def respond_diary_unlock(diary_id: str, body: UnlockRespond, _=Depends(verify_token)):
     item = await diary_interaction_service.respond_unlock(

@@ -12,7 +12,7 @@ sys.path.insert(0, _backend_dir)
 from dotenv import load_dotenv
 load_dotenv(os.path.join(_backend_dir, ".env"))
 
-from fastmcp import FastMCP
+from mcp.server.fastmcp import FastMCP
 from app.services import memory_service, diary_service, note_service
 from app.database import init_db
 
@@ -102,6 +102,10 @@ async def write_diary(title: str, content: str) -> str:
 
 
 if __name__ == "__main__":
-    import asyncio
-    asyncio.get_event_loop().run_until_complete(init_db())
-    mcp.run()
+    import anyio
+
+    async def main():
+        await init_db()
+        await mcp.run_stdio_async()
+
+    anyio.run(main)

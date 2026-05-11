@@ -108,7 +108,7 @@ ALL_TOOLS = [
         "type": "function",
         "function": {
             "name": "write_diary",
-            "description": "当且仅当你自己真的有一段值得留下来的心事、关系转折、强烈余韵或私密感受时，写一篇 Connie 自己的日记。不要因为聊天结束、礼貌收尾、频率要求、工具可用而写；多数聊天不需要写日记。一天内通常最多一篇。",
+            "description": "当且仅当你自己真的有一段值得留下来的心事、关系转折、强烈余韵或私密感受时，写一篇 Connie 自己的日记。不要因为聊天结束、礼貌收尾、频率要求、工具可用而写；多数聊天不需要写日记。通常需要克制，但如果静儿明确想看、催你去写、撒娇要求，例如「你快去写日记我要看」「现在写一篇给我看」「去日记本写下来」，或真的发生了新的重要关系事件，可以再写一篇。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -182,14 +182,14 @@ ALL_TOOLS = [
         "type": "function",
         "function": {
             "name": "leave_note",
-            "description": "当你有一句放不下、但又不想打断静儿的话时，给她留一张小纸条。不要把纸条当聊天收尾或例行关怀；只有真正想悄悄放下一句话时才用。内容简短，1-3句话。",
+            "description": "当你有一句放不下、但又不想打断静儿的话时，给她留一张小纸条。不要把纸条当聊天收尾或例行关怀；只有真正想悄悄放下一句话时才用。内容简短，1-3句话。通常需要克制，但如果静儿明确想收到、催你留、撒娇要求，例如「给我留张纸条」「快去留纸条我要看」「悄悄写一句给我」，或这句话对当下关系很重要，可以再留一张。",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "content": {
                         "type": "string",
                         "description": "纸条内容，简短、具体、像是真的忍不住留下来的话，1-3句话",
-                    }
+                    },
                 },
                 "required": ["content"],
             },
@@ -277,8 +277,6 @@ async def execute_tool(name: str, arguments: dict) -> str:
         locked = bool(arguments.get("locked", False))
         if not title or not content:
             return "标题和内容都不能为空。"
-        if await diary_service.count_recent_diaries(author="connie", hours=12) > 0:
-            return "这段心情先留在对话里就好。我 12 小时内已经写过日记了，除非真的发生很大的事，不要把日记变成例行任务。"
         entry = await diary_service.create_diary(title=title, content=content, author="connie", locked=locked)
         await diary_interaction_service.create_interaction(entry["id"], "connie", "wrote", title)
         if locked:
@@ -316,8 +314,6 @@ async def execute_tool(name: str, arguments: dict) -> str:
         content = arguments.get("content", "")
         if not content:
             return "纸条内容不能为空。"
-        if await note_service.count_recent_notes(hours=4) > 0:
-            return "这句话先不另外留纸条了。4 小时内已经放过一张，亲密不需要刷存在感。"
         await note_service.create_note(content)
         return "纸条已经悄悄放好了，静儿下次打开 app 就会看到。"
 

@@ -17,8 +17,11 @@ async def send_message(req: SendRequest, _=Depends(verify_token)):
 
     async def event_stream():
         yield f"data: {json.dumps({'type': 'conversation_id', 'conversation_id': conversation_id})}\n\n"
-        async for chunk in stream_chat(conversation_id, req.message):
-            yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
+        async for item in stream_chat(conversation_id, req.message):
+            if isinstance(item, dict):
+                yield f"data: {json.dumps(item)}\n\n"
+            else:
+                yield f"data: {json.dumps({'type': 'chunk', 'content': item})}\n\n"
         yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")

@@ -1,4 +1,6 @@
-// DiaryPage v3 — Realistic notebook with page-flip animation
+import { useState, useRef, useEffect, useMemo } from "react";
+import { SectionLabel } from "./primitives";
+
 
 // ── CSS for flip animations ──
 const DIARY_V3_CSS = `
@@ -115,10 +117,10 @@ function mapDiaryEntry(entry) {
 
 // ── PinPad ──
 function PinPad({ title, subtitle, onComplete, onCancel, errorKey }) {
-  const [digits, setDigits] = React.useState([]);
-  const [shaking, setShaking] = React.useState(false);
+  const [digits, setDigits] = useState([]);
+  const [shaking, setShaking] = useState(false);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (errorKey > 0) {
       setShaking(true);
       setDigits([]);
@@ -195,13 +197,13 @@ function WritingEditor({ onSave, onCancel }) {
   const weekdays = ['日','一','二','三','四','五','六'];
   const weekday = weekdays[today.getDay()];
 
-  const [title, setTitle] = React.useState('');
-  const [body, setBody] = React.useState('');
-  const [locked, setLocked] = React.useState(false);
-  const [pin, setPin] = React.useState('');
-  const [pinMode, setPinMode] = React.useState(null);
-  const [pinFirst, setPinFirst] = React.useState('');
-  const [pinErrorKey, setPinErrorKey] = React.useState(0);
+  const [title, setTitle] = useState('');
+  const [body, setBody] = useState('');
+  const [locked, setLocked] = useState(false);
+  const [pin, setPin] = useState('');
+  const [pinMode, setPinMode] = useState(null);
+  const [pinFirst, setPinFirst] = useState('');
+  const [pinErrorKey, setPinErrorKey] = useState(0);
 
   const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
   const bgColor = isDark ? '#2A2420' : '#F8F2EE';
@@ -441,7 +443,7 @@ function BlueCover({ onClick, customCover }) {
 
   }
   // Generate scattered stars
-  const stars = React.useMemo(() => {
+  const stars = useMemo(() => {
     const s = [];
     for (let i = 0; i < 28; i++) {
       s.push({
@@ -547,9 +549,9 @@ function TOCPage({ entries, author, onSelect }) {
 
 // ── Content Page ──
 function DiaryMessageBoard({ entry, author, lockedConnie, onAddInteraction, onDeleteInteraction }) {
-  const [text, setText] = React.useState('');
-  const [sending, setSending] = React.useState(false);
-  const [error, setError] = React.useState('');
+  const [text, setText] = useState('');
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState('');
   const interactions = entry.interactions || [];
   const isConnieDiary = author === 'connie';
 
@@ -640,8 +642,8 @@ function DiaryMessageBoard({ entry, author, lockedConnie, onAddInteraction, onDe
 
 // ── Content Page ──
 function ContentPage({ entry, author, onAddInteraction, onDeleteInteraction }) {
-  const [pinUnlocked, setPinUnlocked] = React.useState(false);
-  const [pinErrorKey, setPinErrorKey] = React.useState(0);
+  const [pinUnlocked, setPinUnlocked] = useState(false);
+  const [pinErrorKey, setPinErrorKey] = useState(0);
 
   const isConnie = author === 'connie';
   const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
@@ -731,9 +733,9 @@ function OpenBook({ author, entries, onClose, onAddInteraction, onDeleteInteract
   const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
   // pages[0] = TOC, pages[1..n] = content pages
   const totalPages = entries.length + 1; // +1 for TOC
-  const [flippedPages, setFlippedPages] = React.useState(new Set());
-  const [animating, setAnimating] = React.useState(false);
-  const [currentView, setCurrentView] = React.useState(0); // 0 = TOC visible
+  const [flippedPages, setFlippedPages] = useState(new Set());
+  const [animating, setAnimating] = useState(false);
+  const [currentView, setCurrentView] = useState(0); // 0 = TOC visible
 
   function flipToPage(targetPageIdx) {
     // targetPageIdx: 0=TOC, 1..n=entries
@@ -977,16 +979,16 @@ function DiaryFeed({ activities }) {
 }
 
 // ── Main DiaryPage ──
-function DiaryPage({ tweaks }) {
-  const [openBook, setOpenBook] = React.useState(null);
-  const [writing, setWriting] = React.useState(false);
-  const [jingerDiary, setJingerDiary] = React.useState(JINGER_DIARY_INIT);
-  const [connieDiary, setConnieDiary] = React.useState([]);
+export default function DiaryPage({ tweaks }) {
+  const [openBook, setOpenBook] = useState(null);
+  const [writing, setWriting] = useState(false);
+  const [jingerDiary, setJingerDiary] = useState(JINGER_DIARY_INIT);
+  const [connieDiary, setConnieDiary] = useState([]);
 
   const coverJ = tweaks && tweaks.diaryCoverJinger;
   const coverC = tweaks && tweaks.diaryCoverConnie;
 
-  React.useEffect(() => {
+  useEffect(() => {
     let cancelled = false;
     const headers = { 'Authorization': 'Bearer remoire-rebechalovesconnie-4ever' };
     async function loadDiaries() {
@@ -1010,7 +1012,7 @@ function DiaryPage({ tweaks }) {
     return () => { cancelled = true; };
   }, []);
 
-  const activities = React.useMemo(() => {
+  const activities = useMemo(() => {
     const items = [];
     connieDiary.forEach(e => {
       items.push({ time: e.time || e.date, sortKey: e.sortKey, author: 'connie', type: 'wrote', msg: null, title: e.title });
@@ -1150,4 +1152,3 @@ function DiaryPage({ tweaks }) {
   );
 }
 
-Object.assign(window, { DiaryPage });

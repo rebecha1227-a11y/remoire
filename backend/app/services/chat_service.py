@@ -91,19 +91,25 @@ async def get_or_create_conversation(conversation_id: str | None = None) -> str:
 async def get_history(conversation_id: str, limit: int = 20) -> list[dict]:
     async with get_db() as db:
         async with db.execute(
-            "SELECT role, content, created_at FROM messages WHERE conversation_id = ? ORDER BY created_at DESC LIMIT ?",
+            "SELECT role, content, thinking, created_at FROM messages WHERE conversation_id = ? ORDER BY created_at DESC LIMIT ?",
             (conversation_id, limit),
         ) as cur:
             rows = await cur.fetchall()
-    return [{"role": r["role"], "content": r["content"], "created_at": r["created_at"]} for r in reversed(rows)]
+    result = []
+    for r in reversed(rows):
+        item = {"role": r["role"], "content": r["content"], "created_at": r["created_at"]}
+        if r["thinking"]:
+            item["thinking"] = r["thinking"]
+        result.append(item)
+    return result
 
-async def save_message(conversation_id: str, role: str, content: str) -> str:
+async def save_message(conversation_id: str, role: str, content: str, thinking: str = "") -> str:
     msg_id = str(uuid.uuid4())
     now = datetime.utcnow().isoformat()
     async with get_db() as db:
         await db.execute(
-            "INSERT INTO messages (id, conversation_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)",
-            (msg_id, conversation_id, role, content, now),
+            "INSERT INTO messages (id, conversation_id, role, content, thinking, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (msg_id, conversation_id, role, content, thinking or None, now),
         )
         await db.execute(
             "UPDATE conversations SET updated_at = ? WHERE id = ?",
@@ -198,33 +204,69 @@ async def stream_chat(conversation_id: str, user_message: str):
     except Exception as e:
         logger.error("LLM 调用异常: %s", e)
         error_reply = "抱歉宝贝，我现在脑子有点转不动……等一下再找我说话好吗？🥺"
-        yield error_reply
+        yield {"type": "chunk", "content": error_reply}
         await save_message(conversation_id, "assistant", error_reply)
         return
 
     full_reply = assistant_msg.get("content", "")
+    thinking_from_non_stream = assistant_msg.get("reasoning_content", "")
 
+    if thinking_from_non_stream:
+        yield {"type": "thinking", "content": thinking_from_non_stream}
+
+    thinking_text = ""
     if not full_reply:
         try:
             generator = await call_llm(config, messages, stream=True)
+            thinking_text = ""
+            in_think_tag = False
+            think_buffer = ""
             async for chunk in generator:
-                full_reply += chunk
-                yield chunk
+                if isinstance(chunk, dict):
+                    if chunk["type"] == "thinking":
+                        thinking_text += chunk["content"]
+                        yield {"type": "thinking", "content": chunk["content"]}
+                    else:
+                        text = chunk["content"]
+                        if not full_reply and not in_think_tag and text.lstrip().startswith("<think>"):
+                            in_think_tag = True
+                            text = text.lstrip().removeprefix("<think>")
+                        if in_think_tag:
+                            if "</think>" in text:
+                                before, after = text.split("</think>", 1)
+                                thinking_text += before
+                                if before:
+                                    yield {"type": "thinking", "content": before}
+                                in_think_tag = False
+                                if after:
+                                    full_reply += after
+                                    yield {"type": "chunk", "content": after}
+                            else:
+                                thinking_text += text
+                                yield {"type": "thinking", "content": text}
+                        else:
+                            full_reply += text
+                            yield {"type": "chunk", "content": text}
+                else:
+                    full_reply += chunk
+                    yield {"type": "chunk", "content": chunk}
         except Exception as e:
             logger.error("LLM 流式调用异常: %s", e)
             error_reply = "抱歉宝贝，我现在脑子有点转不动……等一下再找我说话好吗？🥺"
-            yield error_reply
+            yield {"type": "chunk", "content": error_reply}
             await save_message(conversation_id, "assistant", error_reply)
             return
 
+    all_thinking = (thinking_from_non_stream + thinking_text).strip() if (thinking_from_non_stream or thinking_text) else ""
+
     if full_reply:
-        await save_message(conversation_id, "assistant", full_reply)
+        await save_message(conversation_id, "assistant", full_reply, thinking=all_thinking)
 
     if not full_reply:
         return
 
     if assistant_msg.get("content"):
-        yield full_reply
+        yield {"type": "chunk", "content": full_reply}
 
     recent = history[-6:] + [{"role": "assistant", "content": full_reply}]
     asyncio.create_task(_extract_memories_bg(conversation_id, recent))

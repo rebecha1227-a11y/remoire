@@ -22,10 +22,12 @@ function App({ tweaks }) {
 
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--bg-primary)', position: 'relative' }}>
-      {/* Page area */}
-      <div key={tab} className="page-enter" style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
-        {pages[tab]}
-      </div>
+      {/* Page area — all pages stay mounted, only current one visible */}
+      {Object.entries(pages).map(([id, page]) => (
+        <div key={id} style={{ flex: 1, overflow: 'hidden', position: 'relative', display: tab === id ? 'flex' : 'none', flexDirection: 'column' }}>
+          {page}
+        </div>
+      ))}
 
       {/* Bottom nav */}
       <div style={{

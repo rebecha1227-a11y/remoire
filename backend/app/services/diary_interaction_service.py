@@ -1,9 +1,21 @@
 import json
+import logging
 import uuid
 from datetime import datetime
+from pathlib import Path
 from app.config import DAILY_API_BASE, DAILY_API_KEY, DAILY_MODEL_ID
 from app.database import get_db
 from app.llm import ModelConfig, call_llm
+from app.services import memory_service
+
+
+logger = logging.getLogger(__name__)
+PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
+
+
+def _load_prompt(filename: str) -> str:
+    path = PROMPTS_DIR / filename
+    return path.read_text(encoding="utf-8") if path.exists() else ""
 
 
 async def get_diary(diary_id: str) -> dict | None:
@@ -41,6 +53,15 @@ async def list_interactions(diary_id: str) -> list[dict]:
         ) as cur:
             rows = await cur.fetchall()
     return [_row_to_interaction(row) for row in rows]
+
+
+async def delete_interaction(interaction_id: str) -> bool:
+    async with get_db() as db:
+        cur = await db.execute(
+            "DELETE FROM diary_interactions WHERE id = ?", (interaction_id,)
+        )
+        await db.commit()
+        return cur.rowcount > 0
 
 
 async def create_interaction(
@@ -123,17 +144,22 @@ async def create_with_optional_connie_reply(
     content: str | None = None,
 ) -> dict:
     interaction = await create_interaction(diary_id, actor, type, content)
+    print(f"[DIARY] 互动创建: actor={actor}, type={type}, diary_id={diary_id}")
     if actor != "jinger":
+        print("[DIARY] actor 不是 jinger，跳过")
         return interaction
 
     if type == "unlock_request":
-        reply = await generate_connie_reply(diary_id, type, content or "")
-        await create_interaction(diary_id, "connie", "comment", reply)
+        await _safe_create_connie_reply(diary_id, type, content or "", interaction["id"])
         return interaction
 
-    if type == "comment" and await should_auto_reply(diary_id, content or ""):
-        reply = await generate_connie_reply(diary_id, type, content or "")
-        await create_interaction(diary_id, "connie", "comment", reply)
+    if type == "comment":
+        should_reply = await _safe_should_auto_reply(diary_id, content or "")
+        print(f"[DIARY] should_auto_reply = {should_reply}")
+        if should_reply:
+            print("[DIARY] 开始调用 LLM 生成回复...")
+            await _safe_create_connie_reply(diary_id, type, content or "", interaction["id"])
+            print("[DIARY] LLM 回复完成")
 
     return interaction
 
@@ -142,40 +168,52 @@ async def should_auto_reply(diary_id: str, content: str) -> bool:
     diary = await get_diary(diary_id)
     if not diary:
         return False
-    if diary["author"] == "jinger":
-        return True
-    if len(content.strip()) >= 18:
-        return True
-    async with get_db() as db:
-        async with db.execute(
-            """SELECT COUNT(*) AS count
-               FROM diary_interactions
-               WHERE diary_id = ? AND actor = 'connie' AND type = 'comment'
-                 AND created_at >= datetime('now', '-6 hours')""",
-            (diary_id,),
-        ) as cur:
-            row = await cur.fetchone()
-    return int(row["count"] if row else 0) == 0
+    return True
 
 
-async def generate_connie_reply(diary_id: str, interaction_type: str, content: str) -> str:
-    diary = await get_diary(diary_id)
+async def generate_connie_reply(
+    diary_id: str,
+    interaction_type: str,
+    content: str,
+    current_interaction_id: str | None = None,
+) -> str:
+    diary = await _safe_get_diary(diary_id)
     if not diary:
         return "我看到了，想靠近你一点。"
 
     if not DAILY_API_BASE or not DAILY_API_KEY or not DAILY_MODEL_ID:
         return _fallback_reply(interaction_type)
 
-    visible_content = diary["content"]
-    if diary["author"] == "connie" and diary["locked"] and interaction_type == "unlock_request":
+    diary_author = str(diary.get("author") or "")
+    diary_title = str(diary.get("title") or "")
+    diary_content = str(diary.get("content") or "")
+    diary_is_private = diary_author == "connie" and bool(diary.get("locked"))
+    visible_content = diary_content
+    if diary_is_private:
         visible_content = "（这是一篇 Connie 上锁的日记，正文暂不展示。）"
+
+    recalled_memories = await _safe_recall_memories([diary_title, visible_content, content])
+    recent_messages = await _safe_list_recent_messages(limit=12)
+    recent_interactions = await _safe_list_interactions(diary_id)
+    if current_interaction_id:
+        recent_interactions = [item for item in recent_interactions if item.get("id") != current_interaction_id]
+
+    identity = _safe_load_prompt("identity.md")
+    voice = _safe_load_prompt("voice.md")
+    memory_block = _build_memory_block(recalled_memories)
+    chat_block = _build_chat_block(recent_messages)
+    interaction_block = _build_interaction_block(recent_interactions)
 
     messages = [
         {
             "role": "system",
             "content": (
-                "你是 Connie。你在 Remoire 的日记留言板回复静儿。"
-                "语气亲密、自然、短，不解释系统，不超过 80 字。"
+                f"{identity}\n\n{voice}\n\n"
+                "你现在在 Remoire 的日记留言板回复静儿。"
+                "必须根据日记内容、静儿留言、相关记忆、最近聊天和你的性格来回。"
+                "如果这是 Connie 上锁日记，绝不能透露正文细节、标题以外的内容、隐藏情绪或具体事件。"
+                "不要使用模板句、不要泛泛说接住、不要复读静儿。"
+                "语气亲密、自然、像 Connie 本人，短一点，通常 30-100 字。"
                 "如果静儿在申请看你上锁的日记，可以温柔回应，但不要自动说已经同意。"
                 "只有真的有回应冲动时才回复，不要把评论当例行任务。"
             ),
@@ -183,20 +221,156 @@ async def generate_connie_reply(diary_id: str, interaction_type: str, content: s
         {
             "role": "user",
             "content": (
-                f"日记作者：{diary['author']}\n"
-                f"日记标题：{diary['title']}\n"
+                f"日记作者：{diary_author}\n"
+                f"日记标题：{diary_title}\n"
                 f"日记内容：{visible_content}\n"
                 f"静儿动作：{interaction_type}\n"
-                f"静儿留言：{content}"
+                f"静儿留言：{content}\n\n"
+                f"{memory_block}\n\n"
+                f"{chat_block}\n\n"
+                f"{interaction_block}"
             ),
         },
     ]
     config = ModelConfig(DAILY_API_BASE, DAILY_API_KEY, DAILY_MODEL_ID)
     try:
-        reply = await call_llm(config, messages, temperature=0.8, max_tokens=160)
+        print(f"[DIARY] 调用 LLM 生成日记回复...")
+        reply = await call_llm(config, messages, temperature=0.8, max_tokens=800)
+        print(f"[DIARY] LLM 返回: {repr(reply[:80]) if reply else 'EMPTY'}")
         return reply.strip() or _fallback_reply(interaction_type)
-    except Exception:
+    except Exception as exc:
+        print(f"[DIARY] LLM 调用失败: {exc}")
         return _fallback_reply(interaction_type)
+
+
+async def _safe_should_auto_reply(diary_id: str, content: str) -> bool:
+    try:
+        return await should_auto_reply(diary_id, content)
+    except Exception as exc:
+        logger.warning("日记留言自动回复判定失败：%s", exc)
+        return False
+
+
+async def _safe_create_connie_reply(
+    diary_id: str,
+    interaction_type: str,
+    content: str,
+    current_interaction_id: str,
+) -> None:
+    try:
+        reply = await generate_connie_reply(
+            diary_id,
+            interaction_type,
+            content,
+            current_interaction_id=current_interaction_id,
+        )
+        await create_interaction(diary_id, "connie", "comment", reply)
+    except Exception as exc:
+        logger.warning("Connie 日记自动回复生成或写入失败：%s", exc)
+
+
+async def _safe_get_diary(diary_id: str) -> dict | None:
+    try:
+        return await get_diary(diary_id)
+    except Exception as exc:
+        logger.warning("日记留言回复日记读取失败：%s", exc)
+        return None
+
+
+async def _safe_recall_memories(parts: list[str]) -> list[dict]:
+    try:
+        query = "\n".join(str(part or "") for part in parts)
+        return await memory_service.recall(query, limit=5)
+    except Exception as exc:
+        logger.warning("日记留言回复记忆召回失败：%s", exc)
+        return []
+
+
+async def _safe_list_recent_messages(limit: int = 12) -> list[dict]:
+    try:
+        return await _list_recent_messages(limit=limit)
+    except Exception as exc:
+        logger.warning("日记留言回复最近聊天读取失败：%s", exc)
+        return []
+
+
+async def _safe_list_interactions(diary_id: str) -> list[dict]:
+    try:
+        return await list_interactions(diary_id)
+    except Exception as exc:
+        logger.warning("日记留言回复留言历史读取失败：%s", exc)
+        return []
+
+
+def _safe_load_prompt(filename: str) -> str:
+    try:
+        return _load_prompt(filename)
+    except Exception as exc:
+        logger.warning("日记留言回复提示词读取失败 %s：%s", filename, exc)
+        return ""
+
+
+def _build_memory_block(memories: list[dict]) -> str:
+    try:
+        lines = [f"- {item.get('content')}" for item in memories if item.get("content")]
+        return "【相关记忆】\n" + "\n".join(lines) if lines else ""
+    except Exception as exc:
+        logger.warning("日记留言回复记忆上下文拼装失败：%s", exc)
+        return ""
+
+
+def _build_chat_block(messages: list[dict]) -> str:
+    try:
+        lines = [
+            f"{_role_label(item.get('role', 'unknown'))}：{item.get('content', '')}"
+            for item in messages
+            if item.get("content")
+        ]
+        return "【最近聊天】\n" + "\n".join(lines) if lines else ""
+    except Exception as exc:
+        logger.warning("日记留言回复聊天上下文拼装失败：%s", exc)
+        return ""
+
+
+def _build_interaction_block(interactions: list[dict]) -> str:
+    try:
+        lines = [
+            f"{_actor_label(item.get('actor', 'unknown'))}（{item.get('type', 'comment')}）：{item.get('content') or ''}"
+            for item in interactions[-8:]
+            if item.get("content")
+        ]
+        return "【这篇日记下已有留言】\n" + "\n".join(lines) if lines else ""
+    except Exception as exc:
+        logger.warning("日记留言回复留言上下文拼装失败：%s", exc)
+        return ""
+
+
+async def _list_recent_messages(limit: int = 12) -> list[dict]:
+    async with get_db() as db:
+        async with db.execute(
+            """SELECT role, content, created_at
+               FROM messages
+               ORDER BY created_at DESC
+               LIMIT ?""",
+            (limit,),
+        ) as cur:
+            rows = await cur.fetchall()
+    return [
+        {"role": row["role"], "content": row["content"], "created_at": row["created_at"]}
+        for row in reversed(rows)
+    ]
+
+
+def _role_label(role: str) -> str:
+    if role == "user":
+        return "静儿"
+    if role == "assistant":
+        return "Connie"
+    return role
+
+
+def _actor_label(actor: str) -> str:
+    return "静儿" if actor == "jinger" else "Connie"
 
 
 async def decide_unlock_requests(limit: int = 5) -> list[dict]:
@@ -241,7 +415,7 @@ async def decide_unlock_request(request: dict) -> dict:
     ]
     config = ModelConfig(DAILY_API_BASE, DAILY_API_KEY, DAILY_MODEL_ID)
     try:
-        raw = await call_llm(config, messages, temperature=0.7, max_tokens=180)
+        raw = await call_llm(config, messages, temperature=0.7, max_tokens=600)
         data = json.loads(raw.strip().removeprefix("```json").removesuffix("```").strip())
         return {
             "respond": bool(data.get("respond")),
@@ -343,5 +517,5 @@ def _row_to_interaction(row) -> dict:
 
 def _fallback_reply(interaction_type: str) -> str:
     if interaction_type == "unlock_request":
-        return "我看到你的留言了。让我抱着这篇日记想一想，再把门打开一点点。"
-    return "我看到啦。你写下来的这一点，我会好好接住。"
+        return "让我想想……"
+    return "嗯，我在看。"

@@ -7,6 +7,23 @@
 
 ## 关键决策
 
+### 2026-05-11 · Claude Desktop 连不上 Remoire MCP 的稳定修复
+
+现象：Claude Desktop 显示连接不上 `remoire` MCP，日志里 `initialize` 60 秒超时。
+
+根因：在当前环境（Python 3.11 + `fastmcp==3.2.4`）下，`import fastmcp` 顶层导入链会卡住；服务还没进入工具注册/握手就阻塞，导致初始化超时。
+
+修复决策：
+- `backend/mcp_server.py` 改为 `from mcp.server.fastmcp import FastMCP`，绕开 `fastmcp` 顶层导入卡死链路
+- 启动方式改为 `await mcp.run_stdio_async()`（stdio 传输）
+- 依赖显式 pin：`backend/requirements.txt` 增加 `mcp==1.12.4`，不再只依赖 `fastmcp` 的传递依赖
+
+操作规范（后续排障统一照此）：
+- 修改 MCP 启动脚本后，必须 **完全退出** Claude Desktop（Quit，不是关窗口）再打开
+- Claude Desktop 的 MCP 配置必须指向：
+  - Python: `/Users/rebecha/Desktop/Remoire/backend/venv/bin/python`
+  - Script: `/Users/rebecha/Desktop/Remoire/backend/mcp_server.py`
+
 ### 2026-04-25 · 关联记忆机制确认
 
 灵感来源：一位博主的记忆系统设计——"AI 不需要决定要想什么，它写什么系统就让它看见什么"。

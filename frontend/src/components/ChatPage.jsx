@@ -1,5 +1,10 @@
-// ChatPage — 聊天主界面
-const { useState, useRef, useEffect } = React;
+import { useState, useRef, useEffect } from "react";
+import { IconButton } from "./primitives";
+import {
+  NoteHistorySettings, MemoryCandidatesSettings,
+  BubbleSettings, NoteSettings, CoverSettings, FontSettings,
+} from "./SettingsSubPages";
+
 
 function formatBJTime(utcStr) {
   if (!utcStr) return '';
@@ -307,7 +312,7 @@ function NoteCard({ onKeep, onDismiss, minimized, onExpand, noteStyle, content }
 
 }
 
-function ChatPage({ tweaks }) {
+export default function ChatPage({ tweaks }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [noteState, setNoteState] = useState('hidden');
@@ -340,7 +345,7 @@ function ChatPage({ tweaks }) {
       const convId = conversationIdRef.current;
       if (!convId) return;
       try {
-        const res = await fetch(`http://localhost:8000/api/chat/history?conversation_id=${convId}&limit=50`, {
+        const res = await fetch(`http://localhost:8000/api/chat/history?conversation_id=${convId}&limit=9999`, {
           headers: { 'Authorization': 'Bearer remoire-rebechalovesconnie-4ever' }
         });
         const data = await res.json();
@@ -856,4 +861,3 @@ function ChatPage({ tweaks }) {
 
 }
 
-Object.assign(window, { ChatPage });
