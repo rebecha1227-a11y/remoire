@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from app.database import init_db
-from app.routers import chat, memory, diary, note
+from app.routers import chat, memory, diary, note, settings
 from app.scheduler.jobs import connie_auto_diary
 
 scheduler = AsyncIOScheduler()
@@ -35,6 +35,7 @@ app.include_router(chat.router)
 app.include_router(memory.router)
 app.include_router(diary.router)
 app.include_router(note.router)
+app.include_router(settings.router)
 
 @app.get("/")
 async def root():

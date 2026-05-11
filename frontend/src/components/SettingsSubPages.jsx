@@ -224,90 +224,408 @@ export function PromptSettings({ onBack }) {
 // ═══════════════════════════════════════════
 export function ModelSettings({ onBack }) {
   const SLOTS = [
-    { id: 'daily', label: '日常陪伴', desc: '日常聊天 + 主动消息', rec: 'DeepSeek / Gemini Flash / Haiku' },
-    { id: 'deep', label: '深度时刻', desc: '深度对话时手动切换', rec: 'Sonnet / GPT-4o' },
-    { id: 'backend', label: '后台任务', desc: '记忆提取/打标/摘要/日记草稿', rec: '最便宜的模型' },
+    { id: 'daily', label: '日常陪伴', desc: '聊天、主动消息、小纸条' },
+    { id: 'deep', label: '深度时刻', desc: '复杂情绪、长对话、需要更稳的理解' },
+    { id: 'backend', label: '后台任务', desc: '记忆提取、摘要、Connie 日记' },
   ];
-  const [expanded, setExpanded] = useState('daily');
-  const [models, setModels] = useState({
-    daily: { name: 'DeepSeek 日常', base: 'https://api.deepseek.com/v1', key: '', model: 'deepseek-chat', enabled: true },
-    deep: { name: '', base: '', key: '', model: '', enabled: false },
-    backend: { name: '', base: '', key: '', model: '', enabled: false },
-  });
-  const [testing, setTesting] = useState(null);
-  const [testResult, setTestResult] = useState({});
+  const API = 'http://localhost:8000/api/settings';
+  const headers = {
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer remoire-rebechalovesconnie-4ever',
+  };
+  const emptyDraft = { id: null, nickname: '', provider: 'openai-compatible', api_key: '', base_url: '', model_name: '' };
 
-  function updateSlot(slot, field, val) {
-    setModels(m => ({ ...m, [slot]: { ...m[slot], [field]: val } }));
+  const [presets, setPresets] = useState([]);
+  const [slots, setSlots] = useState([]);
+  const [draft, setDraft] = useState(emptyDraft);
+  const [expandedPresets, setExpandedPresets] = useState({});
+  const [addOpen, setAddOpen] = useState(false);
+  const [draftModels, setDraftModels] = useState([]);
+  const [modelFetchKey, setModelFetchKey] = useState('');
+  const [fetchingModels, setFetchingModels] = useState(false);
+  const [testingModel, setTestingModel] = useState(false);
+  const [testResult, setTestResult] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState('');
+
+  useEffect(() => { loadSettings(); }, []);
+
+  useEffect(() => {
+    if (!addOpen || !draft.base_url || (!draft.id && !draft.api_key)) return;
+    const key = `${draft.id || draft.api_key}|${draft.base_url}`;
+    if (key === modelFetchKey) return;
+    const timer = setTimeout(() => fetchDraftModels({ silent: true }), 700);
+    return () => clearTimeout(timer);
+  }, [addOpen, draft.api_key, draft.base_url, draft.id, modelFetchKey]);
+
+  async function readJson(res) {
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || json.ok === false) {
+      throw new Error(json.detail || json.error || `请求失败：${res.status}`);
+    }
+    return json;
   }
 
-  function testConnection(slot) {
-    setTesting(slot);
-    setTestResult(r => ({ ...r, [slot]: null }));
-    setTimeout(() => {
-      setTesting(null);
-      setTestResult(r => ({ ...r, [slot]: models[slot].base && models[slot].model ? 'success' : 'fail' }));
-    }, 1200);
+  async function loadSettings() {
+    setLoading(true);
+    setStatus('');
+    try {
+      const [presetsRes, slotsRes] = await Promise.all([
+        fetch(`${API}/model-presets`, { headers }),
+        fetch(`${API}/slots`, { headers }),
+      ]);
+      const presetsJson = await readJson(presetsRes);
+      const slotsJson = await readJson(slotsRes);
+      setPresets(presetsJson.data || []);
+      setSlots(slotsJson.data || []);
+    } catch (err) {
+      setStatus(`加载失败：${err.message}`);
+    } finally {
+      setLoading(false);
+    }
   }
+
+  function updateDraft(field, value) {
+    setDraft(d => ({ ...d, [field]: value }));
+    if (field === 'api_key' || field === 'base_url') {
+      setDraftModels([]);
+      setTestResult(null);
+    }
+    if (field === 'model_name') {
+      setTestResult(null);
+    }
+  }
+
+  async function savePreset() {
+    if (!draft.nickname || !draft.base_url || !draft.model_name || (!draft.id && !draft.api_key)) {
+      setStatus('请填完预设名字、密钥、接口地址和模型名称。');
+      return;
+    }
+    setSaving(true);
+    setStatus('');
+    try {
+      const body = {
+        nickname: draft.nickname,
+        provider: draft.provider,
+        base_url: draft.base_url,
+        model_name: draft.model_name,
+      };
+      if (draft.api_key) body.api_key = draft.api_key;
+      const res = await fetch(draft.id ? `${API}/model-presets/${draft.id}` : `${API}/model-presets`, {
+        method: draft.id ? 'PUT' : 'POST',
+        headers,
+        body: JSON.stringify(body),
+      });
+      await readJson(res);
+      setDraft(emptyDraft);
+      setDraftModels([]);
+      setModelFetchKey('');
+      setTestResult(null);
+      setAddOpen(false);
+      await loadSettings();
+      setStatus('已保存模型预设。');
+    } catch (err) {
+      setStatus(`保存失败：${err.message}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function startNewPreset() {
+    setDraft(emptyDraft);
+    setDraftModels([]);
+    setModelFetchKey('');
+    setTestResult(null);
+    setAddOpen(v => !v);
+  }
+
+  function editPreset(preset) {
+    setDraft({ ...preset, api_key: '' });
+    setDraftModels([]);
+    setModelFetchKey('');
+    setTestResult(null);
+    setAddOpen(true);
+  }
+
+  async function deletePreset(id) {
+    if (!window.confirm('删除后，使用它的槽位会被清空。继续吗？')) return;
+    setStatus('');
+    try {
+      const res = await fetch(`${API}/model-presets/${id}`, { method: 'DELETE', headers });
+      await readJson(res);
+      if (draft.id === id) setDraft(emptyDraft);
+      await loadSettings();
+      setStatus('已删除模型预设。');
+    } catch (err) {
+      setStatus(`删除失败：${err.message}`);
+    }
+  }
+
+  async function fetchDraftModels({ silent = false } = {}) {
+    if ((!draft.id && !draft.api_key) || !draft.base_url) {
+      setStatus('请先填写密钥和接口地址。');
+      return;
+    }
+    setFetchingModels(true);
+    if (!silent) setStatus('');
+    try {
+      const res = draft.id && !draft.api_key
+        ? await fetch(`${API}/model-presets/${draft.id}/models`, { headers })
+        : await fetch(`${API}/model-presets/models`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ api_key: draft.api_key, base_url: draft.base_url }),
+          });
+      const json = await readJson(res);
+      setDraftModels(json.data || []);
+      setModelFetchKey(`${draft.id || draft.api_key}|${draft.base_url}`);
+      if (!silent) setStatus('已拉取可用模型。');
+    } catch (err) {
+      setDraftModels([]);
+      setStatus(`拉取模型失败：${err.message}`);
+    } finally {
+      setFetchingModels(false);
+    }
+  }
+
+  async function testDraftModel() {
+    if ((!draft.id && !draft.api_key) || !draft.base_url || !draft.model_name) {
+      setStatus('请先填写密钥、接口地址，并选择或填写模型。');
+      return;
+    }
+    setTestingModel(true);
+    setTestResult(null);
+    setStatus('');
+    try {
+      const res = draft.id && !draft.api_key
+        ? await fetch(`${API}/model-presets/${draft.id}/test`, { method: 'POST', headers })
+        : await fetch(`${API}/model-presets/test`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+              api_key: draft.api_key,
+              base_url: draft.base_url,
+              model_name: draft.model_name,
+            }),
+          });
+      await readJson(res);
+      setTestResult('success');
+      setStatus('模型检测通过。');
+    } catch (err) {
+      setTestResult('fail');
+      setStatus(`模型检测失败：${err.message}`);
+    } finally {
+      setTestingModel(false);
+    }
+  }
+
+  async function saveSlot(slotId, patch) {
+    const current = slots.find(s => s.slot === slotId) || {};
+    const payload = {
+      preset_id: Object.prototype.hasOwnProperty.call(patch, 'preset_id') ? patch.preset_id : current.preset_id,
+      extended_thinking: Object.prototype.hasOwnProperty.call(patch, 'extended_thinking') ? patch.extended_thinking : !!current.extended_thinking,
+    };
+    setSlots(prev => prev.map(s => s.slot === slotId ? { ...s, ...payload } : s));
+    try {
+      const res = await fetch(`${API}/slots/${slotId}`, { method: 'PUT', headers, body: JSON.stringify(payload) });
+      await readJson(res);
+      await loadSettings();
+    } catch (err) {
+      setStatus(`槽位保存失败：${err.message}`);
+      await loadSettings();
+    }
+  }
+
+  const fieldStyle = {
+    width: '100%', minHeight: 40, padding: '8px 10px', borderRadius: 'var(--radius-sm)',
+    border: '1px solid var(--border-light)', background: 'var(--bg-secondary)',
+    color: 'var(--text-primary)', fontSize: 'var(--text-sm)', fontFamily: 'var(--font-body)',
+  };
+  const labelStyle = {
+    fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', display: 'block',
+    marginBottom: 4, fontFamily: 'var(--font-body)', fontWeight: 500,
+  };
+  const ghostButton = {
+    minHeight: 40, padding: '8px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)',
+    background: 'var(--bg-elevated)', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)',
+    cursor: 'pointer', fontFamily: 'var(--font-body)', fontWeight: 500,
+  };
+  const primaryButton = {
+    minHeight: 40, padding: '9px 12px', borderRadius: 'var(--radius-sm)', border: 'none',
+    background: 'var(--accent)', fontSize: 'var(--text-xs)', color: '#FAF8F4',
+    cursor: 'pointer', fontFamily: 'var(--font-body)', fontWeight: 500,
+  };
+  const foldButton = {
+    width: '100%', minHeight: 44, padding: 0, border: 'none', background: 'transparent',
+    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+    gap: 12, textAlign: 'left', cursor: 'pointer', fontFamily: 'var(--font-body)',
+  };
+  const titleText = { fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--text-primary)', fontFamily: 'var(--font-body)' };
+  const metaText = { fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginTop: 2, fontFamily: 'var(--font-body)' };
+  const valueText = { fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', wordBreak: 'break-all', fontFamily: 'var(--font-body)' };
+  const helperText = { fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', lineHeight: 1.5, marginTop: 5, fontFamily: 'var(--font-body)' };
+  const statusStyle = {
+    marginBottom: 12, padding: '8px 10px', borderRadius: 'var(--radius-sm)',
+    background: 'var(--bg-secondary)', border: '1px solid var(--border-light)',
+    fontSize: 'var(--text-xs)', fontFamily: 'var(--font-body)',
+  };
 
   return (
     <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px', paddingBottom: 88 }}>
-      <SubPageHeader onBack={onBack} title="模型配置" subtitle="为不同场景配置 AI 模型。支持任何 OpenAI 兼容 API。" />
+      <SubPageHeader onBack={onBack} title="模型配置" subtitle="为不同场景配置 OpenAI 兼容模型。" />
 
+      {status && (
+        <div style={{ ...statusStyle, color: status.includes('失败') ? 'var(--danger)' : 'var(--text-secondary)' }}>{status}</div>
+      )}
+
+      <SettingsSectionTitle title="使用槽位" />
       <Stack gap="sm">
         {SLOTS.map(slot => {
-          const m = models[slot.id];
-          const isOpen = expanded === slot.id;
+          const current = slots.find(s => s.slot === slot.id) || {};
           return (
             <Card key={slot.id} padding="md">
-              <div onClick={() => setExpanded(isOpen ? null : slot.id)}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 10 }}>
                 <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-primary)' }}>{slot.label}</span>
-                    <Pill tone={m.enabled ? 'success' : 'neutral'}>{m.enabled ? '已配置' : '未配置'}</Pill>
-                  </div>
-                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>{slot.desc}</div>
+                  <div style={titleText}>{slot.label}</div>
+                  <div style={metaText}>{slot.desc}</div>
                 </div>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5"
-                  style={{ transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
-                  <path d="M6 9l6 6 6-6"/>
-                </svg>
+                <Pill tone={current.preset_id ? 'success' : 'neutral'}>{current.preset_id ? '已配置' : '未配置'}</Pill>
               </div>
-              {isOpen && (
-                <div style={{ marginTop: 14, animation: 'card-in 150ms ease' }}>
-                  <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginBottom: 12 }}>推荐：{slot.rec}</div>
-                  {[
-                    { field: 'name', label: '显示名称', ph: '如 DeepSeek 日常', type: 'text' },
-                    { field: 'base', label: 'API Base URL', ph: 'https://api.deepseek.com/v1', type: 'url' },
-                    { field: 'key', label: 'API Key', ph: 'sk-xxxxxxxx', type: 'password' },
-                    { field: 'model', label: 'Model ID', ph: 'deepseek-chat', type: 'text' },
-                  ].map(f => (
-                    <div key={f.field} style={{ marginBottom: 10 }}>
-                      <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>{f.label}</label>
-                      <input type={f.type} value={m[f.field]} onChange={e => updateSlot(slot.id, f.field, e.target.value)}
-                        placeholder={f.ph}
-                        style={{ width: '100%', padding: '8px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontSize: 13, fontFamily: 'var(--font-body)' }} />
+              <select value={current.preset_id || ''} onChange={e => saveSlot(slot.id, { preset_id: e.target.value || null })}
+                style={{ ...fieldStyle, marginBottom: 10 }}>
+                <option value="">不使用预设</option>
+                {presets.map(preset => (
+                  <option key={preset.id} value={preset.id}>{preset.nickname} · {preset.model_name}</option>
+                ))}
+              </select>
+              <SettingRow label="扩展思考" sub="开启后允许保存思考内容；是否生效取决于模型。">
+                <SettingsToggle on={!!current.extended_thinking} onChange={v => saveSlot(slot.id, { extended_thinking: v })} />
+              </SettingRow>
+            </Card>
+          );
+        })}
+      </Stack>
+
+      <SettingsSectionTitle title="模型预设库" />
+      <Stack gap="sm">
+        {loading ? (
+          <Card padding="md"><div style={metaText}>加载中…</div></Card>
+        ) : presets.length === 0 ? (
+          <Card padding="md"><div style={metaText}>还没有模型预设。</div></Card>
+        ) : presets.map(preset => {
+          const open = !!expandedPresets[preset.id];
+          return (
+            <Card key={preset.id} padding="md">
+              <button onClick={() => setExpandedPresets(v => ({ ...v, [preset.id]: !open }))}
+                style={foldButton}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={titleText}>{preset.nickname}</div>
+                  <div style={{ ...metaText, wordBreak: 'break-all' }}>{preset.model_name}</div>
+                </div>
+                <span style={{ ...ghostButton, minHeight: 32, padding: '6px 10px', flexShrink: 0 }}>{open ? '收起' : '展开'}</span>
+              </button>
+              {open && (
+                <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border-light)' }}>
+                  <div style={{ display: 'grid', gap: 8 }}>
+                    <div>
+                      <div style={labelStyle}>密钥</div>
+                      <div style={{ ...valueText, color: 'var(--text-tertiary)' }}>{preset.api_key || '********'}</div>
                     </div>
-                  ))}
-                  <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-                    <button onClick={() => testConnection(slot.id)} disabled={testing === slot.id}
-                      style={{ flex: 1, padding: '8px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--bg-elevated)', fontSize: 12, color: 'var(--text-secondary)', cursor: 'pointer' }}>
-                      {testing === slot.id ? '测试中…' : '连接测试'}
-                    </button>
-                    <button style={{ flex: 1, padding: '8px', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--accent)', fontSize: 12, color: '#FAF8F4', cursor: 'pointer', fontWeight: 500 }}>保存</button>
+                    <div>
+                      <div style={labelStyle}>接口地址</div>
+                      <div style={valueText}>{preset.base_url}</div>
+                    </div>
+                    <div>
+                      <div style={labelStyle}>模型名称</div>
+                      <div style={valueText}>{preset.model_name}</div>
+                    </div>
                   </div>
-                  {testResult[slot.id] && (
-                    <div style={{ marginTop: 8, fontSize: 12, color: testResult[slot.id] === 'success' ? 'var(--success)' : 'var(--danger)' }}>
-                      {testResult[slot.id] === 'success' ? '✓ 连接成功' : '✗ 连接失败，请检查配置'}
-                    </div>
-                  )}
+                  <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                    <button onClick={() => editPreset(preset)} style={{ ...ghostButton, flex: 1 }}>编辑</button>
+                    <button onClick={() => deletePreset(preset.id)}
+                      style={{ ...ghostButton, color: 'var(--danger)', background: 'transparent' }}>删除</button>
+                  </div>
                 </div>
               )}
             </Card>
           );
         })}
       </Stack>
+
+      <SettingsSectionTitle title="添加模型预设" />
+      <Card padding="md">
+        <button onClick={startNewPreset}
+          style={foldButton}>
+          <div>
+            <div style={titleText}>{draft.id ? '编辑模型预设' : '新的模型预设'}</div>
+            <div style={metaText}>OpenAI 兼容服务可自动拉取；拉取失败可手动填写模型名</div>
+          </div>
+          <span style={{ ...ghostButton, minHeight: 32, padding: '6px 10px', flexShrink: 0 }}>{addOpen ? '收起' : '展开'}</span>
+        </button>
+
+        {addOpen && (
+          <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border-light)' }}>
+            {[
+              { field: 'nickname', label: '自定义预设名字', ph: '如 DeepSeek 日常', type: 'text' },
+              { field: 'api_key', label: '密钥', ph: draft.id ? '留空则不修改' : 'sk-xxxxxxxx', type: 'password' },
+              { field: 'base_url', label: '接口地址', ph: 'https://api.deepseek.com/v1', type: 'url' },
+            ].map(f => (
+              <div key={f.field} style={{ marginBottom: 10 }}>
+                <label style={labelStyle}>{f.label}</label>
+                <input type={f.type} value={draft[f.field]} onChange={e => updateDraft(f.field, e.target.value)}
+                  placeholder={f.ph} style={fieldStyle} />
+              </div>
+            ))}
+
+            <div style={{ marginBottom: 10 }}>
+              <label style={labelStyle}>模型名称</label>
+              {draftModels.length > 0 ? (
+                <select value={draft.model_name} onChange={e => updateDraft('model_name', e.target.value)} style={fieldStyle}>
+                  <option value="">选择模型</option>
+                  {draftModels.map(model => (
+                    <option key={model.id} value={model.id}>{model.id}</option>
+                  ))}
+                </select>
+              ) : (
+                <input type="text" value={draft.model_name} onChange={e => updateDraft('model_name', e.target.value)}
+                  placeholder="拉取失败时可手动填写" style={fieldStyle} />
+              )}
+              <div style={helperText}>
+                自动拉取会访问该服务的 /models 接口；地址必须是公网 https，不能指向本机或内网。拉取失败时可手动填写模型名称。
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+              <button onClick={() => fetchDraftModels()} disabled={fetchingModels || (!draft.id && !draft.api_key) || !draft.base_url}
+                style={{ ...ghostButton, flex: 1, opacity: fetchingModels ? 0.7 : 1 }}>
+                {fetchingModels ? '拉取中…' : '重新拉取模型'}
+              </button>
+              <button onClick={testDraftModel} disabled={testingModel || (!draft.id && !draft.api_key) || !draft.base_url || !draft.model_name}
+                style={{ ...ghostButton, flex: 1, opacity: testingModel ? 0.7 : 1 }}>
+                {testingModel ? '检测中…' : '检测可用'}
+              </button>
+            </div>
+
+            {testResult && (
+              <div style={{ ...metaText, marginBottom: 10, color: testResult === 'success' ? 'var(--success)' : 'var(--danger)' }}>
+                {testResult === 'success' ? '当前模型可用' : '当前模型不可用'}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={savePreset} disabled={saving}
+                style={{ ...primaryButton, flex: 1 }}>
+                {saving ? '保存中…' : draft.id ? '保存修改' : '保存预设'}
+              </button>
+              <button onClick={() => { setDraft(emptyDraft); setDraftModels([]); setTestResult(null); setAddOpen(false); }}
+                style={ghostButton}>
+                取消
+              </button>
+            </div>
+          </div>
+        )}
+      </Card>
     </div>
   );
 }
@@ -1115,4 +1433,3 @@ export function MemoryCandidatesSettings({ onBack }) {
     </div>
   );
 }
-

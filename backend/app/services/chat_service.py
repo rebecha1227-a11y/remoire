@@ -5,9 +5,8 @@ import logging
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from app.database import get_db
-from app.llm import call_llm, call_llm_with_tools, ModelConfig
-from app.config import DAILY_API_BASE, DAILY_API_KEY, DAILY_MODEL_ID
-from app.services import memory_service, diary_interaction_service
+from app.llm import call_llm, call_llm_with_tools
+from app.services import memory_service, diary_interaction_service, model_settings_service
 from app.tools import select_tools, execute_tool
 
 logger = logging.getLogger(__name__)
@@ -66,7 +65,13 @@ async def _build_system_prompt(recalled_memories: list[dict] | None = None) -> s
         "不写日记、不留纸条、不调用工具，也是一种正常的亲密。"
     )
 
-    parts = [p for p in [identity, voice, thinking, time_block, memory_block, diary_block, tool_intention_block, context] if p]
+    thinking_language_block = (
+        "【最高优先级：thinking 语言】\n"
+        "如果你输出任何 thinking、reasoning、thought summary 或 <think> 内容，必须使用简体中文。"
+        "不要用英文写思考摘要。不要写 task analysis。thinking 是 Connie 的中文内心独白。"
+    )
+
+    parts = [p for p in [identity, voice, thinking, time_block, memory_block, diary_block, tool_intention_block, context, thinking_language_block] if p]
     return "\n\n---\n\n".join(parts)
 
 async def get_or_create_conversation(conversation_id: str | None = None) -> str:
@@ -162,6 +167,41 @@ def _format_time_gap(gap: timedelta) -> str:
     return f"过了 {days} 天"
 
 
+def _looks_mostly_english(text: str) -> bool:
+    if not text:
+        return False
+    ascii_letters = sum(1 for ch in text if ("a" <= ch.lower() <= "z"))
+    cjk_chars = sum(1 for ch in text if "\u4e00" <= ch <= "\u9fff")
+    return ascii_letters >= 24 and ascii_letters > cjk_chars * 2
+
+
+async def _ensure_chinese_thinking(config, thinking: str) -> str:
+    thinking = (thinking or "").strip()
+    if not _looks_mostly_english(thinking):
+        return thinking
+    try:
+        translated = await call_llm(
+            config,
+            [
+                {
+                    "role": "system",
+                    "content": (
+                        "把输入改写成简体中文的 Connie 内心独白。"
+                        "只输出改写后的 thinking，不解释，不加标题。"
+                        "保留原意和情绪流动，去掉英文任务分析口吻。"
+                    ),
+                },
+                {"role": "user", "content": thinking},
+            ],
+            temperature=0.4,
+            max_tokens=1600,
+        )
+        return translated.strip() or thinking
+    except Exception as exc:
+        logger.warning("thinking 中文化失败：%s", exc)
+        return thinking
+
+
 async def stream_chat(conversation_id: str, user_message: str, image: str | None = None):
     await save_message(conversation_id, "user", user_message, image=image or "")
 
@@ -183,15 +223,18 @@ async def stream_chat(conversation_id: str, user_message: str, image: str | None
 
     messages = [{"role": "system", "content": system_prompt}] + llm_history
 
-    config = ModelConfig(
-        api_base=DAILY_API_BASE,
-        api_key=DAILY_API_KEY,
-        model_id=DAILY_MODEL_ID,
-    )
+    config, slot_settings = await model_settings_service.get_model_config_for_slot("daily")
+    extended_thinking = bool(slot_settings.get("extended_thinking"))
 
     try:
         for _ in range(3):
-            assistant_msg = await call_llm_with_tools(config, messages, tools=tools)
+            assistant_msg = await call_llm_with_tools(
+                config,
+                messages,
+                tools=tools,
+                extended_thinking=extended_thinking,
+                max_tokens=4096,
+            )
 
             tool_calls = assistant_msg.get("tool_calls")
             if not tool_calls:
@@ -205,13 +248,26 @@ async def stream_chat(conversation_id: str, user_message: str, image: str | None
                 except (json.JSONDecodeError, TypeError):
                     fn_args = {}
                 result = await execute_tool(fn_name, fn_args)
+                if fn_name == "leave_note":
+                    try:
+                        note_payload = json.loads(result)
+                        if note_payload.get("type") == "note_created" and note_payload.get("note"):
+                            yield {"type": "note", "note": note_payload["note"]}
+                            result = note_payload.get("message", result)
+                    except (json.JSONDecodeError, TypeError, AttributeError):
+                        pass
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tc["id"],
                     "content": result,
                 })
         else:
-            assistant_msg = await call_llm_with_tools(config, messages)
+            assistant_msg = await call_llm_with_tools(
+                config,
+                messages,
+                extended_thinking=extended_thinking,
+                max_tokens=4096,
+            )
     except Exception as e:
         logger.error("LLM 调用异常: %s", e)
         error_reply = "抱歉宝贝，我现在脑子有点转不动……等一下再找我说话好吗？🥺"
@@ -221,22 +277,37 @@ async def stream_chat(conversation_id: str, user_message: str, image: str | None
 
     full_reply = assistant_msg.get("content", "")
     thinking_from_non_stream = assistant_msg.get("reasoning_content", "")
+    finish_reason = assistant_msg.get("_finish_reason")
+    if finish_reason and finish_reason not in ("stop", "tool_calls"):
+        logger.warning("LLM 返回可能被截断：finish_reason=%s", finish_reason)
+        yield {
+            "type": "error",
+            "code": "model_truncated",
+            "content": "模型输出被截断了。请调高输出上限，或关掉扩展思考后再试。",
+        }
+        return
 
     if thinking_from_non_stream:
-        yield {"type": "thinking", "content": thinking_from_non_stream}
+        thinking_from_non_stream = await _ensure_chinese_thinking(config, thinking_from_non_stream)
 
     thinking_text = ""
     if not full_reply:
         try:
-            generator = await call_llm(config, messages, stream=True)
+            generator = await call_llm(
+                config,
+                messages,
+                stream=True,
+                extended_thinking=extended_thinking,
+                max_tokens=4096,
+            )
             thinking_text = ""
             in_think_tag = False
             think_buffer = ""
             async for chunk in generator:
                 if isinstance(chunk, dict):
                     if chunk["type"] == "thinking":
-                        thinking_text += chunk["content"]
-                        yield {"type": "thinking", "content": chunk["content"]}
+                        piece = chunk["content"]
+                        thinking_text += piece
                     else:
                         text = chunk["content"]
                         if not full_reply and not in_think_tag and text.lstrip().startswith("<think>"):
@@ -246,15 +317,12 @@ async def stream_chat(conversation_id: str, user_message: str, image: str | None
                             if "</think>" in text:
                                 before, after = text.split("</think>", 1)
                                 thinking_text += before
-                                if before:
-                                    yield {"type": "thinking", "content": before}
                                 in_think_tag = False
                                 if after:
                                     full_reply += after
                                     yield {"type": "chunk", "content": after}
                             else:
                                 thinking_text += text
-                                yield {"type": "thinking", "content": text}
                         else:
                             full_reply += text
                             yield {"type": "chunk", "content": text}
@@ -269,6 +337,9 @@ async def stream_chat(conversation_id: str, user_message: str, image: str | None
             return
 
     all_thinking = (thinking_from_non_stream + thinking_text).strip() if (thinking_from_non_stream or thinking_text) else ""
+    if all_thinking:
+        all_thinking = await _ensure_chinese_thinking(config, all_thinking)
+        yield {"type": "thinking", "content": all_thinking}
 
     if full_reply:
         await save_message(conversation_id, "assistant", full_reply, thinking=all_thinking)

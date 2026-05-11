@@ -314,8 +314,12 @@ async def execute_tool(name: str, arguments: dict) -> str:
         content = arguments.get("content", "")
         if not content:
             return "纸条内容不能为空。"
-        await note_service.create_note(content)
-        return "纸条已经悄悄放好了，静儿下次打开 app 就会看到。"
+        note = await note_service.create_note(content)
+        return json.dumps({
+            "type": "note_created",
+            "note": note,
+            "message": "纸条已经悄悄放好了，静儿现在就能看到。",
+        }, ensure_ascii=False)
 
     elif name == "get_current_time":
         now = datetime.now(timezone(timedelta(hours=8)))

@@ -144,9 +144,8 @@ async def create_with_optional_connie_reply(
     content: str | None = None,
 ) -> dict:
     interaction = await create_interaction(diary_id, actor, type, content)
-    print(f"[DIARY] 互动创建: actor={actor}, type={type}, diary_id={diary_id}")
+    logger.debug("日记互动创建：actor=%s type=%s diary_id=%s", actor, type, diary_id)
     if actor != "jinger":
-        print("[DIARY] actor 不是 jinger，跳过")
         return interaction
 
     if type == "unlock_request":
@@ -155,11 +154,9 @@ async def create_with_optional_connie_reply(
 
     if type == "comment":
         should_reply = await _safe_should_auto_reply(diary_id, content or "")
-        print(f"[DIARY] should_auto_reply = {should_reply}")
+        logger.debug("日记留言自动回复判定：diary_id=%s should_reply=%s", diary_id, should_reply)
         if should_reply:
-            print("[DIARY] 开始调用 LLM 生成回复...")
             await _safe_create_connie_reply(diary_id, type, content or "", interaction["id"])
-            print("[DIARY] LLM 回复完成")
 
     return interaction
 
@@ -234,12 +231,11 @@ async def generate_connie_reply(
     ]
     config = ModelConfig(DAILY_API_BASE, DAILY_API_KEY, DAILY_MODEL_ID)
     try:
-        print(f"[DIARY] 调用 LLM 生成日记回复...")
         reply = await call_llm(config, messages, temperature=0.8, max_tokens=800)
-        print(f"[DIARY] LLM 返回: {repr(reply[:80]) if reply else 'EMPTY'}")
+        logger.debug("日记留言回复生成完成：empty=%s", not bool(reply))
         return reply.strip() or _fallback_reply(interaction_type)
     except Exception as exc:
-        print(f"[DIARY] LLM 调用失败: {exc}")
+        logger.warning("生成 Connie 日记留言回复失败：%s", exc)
         return _fallback_reply(interaction_type)
 
 

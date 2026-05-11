@@ -120,6 +120,24 @@ async def init_db():
                 updated_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS model_presets (
+                id TEXT PRIMARY KEY,
+                nickname TEXT NOT NULL,
+                provider TEXT,
+                api_key TEXT NOT NULL,
+                base_url TEXT NOT NULL,
+                model_name TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS model_slots (
+                slot TEXT PRIMARY KEY,
+                preset_id TEXT REFERENCES model_presets(id) ON DELETE SET NULL,
+                extended_thinking INTEGER NOT NULL DEFAULT 0,
+                updated_at TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS proactive_message_settings (
                 id INTEGER PRIMARY KEY DEFAULT 1,
                 enabled INTEGER NOT NULL DEFAULT 1,
@@ -180,6 +198,8 @@ async def init_db():
                 ON diary_interactions(diary_id, created_at);
             CREATE INDEX IF NOT EXISTS idx_diary_interactions_created
                 ON diary_interactions(created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_model_presets_created
+                ON model_presets(created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_device_snapshots_created
                 ON device_snapshots(created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_app_usage_app_created

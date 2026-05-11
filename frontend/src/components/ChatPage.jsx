@@ -437,12 +437,17 @@ export default function ChatPage({ tweaks }) {
         },
         body: JSON.stringify(body),
       });
+      if (!res.ok || !res.body) {
+        throw new Error(`后端返回错误：${res.status}`);
+      }
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder('utf-8', { fatal: false });
       let replyText = '';
       let thinkingText = '';
       let buffer = '';
+      let streamDone = false;
+      let streamError = '';
 
       while (true) {
         const { done, value } = await reader.read();
@@ -462,6 +467,14 @@ export default function ChatPage({ tweaks }) {
               replyText += parsed.content;
             } else if (parsed.type === 'thinking') {
               thinkingText += parsed.content;
+            } else if (parsed.type === 'note') {
+              setNoteData(parsed.note);
+              setNoteState('visible');
+              setNoteHistory((items) => parsed.note ? [parsed.note, ...items.filter(n => n.id !== parsed.note.id)] : items);
+            } else if (parsed.type === 'done') {
+              streamDone = true;
+            } else if (parsed.type === 'error') {
+              streamError = parsed.content || '后端生成回复时出错了。';
             }
           } catch (e) {}
         }
@@ -473,7 +486,21 @@ export default function ChatPage({ tweaks }) {
           const parsed = JSON.parse(line.slice(5).trim());
           if (parsed.type === 'chunk') replyText += parsed.content;
           else if (parsed.type === 'thinking') thinkingText += parsed.content;
+          else if (parsed.type === 'note') {
+            setNoteData(parsed.note);
+            setNoteState('visible');
+            setNoteHistory((items) => parsed.note ? [parsed.note, ...items.filter(n => n.id !== parsed.note.id)] : items);
+          }
+          else if (parsed.type === 'done') streamDone = true;
+          else if (parsed.type === 'error') streamError = parsed.content || '后端生成回复时出错了。';
         } catch (e) {}
+      }
+
+      if (streamError) {
+        throw new Error(streamError);
+      }
+      if (!streamDone) {
+        throw new Error('后端流式响应中断');
       }
 
       setTyping(false);
@@ -493,7 +520,14 @@ export default function ChatPage({ tweaks }) {
       }
     } catch (e) {
       setTyping(false);
-      setMessages((m) => [...m, { id: ++msgIdRef.current, role: 'ai', text: '连不上后端，请确认后端在运行中。', time, type: 'normal', isNew: true }]);
+      const message = e.message?.includes('流式响应中断')
+        ? '回复中断了，刚刚那次没有完整生成。'
+        : e.message?.includes('模型输出被截断')
+          ? '模型输出被截断了。可以关掉扩展思考，或换一个输出上限更高的模型。'
+          : e.message?.startsWith('后端返回错误')
+            ? e.message
+            : '连不上后端，请确认后端在运行中。';
+      setMessages((m) => [...m, { id: ++msgIdRef.current, role: 'ai', text: message, time, type: 'normal', isNew: true }]);
     }
   }
 
@@ -888,4 +922,3 @@ export default function ChatPage({ tweaks }) {
     </div>);
 
 }
-
