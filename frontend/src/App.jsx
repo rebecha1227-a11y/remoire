@@ -106,13 +106,13 @@ export default function App() {
           <button key={t.id} onClick={() => setTab(t.id)} style={{
             display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
             background: 'none', border: 'none', cursor: 'pointer', padding: '4px 12px',
-            color: tab === t.id ? 'var(--accent)' : 'var(--text-secondary)',
+            color: tab === t.id ? 'var(--text-deep)' : 'var(--text-tertiary)',
             opacity: 1,
             transition: 'all 0.2s ease',
             minWidth: 44, minHeight: 44, justifyContent: 'center',
           }}>
             {t.icon()}
-            <span style={{ fontSize: 10, fontWeight: tab === t.id ? 500 : 400, fontFamily: "var(--font-body)" }}>{t.label}</span>
+            <span style={{ fontSize: 10, fontWeight: tab === t.id ? 600 : 400, fontFamily: "var(--font-body)" }}>{t.label}</span>
           </button>
         ))}
       </div>
