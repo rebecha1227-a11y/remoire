@@ -284,8 +284,10 @@ nano .env
 `.env` 文件内容大概长这样（根据你的实际情况填写）：
 
 ```env
-# 认证密钥 —— 随便编一个长的随机字符串
-API_SECRET_KEY=your-very-long-random-secret-key-here
+# 登录配置 —— 生产目标方案
+APP_USERNAME=jinger
+APP_PASSWORD_HASH=your-password-hash-here
+SESSION_SECRET=your-very-long-random-session-secret-here
 
 # 数据库路径
 DATABASE_PATH=/opt/our-nest/backend/data/our-nest.db
@@ -293,21 +295,25 @@ DATABASE_PATH=/opt/our-nest/backend/data/our-nest.db
 # 上传文件路径
 UPLOADS_PATH=/opt/our-nest/backend/uploads
 
-# 默认模型配置（也可以后续在设置页面里配）
-# DEFAULT_LLM_API_BASE=https://api.deepseek.com/v1
-# DEFAULT_LLM_API_KEY=sk-xxx
-# DEFAULT_LLM_MODEL_ID=deepseek-chat
+# 默认模型配置（可选；也可以后续在设置页面里配模型预设）
+# DAILY_API_BASE=https://api.deepseek.com/v1
+# DAILY_API_KEY=sk-xxx
+# DAILY_MODEL_ID=deepseek-chat
 ```
 
 编辑完按 `Ctrl+O` 保存，`Ctrl+X` 退出。
 
-**生成随机密钥的简单方法**：
+`APP_USERNAME` / 登录密码只用于进入 Remoire。模型 API key 不等于登录密码；模型 API key 在设置页的模型预设里配置，并分配给 daily / deep / backend 槽位。
+
+**生成 session 随机密钥的简单方法**：
 
 ```bash
 python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 ```
 
-把输出的字符串粘贴到 `API_SECRET_KEY=` 后面。
+把输出的字符串粘贴到 `SESSION_SECRET=` 后面。
+
+**生成密码哈希的方式**会在登录/session 代码实现时补充。当前代码仍处在 Bearer token 过渡态，生产部署前需要先完成登录/session 实现。
 
 ### 6.5 初始化数据库
 
@@ -752,7 +758,9 @@ Claude Code 本身不能直接部署到你的 VPS。工作流是：
 - [ ] 防火墙只开了 22、80、443
 - [ ] Nginx 配置中 `server_tokens off`（不暴露版本号）
 - [ ] HTTPS 已启用（如果有域名）
-- [ ] `API_SECRET_KEY` 是一个长随机字符串，不是 "password123"
+- [ ] `SESSION_SECRET` 是一个长随机字符串，不是 "password123"
+- [ ] `APP_PASSWORD_HASH` 不是明文密码
+- [ ] 前端生产包没有硬编码 Bearer token
 - [ ] GitHub 仓库的 `.gitignore` 包含了 `.env` 和 `*.db`
 - [ ] 自动备份 cron 已设置
 

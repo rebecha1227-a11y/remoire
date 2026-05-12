@@ -1,15 +1,16 @@
 const DEFAULT_API_BASE = 'http://localhost:8000/api';
-const DEFAULT_AUTH_TOKEN = 'remoire-rebechalovesconnie-4ever';
+const DEV_AUTH_TOKEN = 'remoire-rebechalovesconnie-4ever';
 
 export const API_BASE = (import.meta.env.VITE_API_BASE || DEFAULT_API_BASE).replace(/\/$/, '');
 
 export function getAuthToken() {
-  return localStorage.getItem('remoire_api_token') || import.meta.env.VITE_API_TOKEN || DEFAULT_AUTH_TOKEN;
+  return localStorage.getItem('remoire_api_token') || (import.meta.env.DEV ? DEV_AUTH_TOKEN : '');
 }
 
 export function apiHeaders(extra = {}) {
+  const token = getAuthToken();
   return {
-    Authorization: `Bearer ${getAuthToken()}`,
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...extra,
   };
 }

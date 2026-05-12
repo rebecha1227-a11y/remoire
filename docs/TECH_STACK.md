@@ -186,12 +186,15 @@
 
 | 层 | 方案 |
 |---|---|
-| 认证方式 | 固定 API_SECRET_KEY，存在 .env |
-| 传输方式 | 前端请求带 `Authorization: Bearer <key>` |
-| 校验方式 | 后端中间件校验 header |
+| 当前过渡方案 | 本地开发仍可用固定 token / Bearer header |
+| 生产目标方案 | 单用户用户名 + 密码登录 |
+| 会话方式 | 登录成功后后端设置 HttpOnly session cookie |
+| 校验方式 | 后端根据 session cookie 判断当前请求是否来自已登录用户 |
 | 传输加密 | HTTPS（Nginx + Let's Encrypt，免费） |
 
-为什么不做用户注册登录？这是单用户产品，固定 token 最简单最安全。
+为什么不用完整注册系统？这是单用户产品，不需要开放注册、邮箱验证、找回密码。生产部署只需要一个“进小窝的门锁”：用户名 + 密码。密码只用于登录 Remoire，不等于任何模型 API key。
+
+模型 API key 是另一套东西：它们在设置页的模型预设里配置，用于让 Connie 调用 OpenAI-compatible provider。登录密码保护 app 和数据；模型 API key 决定 daily / deep / backend 槽位调用哪个模型。
 
 **设备数据认证例外**：`/api/device/*` 路由使用独立的 `DEVICE_SECRET_KEY`，通过 URL 查询参数 `key` 传递（不走 Bearer Header）。原因是 iOS 快捷指令无法方便地设置 HTTP Header，GET + URL 参数是最可靠的方式。HTTPS 会加密完整 URL。
 

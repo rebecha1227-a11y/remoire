@@ -15,15 +15,55 @@ https://{your-domain}/api
 
 ### 认证
 
-所有请求必须带 Header：
+生产目标方案：用户名 + 密码登录，登录成功后后端设置 HttpOnly session cookie。之后普通 `/api/*` 请求依赖浏览器自动携带的 cookie，不再要求前端保存固定 Bearer token。
 
-```
-Authorization: Bearer {API_SECRET_KEY}
-```
-
-没带或不对，统一返回 `401 Unauthorized`。
+当前代码仍处在 Bearer token 过渡态；后续实现登录/session 后，应将通用 API 校验切到 session cookie。
 
 **例外**：`/api/device/*` 路由使用 URL 查询参数 `key` 认证（独立的 `DEVICE_SECRET_KEY`，与 `API_SECRET_KEY` 不同）。原因是 iOS 快捷指令无法方便地设置 HTTP Header，GET 请求 + URL 参数是最可靠的方式。`DEVICE_SECRET_KEY` 存在 `.env` 里，HTTPS 会加密完整 URL。
+
+### 登录接口（计划）
+
+#### POST `/api/auth/login`
+
+用户名 + 密码登录。成功后设置 HttpOnly session cookie。
+
+**请求体**：
+```json
+{
+  "username": "jinger",
+  "password": "..."
+}
+```
+
+**响应**：
+```json
+{
+  "ok": true,
+  "data": {
+    "username": "jinger"
+  }
+}
+```
+
+#### POST `/api/auth/logout`
+
+清除当前 session cookie。
+
+#### GET `/api/auth/me`
+
+检查当前是否已登录。
+
+**响应**：
+```json
+{
+  "ok": true,
+  "data": {
+    "username": "jinger"
+  }
+}
+```
+
+登录密码只用于进入 Remoire。模型 API key 仍在设置页的模型预设里配置，并由 daily / deep / backend 槽位使用。
 
 ### 响应格式
 
@@ -816,11 +856,9 @@ SSE 长连接端点。前端通过 `EventSource` 连接，接收服务器主动�
 
 **连接方式**：
 ```javascript
-const es = new EventSource('/api/stream/events', {
-  headers: { 'Authorization': 'Bearer xxx' }
-});
-// 注：标准 EventSource 不支持自定义 header，
-// 实际实现用 fetch + ReadableStream 或 polyfill
+const es = new EventSource('/api/stream/events');
+// 生产目标方案下认证走 HttpOnly session cookie，浏览器会自动携带。
+// 当前 Bearer 过渡态若需要 header，应使用 fetch + ReadableStream 或 polyfill。
 ```
 
 **事件类型**：
