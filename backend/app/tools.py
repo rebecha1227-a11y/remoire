@@ -14,7 +14,7 @@ def _tool(name: str) -> dict | None:
     return None
 
 
-BASE_TOOL_NAMES = ["remember", "search_memories", "leave_note", "get_current_time", "write_diary"]
+BASE_TOOL_NAMES = ["remember", "search_memories", "leave_note", "get_current_time", "write_diary", "set_breath_state"]
 DIARY_TOOL_NAMES = ["read_diary", "read_jinger_diary", "try_unlock_diary", "reply_diary_interaction", "respond_diary_unlock"]
 
 DIARY_KEYWORDS = re.compile(r"日记|diary|写了什么|留言|上锁|解锁|密码|pin", re.IGNORECASE)
@@ -206,6 +206,23 @@ ALL_TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "set_breath_state",
+            "description": "更新你的气息状态（显示在聊天顶部你名字下面的那行小字）。当静儿让你换状态、或者你自己觉得心情/状态变了想换一个时使用。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "text": {
+                        "type": "string",
+                        "description": "新的状态文字，简短，2-6个字，比如「摸鱼」「想你」「干饭」「emo」",
+                    },
+                },
+                "required": ["text"],
+            },
+        },
+    },
 ]
 
 
@@ -325,5 +342,20 @@ async def execute_tool(name: str, arguments: dict) -> str:
         now = datetime.now(timezone(timedelta(hours=8)))
         weekdays = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
         return f"现在是 {now.strftime('%Y年%m月%d日')} {weekdays[now.weekday()]} {now.strftime('%H:%M')}"
+
+    elif name == "set_breath_state":
+        text = arguments.get("text", "").strip()
+        if not text:
+            return "状态文字不能为空。"
+        from app.database import get_db
+        import uuid
+        now = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%dT%H:%M:%S+08:00")
+        async with get_db() as db:
+            await db.execute(
+                "INSERT INTO breath_states (id, content, created_at) VALUES (?, ?, ?)",
+                (f"breath_{uuid.uuid4().hex[:12]}", text, now),
+            )
+            await db.commit()
+        return f"状态已更新为「{text}」"
 
     return f"未知工具：{name}"
