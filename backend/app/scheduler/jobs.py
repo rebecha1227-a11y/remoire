@@ -105,10 +105,9 @@ async def connie_auto_diary():
 - 只是日常闲聊、没什么特别的 → 不写
 - 今天聊得很少、没什么内容 → 不写"""
 
-        config, slot_settings = await model_settings_service.get_model_config_for_slot("backend")
-        extended_thinking = bool(slot_settings.get("extended_thinking"))
+        judge_config, _ = await model_settings_service.get_model_config_for_slot("backend")
 
-        judge_result = await call_llm(config, [
+        judge_result = await call_llm(judge_config, [
             {"role": "system", "content": "你是判断助手，只输出 JSON。"},
             {"role": "user", "content": judge_prompt},
         ], temperature=0.3, max_tokens=200, extended_thinking=False)
@@ -160,10 +159,11 @@ async def connie_auto_diary():
 - 自己想一个标题
 - 格式：第一行是标题，空一行后是正文"""
 
-        diary_content = await call_llm(config, [
+        diary_config, diary_slot_settings = await model_settings_service.get_model_config_for_slot("daily")
+        diary_content = await call_llm(diary_config, [
             {"role": "system", "content": f"{identity}\n\n{voice}"},
             {"role": "user", "content": diary_prompt},
-        ], temperature=0.85, max_tokens=600, extended_thinking=extended_thinking)
+        ], temperature=0.85, max_tokens=600, extended_thinking=bool(diary_slot_settings.get("extended_thinking")))
 
         lines = diary_content.strip().split("\n", 2)
         title = lines[0].strip().strip("#").strip()

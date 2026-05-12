@@ -226,7 +226,7 @@ async def generate_connie_reply(
         },
     ]
     try:
-        config, slot_settings = await model_settings_service.get_model_config_for_slot("backend")
+        config, slot_settings = await model_settings_service.get_model_config_for_slot("daily")
         reply = await call_llm(
             config,
             messages,
