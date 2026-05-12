@@ -28,6 +28,13 @@ const BREATH_STATES = [
 "记得你今天下午有件事要做",
 "最近有些担心你，但没关系"];
 
+const API_BASE = 'http://localhost:8000/api';
+const API_HEADERS = { 'Authorization': 'Bearer remoire-rebechalovesconnie-4ever' };
+const CHAT_MODES = {
+  daily: { label: '日常', fullLabel: '日常陪伴', desc: '轻一点、近一点，用 daily 槽位' },
+  deep: { label: '深度', fullLabel: '深度时刻', desc: '复杂情绪、长对话，用 deep 槽位' },
+};
+
 
 function TypingIndicator() {
   return (
@@ -342,10 +349,17 @@ export default function ChatPage({ tweaks }) {
   const [memoryCandidate, setMemoryCandidate] = useState(null);
   const [expandedThinking, setExpandedThinking] = useState(new Set());
   const [pendingImage, setPendingImage] = useState(null);
+  const [chatMode, setChatMode] = useState(() => localStorage.getItem('remoire_chat_mode') || 'daily');
+  const [showModelPanel, setShowModelPanel] = useState(false);
+  const [modelSlots, setModelSlots] = useState([]);
+  const [modelStatus, setModelStatus] = useState('');
   const fileInputRef = useRef(null);
   const bottomRef = useRef(null);
   const msgIdRef = useRef(100);
   const conversationIdRef = useRef(localStorage.getItem('remoire_conv_id') || null);
+  const currentSlot = modelSlots.find(s => s.slot === chatMode) || {};
+  const currentPreset = currentSlot.preset || null;
+  const currentModeMeta = CHAT_MODES[chatMode] || CHAT_MODES.daily;
 
   useEffect(() => {
     async function loadHistory() {
@@ -380,6 +394,18 @@ export default function ChatPage({ tweaks }) {
       } catch (e) {}
     }
     loadHistory();
+  }, []);
+
+  async function loadModelSlots() {
+    try {
+      const res = await fetch(`${API_BASE}/settings/slots`, { headers: API_HEADERS });
+      const data = await res.json();
+      if (data.ok && Array.isArray(data.data)) setModelSlots(data.data);
+    } catch (e) {}
+  }
+
+  useEffect(() => {
+    loadModelSlots();
   }, []);
 
   useEffect(() => {
@@ -423,11 +449,39 @@ export default function ChatPage({ tweaks }) {
     setNoteHistoryLoading(false);
   }
 
+  async function updateSlotThinking(slot, value) {
+    setModelSlots(prev => prev.map(item => item.slot === slot ? { ...item, extended_thinking: value } : item));
+    setModelStatus('');
+    try {
+      const current = modelSlots.find(item => item.slot === slot) || {};
+      const res = await fetch(`${API_BASE}/settings/slots/${slot}`, {
+        method: 'PUT',
+        headers: { ...API_HEADERS, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ extended_thinking: value }),
+      });
+      if (!res.ok) throw new Error(`保存失败：${res.status}`);
+      const data = await res.json();
+      if (data.ok && data.data) {
+        setModelSlots(prev => prev.map(item => item.slot === slot ? data.data : item));
+      }
+      setModelStatus('已保存');
+    } catch (e) {
+      setModelStatus(e.message || '保存失败');
+      loadModelSlots();
+    }
+  }
+
+  function chooseChatMode(mode) {
+    setChatMode(mode);
+    localStorage.setItem('remoire_chat_mode', mode);
+    setModelStatus('');
+  }
+
   async function fetchReply(txt, image) {
     const time = formatBJTime(new Date().toISOString());
     setTyping(true);
     try {
-      const body = { message: txt || '（发了一张图片）', conversation_id: conversationIdRef.current || null };
+      const body = { message: txt || '（发了一张图片）', conversation_id: conversationIdRef.current || null, mode: chatMode };
       if (image) body.image = image;
       const res = await fetch('http://localhost:8000/api/chat/send', {
         method: 'POST',
@@ -691,6 +745,76 @@ export default function ChatPage({ tweaks }) {
           <IconButton onClick={() => setShowPlus(!showPlus)}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5"><path d="M12 5v14M5 12h14" /></svg>
           </IconButton>
+          <div style={{ position: 'relative', flexShrink: 0 }}>
+            <button onClick={() => setShowModelPanel(v => !v)} style={{
+              minHeight: 36, maxWidth: 86, padding: '6px 9px',
+              borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)',
+              background: chatMode === 'deep' ? 'var(--accent-subtle)' : 'var(--bg-elevated)',
+              color: chatMode === 'deep' ? 'var(--accent)' : 'var(--text-secondary)',
+              cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'center',
+              fontFamily: 'var(--font-body)', lineHeight: 1.15,
+            }}>
+              <span style={{ fontSize: 11, fontWeight: 500, whiteSpace: 'nowrap' }}>{currentModeMeta.label}</span>
+              <span style={{ fontSize: 9, color: 'var(--text-tertiary)', maxWidth: 66, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {currentPreset?.model_name || '未配置'}
+              </span>
+            </button>
+            {showModelPanel && (
+              <div style={{
+                position: 'absolute', left: 0, bottom: 44, width: 258, zIndex: 80,
+                background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-md)',
+                boxShadow: 'var(--shadow-lg)', padding: '10px 12px',
+              }}>
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  {Object.entries(CHAT_MODES).map(([mode, meta]) => {
+                    const slot = modelSlots.find(s => s.slot === mode) || {};
+                    const active = chatMode === mode;
+                    return (
+                      <button key={mode} onClick={() => { chooseChatMode(mode); setShowModelPanel(false); }} style={{
+                        textAlign: 'left', minHeight: 66, padding: '9px 4px',
+                        border: 'none', borderBottom: mode === 'daily' ? '1px solid var(--border-light)' : 'none',
+                        background: 'transparent', color: 'var(--text-primary)', cursor: 'pointer',
+                        fontFamily: 'var(--font-body)', display: 'grid', gridTemplateColumns: '1fr auto', gap: 10, alignItems: 'center',
+                      }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 16, fontWeight: 500, color: active ? 'var(--accent)' : 'var(--text-primary)', marginBottom: 4 }}>{meta.fullLabel}</div>
+                          <div style={{ fontSize: 12, color: 'var(--text-tertiary)', lineHeight: 1.35 }}>{meta.desc}</div>
+                          <div style={{ fontSize: 11, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 5 }}>{slot.preset?.model_name || '未选择模型'}</div>
+                        </div>
+                        {active && (
+                          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M20 6 9 17l-5-5" />
+                          </svg>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div style={{ borderTop: '1px solid var(--border-light)', marginTop: 6, paddingTop: 10 }}>
+                  <button onClick={() => updateSlotThinking(chatMode, !currentSlot.extended_thinking)} style={{
+                    width: '100%', border: 'none', background: currentSlot.extended_thinking ? 'var(--accent-subtle)' : 'var(--bg-primary)',
+                    borderRadius: 'var(--radius-sm)', padding: '9px 10px', cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+                    fontFamily: 'var(--font-body)', color: 'var(--text-primary)',
+                  }}>
+                    <div style={{ textAlign: 'left' }}>
+                      <div style={{ fontSize: 15, fontWeight: 500 }}>Extended thinking</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>Think longer for complex tasks</div>
+                    </div>
+                    <span style={{
+                      width: 42, height: 24, borderRadius: 12, padding: 2, flexShrink: 0,
+                      background: currentSlot.extended_thinking ? 'var(--accent)' : 'var(--border)',
+                      display: 'flex', justifyContent: currentSlot.extended_thinking ? 'flex-end' : 'flex-start',
+                      transition: 'all 0.16s ease',
+                    }}>
+                      <span style={{ width: 20, height: 20, borderRadius: '50%', background: 'var(--bg-elevated)', boxShadow: 'var(--shadow-sm)' }} />
+                    </span>
+                  </button>
+                  {modelStatus && <div style={{ fontSize: 10, color: modelStatus.includes('失败') ? 'var(--danger)' : 'var(--success)', marginTop: 6 }}>{modelStatus}</div>}
+                </div>
+              </div>
+            )}
+          </div>
           <div style={{ flex: 1, position: 'relative' }}>
             <input
               value={input}

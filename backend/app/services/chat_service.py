@@ -202,7 +202,7 @@ async def _ensure_chinese_thinking(config, thinking: str) -> str:
         return thinking
 
 
-async def stream_chat(conversation_id: str, user_message: str, image: str | None = None):
+async def stream_chat(conversation_id: str, user_message: str, image: str | None = None, mode: str = "daily"):
     await save_message(conversation_id, "user", user_message, image=image or "")
 
     history = await get_history(conversation_id, limit=20)
@@ -223,7 +223,8 @@ async def stream_chat(conversation_id: str, user_message: str, image: str | None
 
     messages = [{"role": "system", "content": system_prompt}] + llm_history
 
-    config, slot_settings = await model_settings_service.get_model_config_for_slot("daily")
+    model_slot = mode if mode in ("daily", "deep") else "daily"
+    config, slot_settings = await model_settings_service.get_model_config_for_slot(model_slot)
     extended_thinking = bool(slot_settings.get("extended_thinking"))
 
     try:

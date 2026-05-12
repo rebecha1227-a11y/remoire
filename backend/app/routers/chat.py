@@ -11,6 +11,7 @@ class SendRequest(BaseModel):
     message: str
     conversation_id: str | None = None
     image: str | None = None
+    mode: str | None = "daily"
 
 @router.post("/send")
 async def send_message(req: SendRequest, _=Depends(verify_token)):
@@ -19,7 +20,7 @@ async def send_message(req: SendRequest, _=Depends(verify_token)):
     async def event_stream():
         yield f"data: {json.dumps({'type': 'conversation_id', 'conversation_id': conversation_id})}\n\n"
         had_error = False
-        async for item in stream_chat(conversation_id, req.message, image=req.image):
+        async for item in stream_chat(conversation_id, req.message, image=req.image, mode=req.mode or "daily"):
             if isinstance(item, dict):
                 yield f"data: {json.dumps(item)}\n\n"
                 if item.get("type") == "error":
