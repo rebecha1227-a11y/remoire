@@ -7,6 +7,13 @@
       "runtimeArgs": ["-m", "http.server", "3456"],
       "port": 3456,
       "cwd": "prototype"
+    },
+    {
+      "name": "frontend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 5174,
+      "cwd": "frontend"
     }
   ]
 }

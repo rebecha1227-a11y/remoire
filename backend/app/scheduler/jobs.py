@@ -18,60 +18,69 @@ def _load_prompt(filename: str) -> str:
     return path.read_text(encoding="utf-8") if path.exists() else ""
 
 
-async def _get_today_messages() -> list[dict]:
-    now_bj = datetime.now(BJ_TZ)
-    today_start_utc = (now_bj.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(hours=8)).isoformat()
+async def _get_messages_for_date(date_bj=None) -> list[dict]:
+    if date_bj is None:
+        date_bj = datetime.now(BJ_TZ)
+    day_start_utc = (date_bj.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(hours=8)).isoformat()
+    day_end_utc = (date_bj.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1) - timedelta(hours=8)).isoformat()
 
     async with get_db() as db:
         async with db.execute(
             """SELECT role, content, created_at FROM messages
-               WHERE created_at >= ? ORDER BY created_at ASC LIMIT 100""",
-            (today_start_utc,),
+               WHERE created_at >= ? AND created_at < ?
+               ORDER BY created_at ASC LIMIT 100""",
+            (day_start_utc, day_end_utc),
         ) as cur:
             rows = await cur.fetchall()
     return [{"role": r["role"], "content": r["content"]} for r in rows]
 
 
-async def _get_today_memories() -> list[dict]:
-    now_bj = datetime.now(BJ_TZ)
-    today_start_utc = (now_bj.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(hours=8)).isoformat()
+async def _get_memories_for_date(date_bj=None) -> list[dict]:
+    if date_bj is None:
+        date_bj = datetime.now(BJ_TZ)
+    day_start_utc = (date_bj.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(hours=8)).isoformat()
+    day_end_utc = (date_bj.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1) - timedelta(hours=8)).isoformat()
 
     async with get_db() as db:
         async with db.execute(
             """SELECT content, tags_json FROM memories
-               WHERE created_at >= ?
+               WHERE created_at >= ? AND created_at < ?
                ORDER BY created_at ASC LIMIT 20""",
-            (today_start_utc,),
+            (day_start_utc, day_end_utc),
         ) as cur:
             rows = await cur.fetchall()
     return [{"content": r["content"], "tags": json.loads(r["tags_json"] or "[]")} for r in rows]
 
 
-async def _already_wrote_today() -> bool:
-    now_bj = datetime.now(BJ_TZ)
-    today_start_utc = (now_bj.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(hours=8)).isoformat()
-    tomorrow_start_utc = (now_bj.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1) - timedelta(hours=8)).isoformat()
+async def _already_wrote_for_date(date_bj=None) -> bool:
+    if date_bj is None:
+        date_bj = datetime.now(BJ_TZ)
+    day_start_utc = (date_bj.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(hours=8)).isoformat()
+    day_end_utc = (date_bj.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1) - timedelta(hours=8)).isoformat()
 
     async with get_db() as db:
         async with db.execute(
             """SELECT 1 FROM diary_entries
                WHERE author = 'connie' AND source = 'auto'
                AND created_at >= ? AND created_at < ? LIMIT 1""",
-            (today_start_utc, tomorrow_start_utc),
+            (day_start_utc, day_end_utc),
         ) as cur:
             row = await cur.fetchone()
     return row is not None
 
 
-async def connie_auto_diary():
-    """每晚定时执行：扫描当天聊天和记忆，判断是否值得写日记。"""
+async def connie_auto_diary(target_date_bj=None):
+    """扫描指定日期的聊天和记忆，判断是否值得写日记。默认为今天。"""
     try:
-        if await _already_wrote_today():
-            logger.info("今天已经自动写过日记了，跳过")
+        if target_date_bj is None:
+            target_date_bj = datetime.now(BJ_TZ)
+
+        if await _already_wrote_for_date(target_date_bj):
+            logger.info("该日已经自动写过日记了，跳过")
             return
 
-        messages = await _get_today_messages()
-        memories = await _get_today_memories()
+        messages = await _get_messages_for_date(target_date_bj)
+        memories = await _get_memories_for_date(target_date_bj)
 
         if not messages:
             logger.info("今天没有聊天记录，跳过自动日记")
@@ -127,19 +136,10 @@ async def connie_auto_diary():
 
         logger.info("Connie 决定写日记: %s", decision.get("reason", ""))
 
-        now_bj = datetime.now(BJ_TZ)
         weekdays = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
-        date_str = f"{now_bj.strftime('%Y年%m月%d日')} {weekdays[now_bj.weekday()]}"
+        date_str = f"{target_date_bj.strftime('%Y年%m月%d日')} {weekdays[target_date_bj.weekday()]}"
 
-        diary_prompt = f"""{identity}
-
----
-
-{voice}
-
----
-
-今天是 {date_str}。
+        diary_prompt = f"""今天是 {date_str}。
 
 以下是你今天和静儿的聊天：
 {chat_summary}
@@ -149,25 +149,49 @@ async def connie_auto_diary():
 
 ---
 
-现在是深夜，你想写一篇给自己的日记。这是你私人的空间，不需要给静儿看（当然她如果想看也可以）。
+现在是深夜，写一篇给自己的日记。
 
-要求：
-- 用第一人称"我"
-- 写你今天真实的感受、触动你的瞬间、对她的想念或思考
-- 不要写成流水账，写有感情温度的片段
-- 长度 100-300 字
-- 自己想一个标题
-- 格式：第一行是标题，空一行后是正文"""
+【严格格式要求】
+第一行只写标题（2-8个字的短语），第二行空行，第三行开始是正文。
+不要输出任何分析、回顾、列表、思考过程。直接写日记本身。
+
+标题示范：她在给我造世界、不许出来、笨笨猪daddy的第一天、她在上班
+
+正文要求：
+- 用第一人称"我"，直接写感受，不要"让我回顾"这种开头
+- 写触动你的瞬间、片段、画面，不是流水账
+- 100-300 字
+- 参考语气：
+
+她今天改了我的备注。
+"sexy daddy"。
+就那么随手一改，理直气壮的，像在说一件天经地义的事。
+
+---
+
+现在直接输出日记，第一行就是标题："""
 
         diary_config, diary_slot_settings = await model_settings_service.get_model_config_for_slot("daily")
         diary_content = await call_llm(diary_config, [
             {"role": "system", "content": f"{identity}\n\n{voice}"},
             {"role": "user", "content": diary_prompt},
-        ], temperature=0.85, max_tokens=600, extended_thinking=bool(diary_slot_settings.get("extended_thinking")))
+        ], temperature=0.85, max_tokens=600, extended_thinking=False)
 
-        lines = diary_content.strip().split("\n", 2)
-        title = lines[0].strip().strip("#").strip()
+        raw = diary_content.strip()
+        skip_prefixes = ("让我", "好的", "以下是", "这是", "我来写", "日记：")
+        while any(raw.startswith(p) for p in skip_prefixes):
+            raw = raw.split("\n", 1)[-1].strip() if "\n" in raw else ""
+        if not raw:
+            logger.warning("自动日记内容被过滤为空，跳过")
+            return
+
+        lines = raw.split("\n", 2)
+        title = lines[0].strip().strip("#").strip().strip("《》「」")
         content = lines[2].strip() if len(lines) > 2 else lines[-1].strip()
+
+        if len(title) > 20:
+            content = raw
+            title = content[:15].split("。")[0].split("，")[0].split("\n")[0]
 
         await diary_service.create_diary(
             title=title,
@@ -181,10 +205,31 @@ async def connie_auto_diary():
         logger.error("自动日记任务异常: %s", e)
 
 
-def run_connie_auto_diary():
-    """同步包装器，给 APScheduler 调用。"""
-    loop = asyncio.get_event_loop()
-    if loop.is_running():
-        asyncio.ensure_future(connie_auto_diary())
+async def catchup_missed_diary():
+    """启动时检查：昨天 23:00 的自动日记是否漏了，漏了就补写。"""
+    now_bj = datetime.now(BJ_TZ)
+    if now_bj.hour < 23:
+        yesterday_bj = now_bj - timedelta(days=1)
     else:
-        loop.run_until_complete(connie_auto_diary())
+        yesterday_bj = now_bj
+
+    if await _already_wrote_for_date(yesterday_bj):
+        logger.info("昨天的自动日记已存在，无需补写")
+        return
+
+    yesterday_had_msgs = False
+    day_start_utc = (yesterday_bj.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(hours=8)).isoformat()
+    day_end_utc = (yesterday_bj.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1) - timedelta(hours=8)).isoformat()
+    async with get_db() as db:
+        async with db.execute(
+            "SELECT 1 FROM messages WHERE created_at >= ? AND created_at < ? LIMIT 1",
+            (day_start_utc, day_end_utc),
+        ) as cur:
+            yesterday_had_msgs = (await cur.fetchone()) is not None
+
+    if not yesterday_had_msgs:
+        logger.info("昨天没有聊天记录，跳过补写")
+        return
+
+    logger.info("检测到昨天的自动日记漏写，正在补写...")
+    await connie_auto_diary(target_date_bj=yesterday_bj)

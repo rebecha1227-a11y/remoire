@@ -750,7 +750,7 @@ export default function ChatPage({ tweaks }) {
           )}
           </div>
         }
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8 }}>
           <IconButton onClick={() => setShowPlus(!showPlus)}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5"><path d="M12 5v14M5 12h14" /></svg>
           </IconButton>

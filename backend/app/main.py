@@ -5,7 +5,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from app.database import init_db
 from app.routers import chat, memory, diary, note, settings
-from app.scheduler.jobs import connie_auto_diary
+from app.scheduler.jobs import connie_auto_diary, catchup_missed_diary
 
 scheduler = AsyncIOScheduler()
 
@@ -19,6 +19,7 @@ async def lifespan(app: FastAPI):
         replace_existing=True,
     )
     scheduler.start()
+    await catchup_missed_diary()
     yield
     scheduler.shutdown()
 
