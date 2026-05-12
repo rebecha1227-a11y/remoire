@@ -225,9 +225,9 @@ export function PromptSettings({ onBack }) {
 // ═══════════════════════════════════════════
 export function ModelSettings({ onBack }) {
   const SLOTS = [
-    { id: 'daily', label: '日常陪伴', desc: '聊天、主动消息、小纸条' },
-    { id: 'deep', label: '深度时刻', desc: '复杂情绪、长对话、需要更稳的理解' },
-    { id: 'backend', label: '后台任务', desc: '记忆提取、摘要、Connie 日记' },
+    { id: 'daily', label: '日常陪伴', desc: '聊天、小纸条、自动日记、气息状态、留言回复' },
+    { id: 'deep', label: '深度时刻', desc: '复杂情绪、长对话、需要更深的理解' },
+    { id: 'backend', label: '后台任务', desc: '记忆提取、情感打标、摘要压缩、自动回复判断' },
   ];
   const API = '/settings';
   const emptyDraft = { id: null, nickname: '', provider: 'openai-compatible', api_key: '', base_url: '', model_name: '' };
@@ -467,7 +467,7 @@ export function ModelSettings({ onBack }) {
 
   return (
     <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px', paddingBottom: 88 }}>
-      <SubPageHeader onBack={onBack} title="模型配置" subtitle="为不同场景配置 OpenAI 兼容模型。" />
+      <SubPageHeader onBack={onBack} title="模型配置" subtitle="给 Connie 的不同场景选择合适的模型。" />
 
       {status && (
         <div style={{ ...statusStyle, color: status.includes('失败') ? 'var(--danger)' : 'var(--text-secondary)' }}>{status}</div>
@@ -553,7 +553,7 @@ export function ModelSettings({ onBack }) {
           style={foldButton}>
           <div>
             <div style={titleText}>{draft.id ? '编辑模型预设' : '新的模型预设'}</div>
-            <div style={metaText}>OpenAI 兼容服务可自动拉取；拉取失败可手动填写模型名</div>
+            <div style={metaText}>填入密钥和接口地址后可自动拉取可用模型</div>
           </div>
           <span style={{ ...ghostButton, minHeight: 32, padding: '6px 10px', flexShrink: 0 }}>{addOpen ? '收起' : '展开'}</span>
         </button>
@@ -586,7 +586,7 @@ export function ModelSettings({ onBack }) {
                   placeholder="拉取失败时可手动填写" style={fieldStyle} />
               )}
               <div style={helperText}>
-                自动拉取会访问该服务的 /models 接口；地址必须是公网 https，不能指向本机或内网。拉取失败时可手动填写模型名称。
+                填入密钥和接口地址后会自动拉取可用模型列表。如果拉取不到，也可以手动填写模型名称。
               </div>
             </div>
 

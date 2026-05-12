@@ -173,9 +173,9 @@ CREATE TABLE IF NOT EXISTS model_settings (
 ```
 
 槽位说明：
-- `daily`：日常聊天 + 主动消息，Remoire 前端和微信默认共用。主动消息风格差异由 prompt_profiles 控制，不需要单独槽位。
-- `deep`：深度谈话、日记、总结。
-- `backend`：记忆整理、候选生成、情感打标、摘要压缩、对话导入处理、日记草稿、工具调用。
+- `daily`：日常聊天、主动消息、小纸条、自动日记、气息状态、日记留言回复。Remoire 前端和微信默认共用。
+- `deep`：深度谈话、复杂情绪、长对话。
+- `backend`：记忆提取、情感打标、摘要压缩、对话导入处理、自动回复判断。
 
 ### 6. prompt_profiles — Prompt 编辑器
 

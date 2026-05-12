@@ -285,9 +285,9 @@ Connie 自动写日记流程（每晚 23:30）：
 
 
 三个槽位：
-- `daily` — 日常陪伴 + 主动消息（推荐低成本模型：DeepSeek / Gemini Flash / Haiku）
-- `deep` — 深度时刻（推荐高质量模型：Sonnet / GPT-4o）
-- `backend` — 后台任务：记忆提取/情感打标/摘要压缩/对话导入/日记草稿（推荐最便宜的模型）
+- `daily` — 日常陪伴：聊天、主动消息、小纸条、自动日记、气息状态、日记留言回复（推荐低成本模型：DeepSeek / Gemini Flash / Haiku）
+- `deep` — 深度时刻：复杂情绪、长对话（推荐高质量模型：Sonnet / GPT-4o）
+- `backend` — 后台任务：记忆提取、情感打标、摘要压缩、对话导入、自动回复判断（推荐最便宜的模型）
 
 主动消息不单独设槽位，走 daily。风格差异由 prompt_profiles 场景 Prompt 控制。
 

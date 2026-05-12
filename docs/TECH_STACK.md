@@ -67,9 +67,9 @@
 │  外部 LLM API            │  │  iLink API (微信智联协议)       │
 │  （OpenAI 兼容格式）       │  │  ilinkai.weixin.qq.com        │
 │                          │  │                               │
-│  daily ← 日常 + 主动消息  │  │  长轮询收消息 (35s 超时)       │
-│  deep  ← 深度 + 日记     │  │  POST 回复消息（分条发送）      │
-│  backend ← 打标 + 摘要   │  │  扫码登录 + token 自动续期     │
+│  daily ← 聊天 + 日记     │  │  长轮询收消息 (35s 超时)       │
+│  deep  ← 深度对话        │  │  POST 回复消息（分条发送）      │
+│  backend ← 记忆 + 打标   │  │  扫码登录 + token 自动续期     │
 │                          │  │                               │
 │  DeepSeek / 硅基流动      │  └───────────────────────────────┘
 │  OpenAI / Anthropic 代理  │
@@ -317,9 +317,9 @@ async def call_llm(
 
 | 槽位 | 用途 | 推荐模型 | 大约单价 |
 |---|---|---|---|
-| `daily` | 日常聊天 + 主动消息、温和提醒 | DeepSeek Chat / Gemini Flash / Haiku | 便宜 |
-| `deep` | 深度情感对话、关键日记、复杂回应 | Sonnet / GPT-4o | 中等 |
-| `backend` | 记忆提取、情感打标、摘要压缩、对话导入、日记草稿 | 最便宜的能用的模型 | 极便宜 |
+| `daily` | 聊天、主动消息、小纸条、自动日记、气息状态、日记留言回复 | DeepSeek Chat / Gemini Flash / Haiku | 便宜 |
+| `deep` | 复杂情绪、长对话、需要更深的理解 | Sonnet / GPT-4o | 中等 |
+| `backend` | 记忆提取、情感打标、摘要压缩、对话导入、自动回复判断 | 最便宜的能用的模型 | 极便宜 |
 
 主动消息不单独设槽位，走 daily。主动消息的风格差异由 prompt_profiles 的场景 Prompt 控制（`daytime_proactive` / `night_proactive`）。
 

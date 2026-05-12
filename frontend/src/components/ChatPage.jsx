@@ -30,8 +30,8 @@ const BREATH_STATES = [
 "最近有些担心你，但没关系"];
 
 const CHAT_MODES = {
-  daily: { label: '日常', fullLabel: '日常陪伴', desc: '轻一点、近一点，用 daily 槽位' },
-  deep: { label: '深度', fullLabel: '深度时刻', desc: '复杂情绪、长对话，用 deep 槽位' },
+  daily: { label: '日常', fullLabel: '日常陪伴', desc: '轻松聊天、日常陪伴' },
+  deep: { label: '深度', fullLabel: '深度时刻', desc: '复杂情绪、长对话、需要更深的理解' },
 };
 
 
@@ -766,21 +766,18 @@ export default function ChatPage({ tweaks }) {
         }
         <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8 }}>
           <IconButton size={44} onClick={() => setShowPlus(!showPlus)}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5"><path d="M12 5v14M5 12h14" /></svg>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" strokeWidth="1.5"><path d="M12 5v14M5 12h14" /></svg>
           </IconButton>
           <div style={{ position: 'relative', flexShrink: 0 }}>
             <button onClick={() => setShowModelPanel(v => !v)} style={{
-              minHeight: 44, maxWidth: 86, padding: '6px 9px',
+              minHeight: 44, padding: '6px 12px',
               borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)',
               background: chatMode === 'deep' ? 'var(--accent-subtle)' : 'var(--bg-elevated)',
               color: chatMode === 'deep' ? 'var(--accent)' : 'var(--text-secondary)',
-              cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'center',
-              fontFamily: 'var(--font-body)', lineHeight: 1.15,
+              cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontFamily: 'var(--font-body)', fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap',
             }}>
-              <span style={{ fontSize: 11, fontWeight: 500, whiteSpace: 'nowrap' }}>{currentModeMeta.label}</span>
-              <span style={{ fontSize: 9, color: 'var(--text-tertiary)', maxWidth: 66, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {currentPreset?.model_name || '未配置'}
-              </span>
+              {currentModeMeta.label}
             </button>
             {showModelPanel && (
               <div style={{
@@ -864,18 +861,18 @@ export default function ChatPage({ tweaks }) {
             
           </div>
           <IconButton size={44} onClick={() => setShowEmojiPanel(e => !e)}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={showEmojiPanel ? 'var(--accent)' : 'var(--text-tertiary)'} strokeWidth="1.5">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={showEmojiPanel ? 'var(--accent)' : 'var(--text-secondary)'} strokeWidth="1.5">
               <circle cx="12" cy="12" r="9" />
               <path d="M8.5 14.5s1 2 3.5 2 3.5-2 3.5-2" strokeLinecap="round" />
-              <circle cx="9" cy="10" r="1" fill={showEmojiPanel ? 'var(--accent)' : 'var(--text-tertiary)'} stroke="none" />
-              <circle cx="15" cy="10" r="1" fill={showEmojiPanel ? 'var(--accent)' : 'var(--text-tertiary)'} stroke="none" />
+              <circle cx="9" cy="10" r="1" fill={showEmojiPanel ? 'var(--accent)' : 'var(--text-secondary)'} stroke="none" />
+              <circle cx="15" cy="10" r="1" fill={showEmojiPanel ? 'var(--accent)' : 'var(--text-secondary)'} stroke="none" />
             </svg>
           </IconButton>
           {(input.trim() || pendingImage) ?
           <button onClick={sendMessage} style={{ background: 'var(--accent)', color: '#FAF8F4', border: 'none', borderRadius: 'var(--radius-sm)', padding: '8px 14px', fontSize: 14, fontWeight: 500, cursor: 'pointer', flexShrink: 0, height: 44 }}>发送</button> :
 
           <IconButton size={44}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5"><path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" y1="19" x2="12" y2="23" /><line x1="8" y1="23" x2="16" y2="23" /></svg>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" strokeWidth="1.5"><path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" y1="19" x2="12" y2="23" /><line x1="8" y1="23" x2="16" y2="23" /></svg>
             </IconButton>
           }
         </div>
