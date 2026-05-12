@@ -354,6 +354,7 @@ export default function ChatPage({ tweaks }) {
   const [modelSlots, setModelSlots] = useState([]);
   const [modelStatus, setModelStatus] = useState('');
   const fileInputRef = useRef(null);
+  const inputRef = useRef(null);
   const bottomRef = useRef(null);
   const msgIdRef = useRef(100);
   const conversationIdRef = useRef(localStorage.getItem('remoire_conv_id') || null);
@@ -429,6 +430,26 @@ export default function ChatPage({ tweaks }) {
       bottomRef.current.scrollTop = bottomRef.current.scrollHeight;
     }
   }, [messages, typing]);
+
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 132)}px`;
+    el.style.overflowY = el.scrollHeight > 132 ? 'auto' : 'hidden';
+  }, [input]);
+
+  useEffect(() => {
+    function resizeInput() {
+      const el = inputRef.current;
+      if (!el) return;
+      el.style.height = 'auto';
+      el.style.height = `${Math.min(el.scrollHeight, 132)}px`;
+      el.style.overflowY = el.scrollHeight > 132 ? 'auto' : 'hidden';
+    }
+    window.addEventListener('resize', resizeInput);
+    return () => window.removeEventListener('resize', resizeInput);
+  }, []);
 
   function doSearch(q) {
     setSearchQuery(q);
@@ -815,13 +836,29 @@ export default function ChatPage({ tweaks }) {
               </div>
             )}
           </div>
-          <div style={{ flex: 1, position: 'relative' }}>
-            <input
+          <div style={{ flex: 1, position: 'relative', minWidth: 0 }}>
+            <textarea
+              ref={inputRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
+              onKeyDown={(e) => {
+                if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  sendMessage();
+                }
+              }}
               placeholder="说点什么…"
-              style={{ width: '100%', background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-md)', padding: '10px 14px', fontFamily: "var(--font-chat)", fontSize: 'var(--text-base)', color: 'var(--text-primary)', outline: 'none' }} />
+              rows={1}
+              style={{
+                width: '100%', minHeight: 44, maxHeight: 132,
+                background: 'var(--bg-elevated)', border: '1px solid var(--border-light)',
+                borderRadius: 'var(--radius-md)', padding: '11px 14px',
+                fontFamily: "var(--font-chat)", fontSize: 'var(--text-base)',
+                color: 'var(--text-primary)', outline: 'none', resize: 'none',
+                lineHeight: 1.45, whiteSpace: 'pre-wrap', overflowWrap: 'break-word',
+                display: 'block',
+              }} />
             
           </div>
           <IconButton onClick={() => setShowEmojiPanel(e => !e)}>
