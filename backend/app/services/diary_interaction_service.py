@@ -415,7 +415,7 @@ async def decide_unlock_request(request: dict) -> dict:
             messages,
             temperature=0.7,
             max_tokens=600,
-            extended_thinking=bool(slot_settings.get("extended_thinking")),
+            extended_thinking=False,
         )
         data = json.loads(raw.strip().removeprefix("```json").removesuffix("```").strip())
         return {
@@ -423,7 +423,11 @@ async def decide_unlock_request(request: dict) -> dict:
             "grant": bool(data.get("grant")),
             "note": str(data.get("note") or ""),
         }
-    except Exception:
+    except (json.JSONDecodeError, ValueError) as exc:
+        logger.warning("Connie 解锁请求判定 JSON 解析失败：%s", exc, exc_info=True)
+        return {"respond": False, "grant": False, "note": ""}
+    except Exception as exc:
+        logger.warning("Connie 解锁请求判定失败：%s", exc, exc_info=True)
         return {"respond": False, "grant": False, "note": ""}
 
 

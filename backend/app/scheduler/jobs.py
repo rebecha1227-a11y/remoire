@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import json
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from app.database import get_db
@@ -37,13 +38,13 @@ async def _get_today_memories() -> list[dict]:
 
     async with get_db() as db:
         async with db.execute(
-            """SELECT content, tags FROM memories
-               WHERE status = 'confirmed' AND created_at >= ?
+            """SELECT content, tags_json FROM memories
+               WHERE created_at >= ?
                ORDER BY created_at ASC LIMIT 20""",
             (today_start_utc,),
         ) as cur:
             rows = await cur.fetchall()
-    return [{"content": r["content"], "tags": r["tags"]} for r in rows]
+    return [{"content": r["content"], "tags": json.loads(r["tags_json"] or "[]")} for r in rows]
 
 
 async def _already_wrote_today() -> bool:
@@ -110,9 +111,8 @@ async def connie_auto_diary():
         judge_result = await call_llm(config, [
             {"role": "system", "content": "你是判断助手，只输出 JSON。"},
             {"role": "user", "content": judge_prompt},
-        ], temperature=0.3, max_tokens=100, extended_thinking=extended_thinking)
+        ], temperature=0.3, max_tokens=200, extended_thinking=False)
 
-        import json
         try:
             clean = judge_result.strip()
             if clean.startswith("```"):
