@@ -42,7 +42,7 @@
   --accent-pop:      #82BDC5;
   --border:          #DDD6CE;
   --border-light:    #EDE8E2;
-  --bubble-send:         #C8B49E;
+  --bubble-send:         #7C6350;
   --bubble-send-text:    #FAF8F4;
   --bubble-receive:      #EDE9E3;
   --bubble-receive-text: #28211C;
@@ -96,7 +96,7 @@
   --tweak-radius-scale: 1;
   --tweak-shadow-alpha: 1;
   --tweak-spacing-scale:1;
-  --tweak-bubble-send-bg:    #C8B49E;
+  --tweak-bubble-send-bg:    #7C6350;
   --tweak-bubble-recv-bg:    #EDE9E3;
   --tweak-accent:            #7C6350;
   --tweak-bg-primary:        #F6F2ED;

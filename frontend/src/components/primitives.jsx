@@ -72,7 +72,7 @@ export function Pill({ children, tone = 'neutral', style = {} }) {
 
 export function IconButton({ children, onClick, size = 36, variant = 'outline', style = {}, ...rest }) {
   const variants = {
-    outline: { background: 'var(--bg-elevated)', border: '1px solid var(--border)' },
+    outline: { background: 'var(--bg-elevated)', border: '1px solid var(--border-light)' },
     ghost:   { background: 'transparent', border: 'none' },
     accent:  { background: 'var(--accent)', border: 'none', color: 'var(--bg-elevated)' },
   };

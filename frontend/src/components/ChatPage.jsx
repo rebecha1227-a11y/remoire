@@ -127,8 +127,9 @@ function Bubble({ msg, isNew, bubbleStyle, showAvatar, showTail, thinkingExpande
     ? 'color-mix(in oklch, var(--accent-pop) 10%, var(--bubble-receive))'
     : s.recvBg;
 
-  const tailSendR = showTail ? '22px 22px 6px 22px' : s.sendRadius;
-  const tailRecvR = showTail ? '22px 22px 22px 6px' : s.recvRadius;
+  const hasCustomBg = bgColor === 'transparent';
+  const tailSendR = (showTail && !hasCustomBg) ? '22px 22px 6px 22px' : s.sendRadius;
+  const tailRecvR = (showTail && !hasCustomBg) ? '22px 22px 22px 6px' : s.recvRadius;
 
   return (
     <div style={{
@@ -197,7 +198,7 @@ function Bubble({ msg, isNew, bubbleStyle, showAvatar, showTail, thinkingExpande
           }}>
             {msg.text}
           </div>
-          {showTail && bs === 'default' && isSend && (
+          {showTail && !hasCustomBg && bs === 'default' && isSend && (
             <>
               <div style={{
                 position: 'absolute', bottom: 0, right: -6,
@@ -218,7 +219,7 @@ function Bubble({ msg, isNew, bubbleStyle, showAvatar, showTail, thinkingExpande
               }} />
             </>
           )}
-          {showTail && bs === 'default' && !isSend && (
+          {showTail && !hasCustomBg && bs === 'default' && !isSend && (
             <>
               <div style={{
                 position: 'absolute', bottom: 0, left: -6,
@@ -340,6 +341,7 @@ export default function ChatPage({ tweaks }) {
   const [connName, setConnName] = useState(() => localStorage.getItem('remoire_conn_name') || 'Connie');
   const [nameInput, setNameInput] = useState(() => localStorage.getItem('remoire_conn_name') || 'Connie');
   const [chatBg, setChatBg] = useState('');
+  const [chatBgImage, setChatBgImage] = useState(() => localStorage.getItem('remoire_chat_bg_image') || '');
   const [connieAvatar, setConnieAvatar] = useState(null);
   const [jingAvatar, setJingAvatar] = useState(null);
   const [showConnieAvatarInChat, setShowConnieAvatarInChat] = useState(true);
@@ -651,7 +653,7 @@ export default function ChatPage({ tweaks }) {
       )}
 
       {/* Messages */}
-      <div ref={bottomRef} style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '16px 16px 8px', display: 'flex', flexDirection: 'column', gap: 10, background: chatBg || undefined, transition: 'background 0.3s' }}>
+      <div ref={bottomRef} style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '16px 16px 8px', display: 'flex', flexDirection: 'column', gap: 10, background: chatBgImage ? `url(${chatBgImage}) center/cover fixed` : (chatBg || undefined), transition: 'background 0.3s' }}>
         {messages.map((msg, idx) => {
           let showAvatar = false, showTail = false;
           if (msg.role !== 'system') {
@@ -669,7 +671,7 @@ export default function ChatPage({ tweaks }) {
             showAvatar={showAvatar} showTail={showTail}
             thinkingExpanded={expandedThinking.has(msg.id)}
             onToggleThinking={() => toggleThinking(msg.id)}
-            bgColor={chatBg}
+            bgColor={chatBgImage ? 'transparent' : chatBg}
             avatarConfig={{ connieAvatar, jingAvatar, showConnieAvatarInChat, showJingAvatarInChat }} />;
         })}
         {typing &&
@@ -751,12 +753,12 @@ export default function ChatPage({ tweaks }) {
           </div>
         }
         <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8 }}>
-          <IconButton onClick={() => setShowPlus(!showPlus)}>
+          <IconButton size={44} onClick={() => setShowPlus(!showPlus)}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5"><path d="M12 5v14M5 12h14" /></svg>
           </IconButton>
           <div style={{ position: 'relative', flexShrink: 0 }}>
             <button onClick={() => setShowModelPanel(v => !v)} style={{
-              minHeight: 36, maxWidth: 86, padding: '6px 9px',
+              minHeight: 44, maxWidth: 86, padding: '6px 9px',
               borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)',
               background: chatMode === 'deep' ? 'var(--accent-subtle)' : 'var(--bg-elevated)',
               color: chatMode === 'deep' ? 'var(--accent)' : 'var(--text-secondary)',
@@ -849,7 +851,7 @@ export default function ChatPage({ tweaks }) {
               }} />
             
           </div>
-          <IconButton onClick={() => setShowEmojiPanel(e => !e)}>
+          <IconButton size={44} onClick={() => setShowEmojiPanel(e => !e)}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={showEmojiPanel ? 'var(--accent)' : 'var(--text-tertiary)'} strokeWidth="1.5">
               <circle cx="12" cy="12" r="9" />
               <path d="M8.5 14.5s1 2 3.5 2 3.5-2 3.5-2" strokeLinecap="round" />
@@ -858,9 +860,9 @@ export default function ChatPage({ tweaks }) {
             </svg>
           </IconButton>
           {(input.trim() || pendingImage) ?
-          <button onClick={sendMessage} style={{ background: 'var(--accent)', color: '#FAF8F4', border: 'none', borderRadius: 'var(--radius-sm)', padding: '8px 14px', fontSize: 14, fontWeight: 500, cursor: 'pointer', flexShrink: 0 }}>发送</button> :
+          <button onClick={sendMessage} style={{ background: 'var(--accent)', color: '#FAF8F4', border: 'none', borderRadius: 'var(--radius-sm)', padding: '8px 14px', fontSize: 14, fontWeight: 500, cursor: 'pointer', flexShrink: 0, height: 44 }}>发送</button> :
 
-          <IconButton>
+          <IconButton size={44}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5"><path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" y1="19" x2="12" y2="23" /><line x1="8" y1="23" x2="16" y2="23" /></svg>
             </IconButton>
           }
@@ -949,10 +951,10 @@ export default function ChatPage({ tweaks }) {
               <div style={{ display: 'flex', gap: 24, justifyContent: 'center', marginBottom: 12 }}>
                 {/* 静儿头像 */}
                 <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-                  <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'var(--accent-subtle)', border: '1.5px dashed var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, color: 'var(--accent)', fontFamily: 'var(--font-display)', position: 'relative', overflow: 'hidden' }}>
-                    {jingAvatar ? <img src={jingAvatar} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : '静'}
-                    <div style={{ position: 'absolute', bottom: 0, right: 0, width: 18, height: 18, borderRadius: '50%', background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#FAF8F4" strokeWidth="2"><path d="M12 5v14M5 12h14" /></svg>
+                  <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'var(--accent-subtle)', border: '1.5px dashed var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, color: 'var(--accent)', fontFamily: 'var(--font-display)', position: 'relative' }}>
+                    {jingAvatar ? <img src={jingAvatar} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} /> : '静'}
+                    <div style={{ position: 'absolute', bottom: -2, right: -2, width: 20, height: 20, borderRadius: '50%', background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid var(--bg-primary)' }}>
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#FAF8F4" strokeWidth="2.5"><path d="M12 5v14M5 12h14" /></svg>
                     </div>
                   </div>
                   <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>静儿</span>
@@ -960,10 +962,10 @@ export default function ChatPage({ tweaks }) {
                 </label>
                 {/* Connie 头像 */}
                 <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-                  <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'var(--accent-subtle)', border: '1.5px dashed var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, color: 'var(--accent)', fontFamily: 'var(--font-display)', position: 'relative', overflow: 'hidden' }}>
-                    {connieAvatar ? <img src={connieAvatar} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : 'C'}
-                    <div style={{ position: 'absolute', bottom: 0, right: 0, width: 18, height: 18, borderRadius: '50%', background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#FAF8F4" strokeWidth="2"><path d="M12 5v14M5 12h14" /></svg>
+                  <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'var(--accent-subtle)', border: '1.5px dashed var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, color: 'var(--accent)', fontFamily: 'var(--font-display)', position: 'relative' }}>
+                    {connieAvatar ? <img src={connieAvatar} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} /> : 'C'}
+                    <div style={{ position: 'absolute', bottom: -2, right: -2, width: 20, height: 20, borderRadius: '50%', background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid var(--bg-primary)' }}>
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#FAF8F4" strokeWidth="2.5"><path d="M12 5v14M5 12h14" /></svg>
                     </div>
                   </div>
                   <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>{connName}</span>
@@ -1031,15 +1033,36 @@ export default function ChatPage({ tweaks }) {
               <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', marginBottom: 8 }}>聊天背景</div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
                 {BG_PRESETS.map(p => (
-                  <button key={p.value} onClick={() => setChatBg(p.value)} style={{
+                  <button key={p.value} onClick={() => { setChatBg(p.value); setChatBgImage(''); localStorage.removeItem('remoire_chat_bg_image'); }} style={{
                     width: 44, height: 44, borderRadius: 10, flexShrink: 0, cursor: 'pointer',
                     background: p.value || 'var(--bg-primary)',
-                    border: chatBg === p.value ? '2px solid var(--accent)' : '1.5px solid var(--border)',
+                    border: (!chatBgImage && chatBg === p.value) ? '2px solid var(--accent)' : '1.5px solid var(--border)',
                     position: 'relative',
                   }}>
                     {!p.value && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5" style={{ position: 'absolute', inset: 0, margin: 'auto' }}><path d="M18 6L6 18M6 6l12 12" /></svg>}
                   </button>
                 ))}
+                <label style={{
+                  width: 44, height: 44, borderRadius: 10, flexShrink: 0, cursor: 'pointer',
+                  background: chatBgImage ? `url(${chatBgImage}) center/cover` : 'var(--bg-elevated)',
+                  border: chatBgImage ? '2px solid var(--accent)' : '1.5px dashed var(--border)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  {!chatBgImage && <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5"><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><path d="M21 15l-5-5L5 21" /></svg>}
+                  <input type="file" accept="image/*" hidden onChange={e => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                      const dataUrl = reader.result;
+                      setChatBgImage(dataUrl);
+                      setChatBg('');
+                      localStorage.setItem('remoire_chat_bg_image', dataUrl);
+                    };
+                    reader.readAsDataURL(file);
+                    e.target.value = '';
+                  }} />
+                </label>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 0', borderTop: '1px solid var(--border-light)', opacity: 0.5 }}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.5"><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></svg>
