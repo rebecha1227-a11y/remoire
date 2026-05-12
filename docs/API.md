@@ -19,7 +19,7 @@ https://{your-domain}/api
 
 当前代码仍处在 Bearer token 过渡态；后续实现登录/session 后，应将通用 API 校验切到 session cookie。
 
-**例外**：`/api/device/*` 路由使用 URL 查询参数 `key` 认证（独立的 `DEVICE_SECRET_KEY`，与 `API_SECRET_KEY` 不同）。原因是 iOS 快捷指令无法方便地设置 HTTP Header，GET 请求 + URL 参数是最可靠的方式。`DEVICE_SECRET_KEY` 存在 `.env` 里，HTTPS 会加密完整 URL。
+**设备上传例外**：iOS 快捷指令调用的设备上传接口使用 URL 查询参数 `key` 认证（独立的 `DEVICE_SECRET_KEY`）。原因是 iOS 快捷指令无法方便地设置 HTTP Header，GET 请求 + URL 参数是最可靠的方式。`DEVICE_SECRET_KEY` 存在 `.env` 里，HTTPS 会加密完整 URL。内部读取类接口仍走普通 app 认证（当前 Bearer 过渡，目标 session cookie）。
 
 ### 登录接口（计划）
 
@@ -859,6 +859,7 @@ SSE 长连接端点。前端通过 `EventSource` 连接，接收服务器主动�
 const es = new EventSource('/api/stream/events');
 // 生产目标方案下认证走 HttpOnly session cookie，浏览器会自动携带。
 // 当前 Bearer 过渡态若需要 header，应使用 fetch + ReadableStream 或 polyfill。
+// 推荐前后端同源部署；若跨域，需要后端 CORS credentials 配置和支持携带凭证的 SSE 方案。
 ```
 
 **事件类型**：
@@ -1183,7 +1184,7 @@ iLink 收到微信消息后的入口。微信桥接模块内部调用，将消�
 
 iPhone 通过 iOS 快捷指令定时上传设备数据（定位、天气、电量、步数、屏幕使用时间），供 AI 作为聊天上下文使用。
 
-**认证方式**：所有 `/api/device/*` 接口使用 URL 查询参数 `key` 认证（值为 `.env` 中的 `DEVICE_SECRET_KEY`），不使用 Bearer Token。
+**认证方式**：iOS 快捷指令上传类接口使用 URL 查询参数 `key` 认证（值为 `.env` 中的 `DEVICE_SECRET_KEY`），不使用 Bearer/session。内部读取类接口走普通 app 认证。
 
 ### GET `/api/device/snapshot`
 
@@ -1240,7 +1241,7 @@ iPhone 报告某个 App 的打开/关闭事件。服务器自动判断是 open �
 
 ### GET `/api/device/latest`
 
-内部接口：获取最新设备上下文，供 AI prompt 注入。使用标准 Bearer Token 认证。
+内部接口：获取最新设备上下文，供 AI prompt 注入。使用普通 app 认证（当前 Bearer 过渡，目标 session cookie），不使用 `DEVICE_SECRET_KEY`。
 
 **响应**：
 ```json

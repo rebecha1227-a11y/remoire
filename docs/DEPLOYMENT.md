@@ -284,6 +284,12 @@ nano .env
 `.env` 文件内容大概长这样（根据你的实际情况填写）：
 
 ```env
+# 当前 Bearer 过渡期必填；登录/session 实现后再移除
+API_SECRET_KEY=your-very-long-random-secret-key-here
+
+# iOS 快捷指令设备上传认证（独立于 API_SECRET_KEY）
+DEVICE_SECRET_KEY=your-device-upload-secret-here
+
 # 登录配置 —— 生产目标方案
 APP_USERNAME=jinger
 APP_PASSWORD_HASH=your-password-hash-here
@@ -305,13 +311,13 @@ UPLOADS_PATH=/opt/our-nest/backend/uploads
 
 `APP_USERNAME` / 登录密码只用于进入 Remoire。模型 API key 不等于登录密码；模型 API key 在设置页的模型预设里配置，并分配给 daily / deep / backend 槽位。
 
-**生成 session 随机密钥的简单方法**：
+**生成随机密钥的简单方法**：
 
 ```bash
 python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 ```
 
-把输出的字符串粘贴到 `SESSION_SECRET=` 后面。
+当前过渡期把输出粘贴到 `API_SECRET_KEY=` 后面；登录/session 实现后再为 `SESSION_SECRET=` 单独生成一个新值。
 
 **生成密码哈希的方式**会在登录/session 代码实现时补充。当前代码仍处在 Bearer token 过渡态，生产部署前需要先完成登录/session 实现。
 

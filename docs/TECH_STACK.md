@@ -117,9 +117,9 @@
 
 | 场景 | 方案 |
 |---|---|
-| 普通请求 | fetch + Authorization header |
+| 普通请求 | 当前 Bearer 过渡；生产目标为 fetch + HttpOnly session cookie |
 | 流式聊天 | fetch + ReadableStream |
-| 主动消息接收 | EventSource (SSE) |
+| 主动消息接收 | EventSource (SSE)，生产目标依赖同源 session cookie |
 | 图片上传 | FormData + fetch |
 
 为什么不用 axios？fetch 原生够用，少一个依赖。
@@ -196,7 +196,7 @@
 
 模型 API key 是另一套东西：它们在设置页的模型预设里配置，用于让 Connie 调用 OpenAI-compatible provider。登录密码保护 app 和数据；模型 API key 决定 daily / deep / backend 槽位调用哪个模型。
 
-**设备数据认证例外**：`/api/device/*` 路由使用独立的 `DEVICE_SECRET_KEY`，通过 URL 查询参数 `key` 传递（不走 Bearer Header）。原因是 iOS 快捷指令无法方便地设置 HTTP Header，GET + URL 参数是最可靠的方式。HTTPS 会加密完整 URL。
+**设备数据认证例外**：iOS 快捷指令上传类接口（`/api/device/snapshot`、`/api/device/screentime/toggle/*`）使用独立的 `DEVICE_SECRET_KEY`，通过 URL 查询参数 `key` 传递（不走 Bearer Header）。原因是 iOS 快捷指令无法方便地设置 HTTP Header，GET + URL 参数是最可靠的方式。HTTPS 会加密完整 URL。内部读取类接口（如 `/api/device/latest`）走普通 app 认证（当前 Bearer 过渡，目标 session cookie）。
 
 ---
 
@@ -381,7 +381,7 @@ async def call_llm(
 ### 数据安全措施
 
 1. **HTTPS 加密传输** — 所有数据在网络中加密
-2. **API 密钥认证** — 没有密钥无法访问任何接口
+2. **访问认证** — 当前 Bearer token 过渡；生产目标为用户名密码登录 + HttpOnly session cookie
 3. **防火墙** — 只开 80/443 端口，其他全关
 4. **SQLite 文件权限** — 600（仅 owner 可读写）
 5. **定期备份** — 每天自动备份到本地 + 可选下载到自己电脑
