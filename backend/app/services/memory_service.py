@@ -2,8 +2,8 @@ import uuid
 import json
 from datetime import datetime
 from app.database import get_db
-from app.llm import call_llm, ModelConfig
-from app.config import DAILY_API_BASE, DAILY_API_KEY, DAILY_MODEL_ID
+from app.llm import call_llm
+from app.services import model_settings_service
 from pathlib import Path
 
 PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
@@ -34,13 +34,16 @@ async def extract_candidates(conversation_id: str, messages: list[dict]) -> list
         {"role": "user", "content": chat_text},
     ]
 
-    config = ModelConfig(
-        api_base=DAILY_API_BASE,
-        api_key=DAILY_API_KEY,
-        model_id=DAILY_MODEL_ID,
-    )
+    config, slot_settings = await model_settings_service.get_model_config_for_slot("backend")
 
-    raw = await call_llm(config, llm_messages, stream=False, temperature=0.3, max_tokens=2000)
+    raw = await call_llm(
+        config,
+        llm_messages,
+        stream=False,
+        temperature=0.3,
+        max_tokens=2000,
+        extended_thinking=bool(slot_settings.get("extended_thinking")),
+    )
 
     candidates = _parse_candidates(raw)
     if not candidates:

@@ -3,10 +3,9 @@ import logging
 import uuid
 from datetime import datetime
 from pathlib import Path
-from app.config import DAILY_API_BASE, DAILY_API_KEY, DAILY_MODEL_ID
 from app.database import get_db
-from app.llm import ModelConfig, call_llm
-from app.services import memory_service
+from app.llm import call_llm
+from app.services import memory_service, model_settings_service
 
 
 logger = logging.getLogger(__name__)
@@ -178,9 +177,6 @@ async def generate_connie_reply(
     if not diary:
         return "我看到了，想靠近你一点。"
 
-    if not DAILY_API_BASE or not DAILY_API_KEY or not DAILY_MODEL_ID:
-        return _fallback_reply(interaction_type)
-
     diary_author = str(diary.get("author") or "")
     diary_title = str(diary.get("title") or "")
     diary_content = str(diary.get("content") or "")
@@ -229,9 +225,15 @@ async def generate_connie_reply(
             ),
         },
     ]
-    config = ModelConfig(DAILY_API_BASE, DAILY_API_KEY, DAILY_MODEL_ID)
     try:
-        reply = await call_llm(config, messages, temperature=0.8, max_tokens=800)
+        config, slot_settings = await model_settings_service.get_model_config_for_slot("backend")
+        reply = await call_llm(
+            config,
+            messages,
+            temperature=0.8,
+            max_tokens=800,
+            extended_thinking=bool(slot_settings.get("extended_thinking")),
+        )
         logger.debug("日记留言回复生成完成：empty=%s", not bool(reply))
         return reply.strip() or _fallback_reply(interaction_type)
     except Exception as exc:
@@ -387,9 +389,6 @@ async def decide_unlock_requests(limit: int = 5) -> list[dict]:
 
 
 async def decide_unlock_request(request: dict) -> dict:
-    if not DAILY_API_BASE or not DAILY_API_KEY or not DAILY_MODEL_ID:
-        return {"respond": False, "grant": False, "note": ""}
-
     messages = [
         {
             "role": "system",
@@ -409,9 +408,15 @@ async def decide_unlock_request(request: dict) -> dict:
             ),
         },
     ]
-    config = ModelConfig(DAILY_API_BASE, DAILY_API_KEY, DAILY_MODEL_ID)
     try:
-        raw = await call_llm(config, messages, temperature=0.7, max_tokens=600)
+        config, slot_settings = await model_settings_service.get_model_config_for_slot("backend")
+        raw = await call_llm(
+            config,
+            messages,
+            temperature=0.7,
+            max_tokens=600,
+            extended_thinking=bool(slot_settings.get("extended_thinking")),
+        )
         data = json.loads(raw.strip().removeprefix("```json").removesuffix("```").strip())
         return {
             "respond": bool(data.get("respond")),

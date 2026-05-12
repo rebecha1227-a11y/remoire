@@ -3,9 +3,8 @@ import logging
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from app.database import get_db
-from app.llm import call_llm, ModelConfig
-from app.config import DAILY_API_BASE, DAILY_API_KEY, DAILY_MODEL_ID
-from app.services import diary_service
+from app.llm import call_llm
+from app.services import diary_service, model_settings_service
 
 logger = logging.getLogger(__name__)
 
@@ -105,12 +104,13 @@ async def connie_auto_diary():
 - 只是日常闲聊、没什么特别的 → 不写
 - 今天聊得很少、没什么内容 → 不写"""
 
-        config = ModelConfig(api_base=DAILY_API_BASE, api_key=DAILY_API_KEY, model_id=DAILY_MODEL_ID)
+        config, slot_settings = await model_settings_service.get_model_config_for_slot("backend")
+        extended_thinking = bool(slot_settings.get("extended_thinking"))
 
         judge_result = await call_llm(config, [
             {"role": "system", "content": "你是判断助手，只输出 JSON。"},
             {"role": "user", "content": judge_prompt},
-        ], temperature=0.3, max_tokens=100)
+        ], temperature=0.3, max_tokens=100, extended_thinking=extended_thinking)
 
         import json
         try:
@@ -163,7 +163,7 @@ async def connie_auto_diary():
         diary_content = await call_llm(config, [
             {"role": "system", "content": f"{identity}\n\n{voice}"},
             {"role": "user", "content": diary_prompt},
-        ], temperature=0.85, max_tokens=600)
+        ], temperature=0.85, max_tokens=600, extended_thinking=extended_thinking)
 
         lines = diary_content.strip().split("\n", 2)
         title = lines[0].strip().strip("#").strip()
