@@ -134,7 +134,7 @@ Phase 1 — 文档设计完成，准备开发
 | --text-deep | #574337 | 重点标题 |
 | --accent | #7C6350 | 按钮/激活 |
 | --accent-pop | #82BDC5 | 点缀 |
-| --bubble-send | #C8B49E | 发送气泡 |
+| --bubble-send | #7C6350 | 发送气泡 |
 | --bubble-receive | #EDE9E3 | 接收气泡 |
 
 ## 术语表
@@ -149,7 +149,7 @@ Phase 1 — 文档设计完成，准备开发
 | nudge() | 主动消息——AI 主动靠近 |
 | 关联记忆 | 写入时自动返回 top-3 旧记忆 |
 | 小纸条 | AI 静默留言，打开 app 时发现 |
-| 气息状态 | 聊天顶部诗意文案 |
+| 气息状态 | 聊天顶部 Connie 状态标签，定时任务从预设列表选取 |
 | 槽位 | 模型角色：daily / deep / backend |
 | snapshot() | 采集设备快照——iPhone 定时上传的定位/天气/电量/步数 |
 | push() | 推送通知——页面不可见时通过 Web Push 发通知 |

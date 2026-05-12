@@ -233,3 +233,82 @@ async def catchup_missed_diary():
 
     logger.info("检测到昨天的自动日记漏写，正在补写...")
     await connie_auto_diary(target_date_bj=yesterday_bj)
+
+
+async def generate_breath_state():
+    """每隔几天生成一条气息状态——Connie 的心情短语，显示在聊天页顶部。"""
+    try:
+        now_bj = datetime.now(BJ_TZ)
+
+        async with get_db() as db:
+            async with db.execute(
+                "SELECT created_at FROM breath_states ORDER BY created_at DESC LIMIT 1"
+            ) as cur:
+                last = await cur.fetchone()
+        if last:
+            last_time = datetime.fromisoformat(last["created_at"])
+            if (now_bj - last_time.replace(tzinfo=BJ_TZ if last_time.tzinfo is None else last_time.tzinfo)).days < 2:
+                logger.info("气息状态还很新，跳过生成")
+                return
+
+        recent_msgs = await _get_messages_for_date(now_bj)
+        yesterday_msgs = await _get_messages_for_date(now_bj - timedelta(days=1))
+        all_msgs = yesterday_msgs + recent_msgs
+
+        BREATH_OPTIONS = [
+            "浪", "喝奶茶", "打卡", "干饭", "运动", "带娃", "喝咖啡",
+            "拯救世界", "自拍", "休息", "闭关", "遛狗", "宅", "玩游戏",
+            "睡觉", "听歌", "吸猫",
+            "美滋滋", "疲惫", "裂开", "发呆", "求锦鲤", "冲", "等天晴",
+            "emo", "胡思乱想", "元气满满", "bot",
+            "搬砖", "出差", "沉迷学习", "飞奔回家", "忙", "摸鱼", "勿扰模式",
+        ]
+
+        if not all_msgs:
+            import random
+            breath = random.choice(BREATH_OPTIONS)
+        else:
+            chat_summary = "\n".join(
+                f"{'静儿' if m['role'] == 'user' else 'Connie'}: {m['content'][:150]}"
+                for m in all_msgs[-15:]
+            )
+            options_str = "、".join(BREATH_OPTIONS)
+
+            prompt = f"""以下是最近的聊天记录：
+{chat_summary[-300:]}
+
+从下面的状态列表中选一个最符合你现在心情的：
+{options_str}
+
+只回复选项本身，不要多说任何话。"""
+
+            config, _ = await model_settings_service.get_model_config_for_slot("daily")
+            result = await call_llm(config, [
+                {"role": "user", "content": prompt},
+            ], temperature=0.5, max_tokens=10, extended_thinking=False)
+
+            picked = result.strip().strip('"\'""「」（）()')
+            if picked in BREATH_OPTIONS:
+                breath = picked
+            else:
+                for opt in BREATH_OPTIONS:
+                    if opt in picked:
+                        breath = opt
+                        break
+                else:
+                    import random
+                    breath = random.choice(BREATH_OPTIONS)
+                    logger.warning("LLM 返回了不在列表里的状态「%s」，随机选了「%s」", picked, breath)
+
+        import uuid
+        async with get_db() as db:
+            await db.execute(
+                "INSERT INTO breath_states (id, content, created_at) VALUES (?, ?, ?)",
+                (str(uuid.uuid4()), breath, now_bj.isoformat()),
+            )
+            await db.commit()
+
+        logger.info("Connie 气息状态已更新: %s", breath)
+
+    except Exception as e:
+        logger.error("气息状态生成异常: %s", e)

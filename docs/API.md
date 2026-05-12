@@ -240,14 +240,16 @@ data: {"type": "done", "message_id": "msg_abc123", "candidates": [
 
 ### GET `/api/chat/status`
 
-获取 AI 当前气息状态。前端每次进入聊天页调用。
+获取聊天页状态信息：气息状态 + 今日提醒 + 未读小纸条数。前端每次进入聊天页调用。
+
+气息状态由定时任务从预设标签列表中选取（如"摸鱼""吸猫""emo"），存储在 `breath_states` 表，每 2 天更新一次。
 
 **响应**：
 ```json
 {
   "ok": true,
   "data": {
-    "presence_text": "一直在这里，今天很安静",
+    "presence_text": "摸鱼",
     "today_reminder": {
       "id": "rem_001",
       "title": "下午 3 点交材料",

@@ -204,6 +204,14 @@ async def init_db():
                 ON device_snapshots(created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_app_usage_app_created
                 ON app_usage_events(app_name, created_at DESC);
+            CREATE TABLE IF NOT EXISTS breath_states (
+                id TEXT PRIMARY KEY,
+                content TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_breath_states_created
+                ON breath_states(created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_notes_unread
                 ON notes(is_read) WHERE is_read = 0;
         """)

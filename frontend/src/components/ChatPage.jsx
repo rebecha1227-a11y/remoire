@@ -131,55 +131,59 @@ function Bubble({ msg, isNew, bubbleStyle, showAvatar, showTail, thinkingExpande
   const tailSendR = (showTail && !hasCustomBg) ? '22px 22px 6px 22px' : s.sendRadius;
   const tailRecvR = (showTail && !hasCustomBg) ? '22px 22px 22px 6px' : s.recvRadius;
 
-  return (
+  const avatarWidth = 34;
+  const avatarGap = 8;
+  const avatarOffset = (showConnieAvatarInChat && !isSend) || (showJingAvatarInChat && isSend) ? avatarWidth + avatarGap : 0;
+
+  return (<div>
+    {msg.thinking && (
+      <div style={{ marginBottom: 4, paddingLeft: isSend ? 0 : (avatarOffset + 4), paddingRight: isSend ? (avatarOffset + 4) : 0 }}>
+        <button onClick={onToggleThinking} style={{
+          background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+          display: 'flex', alignItems: 'center', gap: 3,
+          fontFamily: 'var(--font-body)', fontSize: 'var(--text-xs)',
+          color: 'var(--text-tertiary)', opacity: 0.65,
+        }}>
+          偷偷看他在想什么
+          <span style={{ display: 'inline-block', transition: 'transform 0.18s', transform: thinkingExpanded ? 'rotate(90deg)' : 'none', lineHeight: 1 }}>›</span>
+        </button>
+        {thinkingExpanded && (
+          <div style={{
+            marginTop: 6, padding: '8px 12px',
+            background: 'var(--bg-secondary)', borderRadius: 'var(--radius-sm)',
+            fontSize: 'var(--text-xs)', color: 'var(--text-secondary)',
+            lineHeight: 1.7, maxWidth: 240,
+            animation: 'card-in 160ms ease',
+          }}>
+            {msg.thinking}
+          </div>
+        )}
+      </div>
+    )}
     <div style={{
       display: 'flex',
       flexDirection: isSend ? 'row-reverse' : 'row',
-      alignItems: 'flex-end',
-      gap: 8,
+      alignItems: 'flex-start',
+      gap: avatarGap,
       animation: isNew ? 'bubble-in 160ms ease forwards' : undefined,
       transformOrigin: isSend ? 'bottom right' : 'bottom left',
     }}>
       {/* Avatar slot */}
       {isSend ? (
         showJingAvatarInChat && showTail ? (
-          <div style={{ width: 34, height: 34, borderRadius: '50%', flexShrink: 0, overflow: 'hidden', background: 'var(--accent-subtle)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontFamily: 'var(--font-display)', color: 'var(--accent)', position: 'relative', zIndex: 2, marginBottom: 18 }}>
+          <div style={{ width: avatarWidth, height: avatarWidth, borderRadius: '50%', flexShrink: 0, overflow: 'hidden', background: 'var(--accent-subtle)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontFamily: 'var(--font-display)', color: 'var(--accent)', position: 'relative', zIndex: 2 }}>
             {jingAvatar ? <img src={jingAvatar} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : '静'}
           </div>
-        ) : (showJingAvatarInChat ? <div style={{ width: 34, flexShrink: 0 }} /> : null)
+        ) : (showJingAvatarInChat ? <div style={{ width: avatarWidth, flexShrink: 0 }} /> : null)
       ) : (
         showConnieAvatarInChat ? (
-          <div style={{ width: 34, height: 34, borderRadius: '50%', flexShrink: 0, overflow: 'hidden', background: showAvatar ? 'var(--accent-subtle)' : 'transparent', border: showAvatar ? '1px solid var(--border)' : 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontFamily: 'var(--font-display)', color: 'var(--accent)', position: 'relative', zIndex: 2, marginBottom: 18 }}>
+          <div style={{ width: avatarWidth, height: avatarWidth, borderRadius: '50%', flexShrink: 0, overflow: 'hidden', background: showAvatar ? 'var(--accent-subtle)' : 'transparent', border: showAvatar ? '1px solid var(--border)' : 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontFamily: 'var(--font-display)', color: 'var(--accent)', position: 'relative', zIndex: 2 }}>
             {showAvatar ? (connieAvatar ? <img src={connieAvatar} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : 'C') : ''}
           </div>
         ) : null
       )}
       {/* Bubble content */}
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: isSend ? 'flex-end' : 'flex-start', maxWidth: '72%' }}>
-        {msg.thinking && (
-          <div style={{ marginBottom: 4, paddingLeft: isSend ? 0 : 4 }}>
-            <button onClick={onToggleThinking} style={{
-              background: 'none', border: 'none', cursor: 'pointer', padding: 0,
-              display: 'flex', alignItems: 'center', gap: 3,
-              fontFamily: 'var(--font-body)', fontSize: 'var(--text-xs)',
-              color: 'var(--text-tertiary)', opacity: 0.65,
-            }}>
-              偷偷看他在想什么
-              <span style={{ display: 'inline-block', transition: 'transform 0.18s', transform: thinkingExpanded ? 'rotate(90deg)' : 'none', lineHeight: 1 }}>›</span>
-            </button>
-            {thinkingExpanded && (
-              <div style={{
-                marginTop: 6, padding: '8px 12px',
-                background: 'var(--bg-secondary)', borderRadius: 'var(--radius-sm)',
-                fontSize: 'var(--text-xs)', color: 'var(--text-secondary)',
-                lineHeight: 1.7, maxWidth: 240,
-                animation: 'card-in 160ms ease',
-              }}>
-                {msg.thinking}
-              </div>
-            )}
-          </div>
-        )}
         {msg.image && (
           <img src={msg.image} alt="" style={{ maxWidth: '100%', maxHeight: 240, borderRadius: 12, marginBottom: msg.text ? 6 : 0, display: 'block' }} />
         )}
@@ -247,7 +251,8 @@ function Bubble({ msg, isNew, bubbleStyle, showAvatar, showTail, thinkingExpande
           </div>
         )}
       </div>
-    </div>);
+    </div>
+  </div>);
 
 }
 
@@ -332,6 +337,7 @@ export default function ChatPage({ tweaks }) {
   const [typing, setTyping] = useState(false);
   const [showPlus, setShowPlus] = useState(false);
   const [breathIdx, setBreathIdx] = useState(0);
+  const [breathText, setBreathText] = useState('');
   const [showSettings, setShowSettings] = useState(false);
   const [settingsView, setSettingsView] = useState('main');
   const [searchQuery, setSearchQuery] = useState('');
@@ -362,6 +368,12 @@ export default function ChatPage({ tweaks }) {
   const currentSlot = modelSlots.find(s => s.slot === chatMode) || {};
   const currentPreset = currentSlot.preset || null;
   const currentModeMeta = CHAT_MODES[chatMode] || CHAT_MODES.daily;
+
+  useEffect(() => {
+    apiFetch('/chat/status').then(r => r.json()).then(res => {
+      if (res.ok && res.data?.presence_text) setBreathText(res.data.presence_text);
+    }).catch(() => {});
+  }, []);
 
   useEffect(() => {
     async function loadHistory() {
@@ -626,8 +638,8 @@ export default function ChatPage({ tweaks }) {
           <div style={{ width: 36 }} />
           <div style={{ flex: 1, textAlign: 'center' }}>
             <div style={{ fontSize: 'var(--text-md)', fontWeight: 500, color: 'var(--text-primary)', fontFamily: "var(--font-body)" }}>{connName}</div>
-            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginTop: 1, lineHeight: 1.4 }}>
-              {BREATH_STATES[breathIdx]}
+            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginTop: 1, lineHeight: 1.4 }}>
+              {breathText || BREATH_STATES[breathIdx]}
             </div>
           </div>
           <IconButton variant="ghost" size={36} onClick={() => setShowSettings(true)}>
