@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { SectionLabel } from "./primitives";
+import { apiFetch, apiJsonFetch } from "../utils/api";
 
 
 // ── CSS for flip animations ──
@@ -990,12 +991,11 @@ export default function DiaryPage({ tweaks }) {
 
   useEffect(() => {
     let cancelled = false;
-    const headers = { 'Authorization': 'Bearer remoire-rebechalovesconnie-4ever' };
     async function loadDiaries() {
       try {
         const [connieRes, jingerRes] = await Promise.all([
-          fetch('http://localhost:8000/api/diary?author=connie&limit=50', { headers }),
-          fetch('http://localhost:8000/api/diary?author=jinger&limit=50', { headers }),
+          apiFetch('/diary?author=connie&limit=50'),
+          apiFetch('/diary?author=jinger&limit=50'),
         ]);
         const connieData = await connieRes.json();
         const jingerData = await jingerRes.json();
@@ -1041,12 +1041,8 @@ export default function DiaryPage({ tweaks }) {
 
   async function saveEntry(entry) {
     try {
-      const res = await fetch('http://localhost:8000/api/diary', {
+      const res = await apiJsonFetch('/diary', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer remoire-rebechalovesconnie-4ever'
-        },
         body: JSON.stringify({
           title: entry.title || '无题',
           content: entry.body,
@@ -1069,10 +1065,7 @@ export default function DiaryPage({ tweaks }) {
   }
 
   async function deleteInteraction(diaryId, interactionId) {
-    const res = await fetch(`http://localhost:8000/api/diary/${diaryId}/interactions/${interactionId}`, {
-      method: 'DELETE',
-      headers: { 'Authorization': 'Bearer remoire-rebechalovesconnie-4ever' }
-    });
+    const res = await apiFetch(`/diary/${diaryId}/interactions/${interactionId}`, { method: 'DELETE' });
     const data = await res.json();
     if (data.ok) {
       updateEntry(diaryId, entry => ({ ...entry, interactions: data.data.items }));
@@ -1080,12 +1073,8 @@ export default function DiaryPage({ tweaks }) {
   }
 
   async function addInteraction(diaryId, type, content) {
-    const res = await fetch(`http://localhost:8000/api/diary/${diaryId}/interactions`, {
+    const res = await apiJsonFetch(`/diary/${diaryId}/interactions`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer remoire-rebechalovesconnie-4ever'
-      },
       body: JSON.stringify({ actor: 'jinger', type, content })
     });
     const data = await res.json();
@@ -1151,4 +1140,3 @@ export default function DiaryPage({ tweaks }) {
     </div>
   );
 }
-

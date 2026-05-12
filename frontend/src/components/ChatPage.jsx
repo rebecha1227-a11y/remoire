@@ -4,6 +4,7 @@ import {
   NoteHistorySettings, MemoryCandidatesSettings,
   BubbleSettings, NoteSettings, CoverSettings, FontSettings,
 } from "./SettingsSubPages";
+import { apiFetch, apiJsonFetch } from "../utils/api";
 
 
 function formatBJTime(utcStr) {
@@ -28,8 +29,6 @@ const BREATH_STATES = [
 "记得你今天下午有件事要做",
 "最近有些担心你，但没关系"];
 
-const API_BASE = 'http://localhost:8000/api';
-const API_HEADERS = { 'Authorization': 'Bearer remoire-rebechalovesconnie-4ever' };
 const CHAT_MODES = {
   daily: { label: '日常', fullLabel: '日常陪伴', desc: '轻一点、近一点，用 daily 槽位' },
   deep: { label: '深度', fullLabel: '深度时刻', desc: '复杂情绪、长对话，用 deep 槽位' },
@@ -367,9 +366,7 @@ export default function ChatPage({ tweaks }) {
       const convId = conversationIdRef.current;
       if (!convId) return;
       try {
-        const res = await fetch(`http://localhost:8000/api/chat/history?conversation_id=${convId}&limit=9999`, {
-          headers: { 'Authorization': 'Bearer remoire-rebechalovesconnie-4ever' }
-        });
+        const res = await apiFetch(`/chat/history?conversation_id=${convId}&limit=9999`);
         const data = await res.json();
         if (data.ok && data.data.messages.length > 0) {
           const loaded = [];
@@ -399,7 +396,7 @@ export default function ChatPage({ tweaks }) {
 
   async function loadModelSlots() {
     try {
-      const res = await fetch(`${API_BASE}/settings/slots`, { headers: API_HEADERS });
+      const res = await apiFetch('/settings/slots');
       const data = await res.json();
       if (data.ok && Array.isArray(data.data)) setModelSlots(data.data);
     } catch (e) {}
@@ -412,9 +409,7 @@ export default function ChatPage({ tweaks }) {
   useEffect(() => {
     async function loadNote() {
       try {
-        const res = await fetch('http://localhost:8000/api/note/unread', {
-          headers: { 'Authorization': 'Bearer remoire-rebechalovesconnie-4ever' }
-        });
+        const res = await apiFetch('/note/unread');
         const data = await res.json();
         if (data.ok && data.data.note) {
           setNoteData(data.data.note);
@@ -461,9 +456,7 @@ export default function ChatPage({ tweaks }) {
   async function loadNoteHistory() {
     setNoteHistoryLoading(true);
     try {
-      const res = await fetch('http://localhost:8000/api/note?limit=50', {
-        headers: { 'Authorization': 'Bearer remoire-rebechalovesconnie-4ever' }
-      });
+      const res = await apiFetch('/note?limit=50');
       const data = await res.json();
       if (data.ok && data.data?.notes) setNoteHistory(data.data.notes);
     } catch (e) {}
@@ -475,9 +468,8 @@ export default function ChatPage({ tweaks }) {
     setModelStatus('');
     try {
       const current = modelSlots.find(item => item.slot === slot) || {};
-      const res = await fetch(`${API_BASE}/settings/slots/${slot}`, {
+      const res = await apiJsonFetch(`/settings/slots/${slot}`, {
         method: 'PUT',
-        headers: { ...API_HEADERS, 'Content-Type': 'application/json' },
         body: JSON.stringify({ extended_thinking: value }),
       });
       if (!res.ok) throw new Error(`保存失败：${res.status}`);
@@ -504,12 +496,8 @@ export default function ChatPage({ tweaks }) {
     try {
       const body = { message: txt || '（发了一张图片）', conversation_id: conversationIdRef.current || null, mode: chatMode };
       if (image) body.image = image;
-      const res = await fetch('http://localhost:8000/api/chat/send', {
+      const res = await apiJsonFetch('/chat/send', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer remoire-rebechalovesconnie-4ever',
-        },
         body: JSON.stringify(body),
       });
       if (!res.ok || !res.body) {
@@ -651,10 +639,10 @@ export default function ChatPage({ tweaks }) {
         <div style={{ padding: '12px 16px 0' }}>
           <NoteCard content={noteData.content} onKeep={async () => {
             setNoteState('minimized');
-            try { await fetch(`http://localhost:8000/api/note/${noteData.id}/read`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer remoire-rebechalovesconnie-4ever' }, body: JSON.stringify({ action: 'keep' }) }); } catch (e) {}
+            try { await apiJsonFetch(`/note/${noteData.id}/read`, { method: 'POST', body: JSON.stringify({ action: 'keep' }) }); } catch (e) {}
           }} onDismiss={async () => {
             setNoteState('hidden');
-            try { await fetch(`http://localhost:8000/api/note/${noteData.id}/read`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer remoire-rebechalovesconnie-4ever' }, body: JSON.stringify({ action: 'dismiss' }) }); } catch (e) {}
+            try { await apiJsonFetch(`/note/${noteData.id}/read`, { method: 'POST', body: JSON.stringify({ action: 'dismiss' }) }); } catch (e) {}
           }} noteStyle={tweaks && tweaks.noteStyle} />
         </div>
       )}

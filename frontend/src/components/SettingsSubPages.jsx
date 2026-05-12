@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Card, Pill, SectionLabel, Stack } from "./primitives";
 import { SettingsToggle, SettingRow, SettingsSectionTitle, SubPageHeader, setTweakVal } from "./settingsShared";
+import { apiFetch, apiJsonFetch } from "../utils/api";
 
 // SettingsSubPages — all settings detail panels
 
@@ -228,11 +229,7 @@ export function ModelSettings({ onBack }) {
     { id: 'deep', label: '深度时刻', desc: '复杂情绪、长对话、需要更稳的理解' },
     { id: 'backend', label: '后台任务', desc: '记忆提取、摘要、Connie 日记' },
   ];
-  const API = 'http://localhost:8000/api/settings';
-  const headers = {
-    'Content-Type': 'application/json',
-    'Authorization': 'Bearer remoire-rebechalovesconnie-4ever',
-  };
+  const API = '/settings';
   const emptyDraft = { id: null, nickname: '', provider: 'openai-compatible', api_key: '', base_url: '', model_name: '' };
 
   const [presets, setPresets] = useState([]);
@@ -272,8 +269,8 @@ export function ModelSettings({ onBack }) {
     setStatus('');
     try {
       const [presetsRes, slotsRes] = await Promise.all([
-        fetch(`${API}/model-presets`, { headers }),
-        fetch(`${API}/slots`, { headers }),
+        apiFetch(`${API}/model-presets`),
+        apiFetch(`${API}/slots`),
       ]);
       const presetsJson = await readJson(presetsRes);
       const slotsJson = await readJson(slotsRes);
@@ -312,9 +309,8 @@ export function ModelSettings({ onBack }) {
         model_name: draft.model_name,
       };
       if (draft.api_key) body.api_key = draft.api_key;
-      const res = await fetch(draft.id ? `${API}/model-presets/${draft.id}` : `${API}/model-presets`, {
+      const res = await apiJsonFetch(draft.id ? `${API}/model-presets/${draft.id}` : `${API}/model-presets`, {
         method: draft.id ? 'PUT' : 'POST',
-        headers,
         body: JSON.stringify(body),
       });
       await readJson(res);
@@ -352,7 +348,7 @@ export function ModelSettings({ onBack }) {
     if (!window.confirm('删除后，使用它的槽位会被清空。继续吗？')) return;
     setStatus('');
     try {
-      const res = await fetch(`${API}/model-presets/${id}`, { method: 'DELETE', headers });
+      const res = await apiFetch(`${API}/model-presets/${id}`, { method: 'DELETE' });
       await readJson(res);
       if (draft.id === id) setDraft(emptyDraft);
       await loadSettings();
@@ -371,10 +367,9 @@ export function ModelSettings({ onBack }) {
     if (!silent) setStatus('');
     try {
       const res = draft.id && !draft.api_key
-        ? await fetch(`${API}/model-presets/${draft.id}/models`, { headers })
-        : await fetch(`${API}/model-presets/models`, {
+        ? await apiFetch(`${API}/model-presets/${draft.id}/models`)
+        : await apiJsonFetch(`${API}/model-presets/models`, {
             method: 'POST',
-            headers,
             body: JSON.stringify({ api_key: draft.api_key, base_url: draft.base_url }),
           });
       const json = await readJson(res);
@@ -399,10 +394,9 @@ export function ModelSettings({ onBack }) {
     setStatus('');
     try {
       const res = draft.id && !draft.api_key
-        ? await fetch(`${API}/model-presets/${draft.id}/test`, { method: 'POST', headers })
-        : await fetch(`${API}/model-presets/test`, {
+        ? await apiFetch(`${API}/model-presets/${draft.id}/test`, { method: 'POST' })
+        : await apiJsonFetch(`${API}/model-presets/test`, {
             method: 'POST',
-            headers,
             body: JSON.stringify({
               api_key: draft.api_key,
               base_url: draft.base_url,
@@ -428,7 +422,7 @@ export function ModelSettings({ onBack }) {
     };
     setSlots(prev => prev.map(s => s.slot === slotId ? { ...s, ...payload } : s));
     try {
-      const res = await fetch(`${API}/slots/${slotId}`, { method: 'PUT', headers, body: JSON.stringify(payload) });
+      const res = await apiJsonFetch(`${API}/slots/${slotId}`, { method: 'PUT', body: JSON.stringify(payload) });
       await readJson(res);
       await loadSettings();
     } catch (err) {
@@ -1292,9 +1286,7 @@ export function NoteHistorySettings({ onBack }) {
   useEffect(() => {
     async function load() {
       try {
-        const res = await fetch('http://localhost:8000/api/note?limit=50', {
-          headers: { 'Authorization': 'Bearer remoire-rebechalovesconnie-4ever' }
-        });
+        const res = await apiFetch('/note?limit=50');
         const data = await res.json();
         if (data.ok && data.data?.notes) {
           setNotes(data.data.notes);
@@ -1356,9 +1348,7 @@ export function MemoryCandidatesSettings({ onBack }) {
 
   async function load() {
     try {
-      const res = await fetch('http://localhost:8000/api/memory/candidates?status=pending&limit=50', {
-        headers: { 'Authorization': 'Bearer remoire-rebechalovesconnie-4ever' }
-      });
+      const res = await apiFetch('/memory/candidates?status=pending&limit=50');
       const data = await res.json();
       if (data.ok && Array.isArray(data.data)) {
         setCandidates(data.data);
@@ -1371,9 +1361,8 @@ export function MemoryCandidatesSettings({ onBack }) {
 
   async function accept(id) {
     try {
-      const res = await fetch(`http://localhost:8000/api/memory/candidates/${id}/accept`, {
+      const res = await apiJsonFetch(`/memory/candidates/${id}/accept`, {
         method: 'POST',
-        headers: { 'Authorization': 'Bearer remoire-rebechalovesconnie-4ever', 'Content-Type': 'application/json' },
         body: '{}',
       });
       const data = await res.json();
@@ -1383,10 +1372,7 @@ export function MemoryCandidatesSettings({ onBack }) {
 
   async function reject(id) {
     try {
-      const res = await fetch(`http://localhost:8000/api/memory/candidates/${id}/reject`, {
-        method: 'POST',
-        headers: { 'Authorization': 'Bearer remoire-rebechalovesconnie-4ever' },
-      });
+      const res = await apiFetch(`/memory/candidates/${id}/reject`, { method: 'POST' });
       const data = await res.json();
       if (data.ok) setCandidates(c => c.filter(x => x.id !== id));
     } catch (e) {}
