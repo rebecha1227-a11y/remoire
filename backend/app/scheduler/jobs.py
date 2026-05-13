@@ -11,11 +11,21 @@ logger = logging.getLogger(__name__)
 
 BJ_TZ = timezone(timedelta(hours=8))
 PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
+_auto_diary_lock = asyncio.Lock()
 
 
 def _load_prompt(filename: str) -> str:
     path = PROMPTS_DIR / filename
     return path.read_text(encoding="utf-8") if path.exists() else ""
+
+
+def _date_key(date_bj) -> str:
+    return date_bj.astimezone(BJ_TZ).strftime("%Y-%m-%d")
+
+
+def _diary_created_at_for_date(date_bj) -> str:
+    write_time_bj = date_bj.astimezone(BJ_TZ).replace(hour=23, minute=0, second=0, microsecond=0)
+    return write_time_bj.astimezone(timezone.utc).replace(tzinfo=None).isoformat()
 
 
 async def _get_messages_for_date(date_bj=None) -> list[dict]:
@@ -55,6 +65,7 @@ async def _get_memories_for_date(date_bj=None) -> list[dict]:
 async def _already_wrote_for_date(date_bj=None) -> bool:
     if date_bj is None:
         date_bj = datetime.now(BJ_TZ)
+    date_key = _date_key(date_bj)
     day_start_utc = (date_bj.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(hours=8)).isoformat()
     day_end_utc = (date_bj.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1) - timedelta(hours=8)).isoformat()
 
@@ -62,8 +73,12 @@ async def _already_wrote_for_date(date_bj=None) -> bool:
         async with db.execute(
             """SELECT 1 FROM diary_entries
                WHERE author = 'connie' AND source = 'auto'
-               AND created_at >= ? AND created_at < ? LIMIT 1""",
-            (day_start_utc, day_end_utc),
+               AND (
+                 json_extract(meta_json, '$.date_key') = ?
+                 OR (created_at >= ? AND created_at < ?)
+               )
+               LIMIT 1""",
+            (date_key, day_start_utc, day_end_utc),
         ) as cur:
             row = await cur.fetchone()
     return row is not None
@@ -71,6 +86,14 @@ async def _already_wrote_for_date(date_bj=None) -> bool:
 
 async def connie_auto_diary(target_date_bj=None):
     """扫描指定日期的聊天和记忆，判断是否值得写日记。默认为今天。"""
+    if _auto_diary_lock.locked():
+        logger.info("自动日记任务已在运行，跳过本次触发")
+        return
+    async with _auto_diary_lock:
+        await _connie_auto_diary(target_date_bj)
+
+
+async def _connie_auto_diary(target_date_bj=None):
     try:
         if target_date_bj is None:
             target_date_bj = datetime.now(BJ_TZ)
@@ -198,6 +221,8 @@ async def connie_auto_diary(target_date_bj=None):
             content=content,
             author="connie",
             source="auto",
+            created_at=_diary_created_at_for_date(target_date_bj),
+            meta={"date_key": _date_key(target_date_bj), "kind": "auto_diary"},
         )
         logger.info("Connie 自动日记已写入: %s", title)
 

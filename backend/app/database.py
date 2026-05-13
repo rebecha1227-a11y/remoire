@@ -94,6 +94,7 @@ async def init_db():
                 content TEXT NOT NULL,
                 author TEXT NOT NULL DEFAULT 'connie',
                 source TEXT,
+                meta_json TEXT,
                 locked INTEGER NOT NULL DEFAULT 0,
                 pin TEXT,
                 created_at TEXT NOT NULL,
@@ -219,6 +220,7 @@ async def init_db():
         for col_sql in [
             "ALTER TABLE notes ADD COLUMN kept INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE notes ADD COLUMN read_at TEXT",
+            "ALTER TABLE diary_entries ADD COLUMN meta_json TEXT",
             "ALTER TABLE diary_entries ADD COLUMN locked INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE diary_entries ADD COLUMN pin TEXT",
             "ALTER TABLE diary_interactions ADD COLUMN seen_by_connie INTEGER NOT NULL DEFAULT 0",
@@ -229,4 +231,9 @@ async def init_db():
                 await db.execute(col_sql)
             except Exception:
                 pass
+        await db.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_diary_entries_auto_day
+                ON diary_entries(author, source, json_extract(meta_json, '$.date_key'))
+                WHERE author = 'connie' AND source = 'auto' AND json_extract(meta_json, '$.date_key') IS NOT NULL
+        """)
         await db.commit()
