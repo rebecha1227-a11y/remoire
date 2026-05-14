@@ -4,14 +4,9 @@ import UsPage from './components/UsPage.jsx';
 import DiaryPage from './components/DiaryPage.jsx';
 import PlayPage from './components/PlayPage.jsx';
 import SettingsPage from './components/SettingsPage.jsx';
+import { useRoomAmbient } from './components/RoomShell.jsx';
+import './styles/room.css';
 
-const NAV_TABS = [
-  { id: 'chat',     label: '聊天',  icon: () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> },
-  { id: 'us',       label: '我们',  icon: () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg> },
-  { id: 'diary',    label: '日记',  icon: () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg> },
-  { id: 'play',     label: '玩乐',  icon: () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><polygon points="5 3 19 12 5 21 5 3"/></svg> },
-  { id: 'settings', label: '设置',  icon: () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> },
-];
 
 const TWEAK_STORAGE_KEY = 'remoire_tweaks';
 
@@ -60,6 +55,39 @@ async function applyCustomFonts(tweaks) {
   }));
 }
 
+const ROOM_NAV_TABS = [
+  { id: 'chat',     label: '聊天',  icon: (s) => <svg {...s}><path d="M21 12a8 8 0 0 1-11.5 7.2L4 21l1.5-4.5A8 8 0 1 1 21 12z"/></svg> },
+  { id: 'us',       label: '我们',  icon: (s) => <svg {...s}><path d="M20 9a6 6 0 0 0-8-5 6 6 0 0 0-8 5c0 6 8 11 8 11s8-5 8-11z"/></svg> },
+  { id: 'diary',    label: '日记',  icon: (s) => <svg {...s}><path d="M4 4h11a3 3 0 0 1 3 3v13H7a3 3 0 0 1-3-3z"/><path d="M9 8h6M9 12h6"/></svg> },
+  { id: 'play',     label: '玩乐',  icon: (s) => <svg {...s}><circle cx="12" cy="12" r="9"/><path d="M10 9l5 3-5 3z" fill="currentColor"/></svg> },
+  { id: 'settings', label: '设置',  icon: (s) => <svg {...s}><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.65 1.65 0 0 0-1.8-.3 1.65 1.65 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.65 1.65 0 0 0-1-1.5 1.65 1.65 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.65 1.65 0 0 0 .3-1.8 1.65 1.65 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.65 1.65 0 0 0 1.5-1 1.65 1.65 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.65 1.65 0 0 0 1.8.3h.1a1.65 1.65 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.65 1.65 0 0 0 1 1.5h.1a1.65 1.65 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.65 1.65 0 0 0-.3 1.8v.1a1.65 1.65 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.65 1.65 0 0 0-1.5 1z"/></svg> },
+];
+
+function RoomNav({ activeTab, onNavigate }) {
+  const { palette, accentColor } = useRoomAmbient();
+  const navVars = {
+    '--ink': palette.ink,
+    '--ink-soft': palette.inkSoft,
+    '--ink-accent': accentColor || palette.inkAccent,
+    '--nav-bg': palette.navBg,
+    '--nav-border': palette.navBorder,
+    '--warm-shadow': palette.warmShadow,
+    '--ai-edge': palette.aiBubble.edge,
+  };
+  const svgProps = { width: 22, height: 22, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.4 };
+  return (
+    <div className="r-nav" style={navVars}>
+      {ROOM_NAV_TABS.map(t => (
+        <button key={t.id} className={`r-nav-btn ${activeTab === t.id ? 'active' : ''}`}
+          onClick={() => onNavigate(t.id)}>
+          {t.icon(svgProps)}
+          <span>{t.label}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export default function App() {
   const [tab, setTab] = useState('chat');
   const [tweaks, setTweaks] = useState(() => loadTweaks());
@@ -77,45 +105,23 @@ export default function App() {
     applyCustomFonts(tweaks);
   }, [tweaks]);
 
+  const nav = <RoomNav activeTab={tab} onNavigate={setTab} />;
+
   const pages = useMemo(() => ({
-    chat:     <ChatPage tweaks={tweaks} />,
-    us:       <UsPage tweaks={tweaks} />,
-    diary:    <DiaryPage tweaks={tweaks} />,
-    play:     <PlayPage tweaks={tweaks} />,
-    settings: <SettingsPage tweaks={tweaks} />,
-  }), [tweaks]);
+    chat:     <ChatPage tweaks={tweaks} activeTab={tab} onNavigate={setTab} />,
+    us:       <UsPage tweaks={tweaks} nav={nav} />,
+    diary:    <DiaryPage tweaks={tweaks} nav={nav} />,
+    play:     <PlayPage tweaks={tweaks} nav={nav} />,
+    settings: <SettingsPage tweaks={tweaks} nav={nav} />,
+  }), [tweaks, tab]);
 
   return (
-    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--bg-primary)', position: 'relative' }}>
+    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#08060A', position: 'relative' }}>
       {Object.entries(pages).map(([id, page]) => (
         <div key={id} style={{ flex: 1, overflow: 'hidden', position: 'relative', display: tab === id ? 'flex' : 'none', flexDirection: 'column' }}>
           {page}
         </div>
       ))}
-
-      <div style={{
-        display: 'flex', justifyContent: 'space-around',
-        padding: '8px 0 16px',
-        background: 'var(--bg-primary)',
-        backdropFilter: 'blur(20px)',
-        WebkitBackdropFilter: 'blur(20px)',
-        borderTop: '1px solid var(--border-light)',
-        flexShrink: 0,
-      }}>
-        {NAV_TABS.map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)} style={{
-            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
-            background: 'none', border: 'none', cursor: 'pointer', padding: '4px 12px',
-            color: tab === t.id ? 'var(--text-deep)' : 'var(--text-tertiary)',
-            opacity: 1,
-            transition: 'all 0.2s ease',
-            minWidth: 44, minHeight: 44, justifyContent: 'center',
-          }}>
-            {t.icon()}
-            <span style={{ fontSize: 10, fontWeight: tab === t.id ? 600 : 400, fontFamily: "var(--font-body)" }}>{t.label}</span>
-          </button>
-        ))}
-      </div>
     </div>
   );
 }

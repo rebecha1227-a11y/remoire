@@ -1,11 +1,9 @@
 import { useState, useRef, useEffect } from "react";
-import { IconButton } from "./primitives";
-import {
-  NoteHistorySettings, MemoryCandidatesSettings,
-  BubbleSettings, NoteSettings, CoverSettings, FontSettings,
-} from "./SettingsSubPages";
 import { apiFetch, apiJsonFetch } from "../utils/api";
-
+import { PALETTES, currentBand, AMBIENT_BY_BAND, isDarkBand } from "../utils/ambient";
+import Floaters from "./Floaters";
+import { RainLayer, FogLayer } from "./WeatherEffects";
+import "../styles/room.css";
 
 function formatBJTime(utcStr) {
   if (!utcStr) return '';
@@ -13,361 +11,228 @@ function formatBJTime(utcStr) {
   return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Shanghai' });
 }
 
-const BG_PRESETS = [
-  { label: '默认', value: '' },
-  { label: '暖白', value: '#F5EDE0' },
-  { label: '茶绿', value: '#E4EDDF' },
-  { label: '云蓝', value: '#DDE8F0' },
-  { label: '玫雾', value: '#F0E0E6' },
-  { label: '烟灰', value: '#E8E5E0' },
-];
-
-const BREATH_STATES = [
-"一直在这里，今天很安静",
-"刚刚想到你昨天说的那件事",
-"在等你来",
-"记得你今天下午有件事要做",
-"最近有些担心你，但没关系"];
-
 const CHAT_MODES = {
-  daily: { label: '日常', fullLabel: '日常陪伴', desc: '轻松聊天、日常陪伴' },
-  deep: { label: '深度', fullLabel: '深度时刻', desc: '复杂情绪、长对话、需要更深的理解' },
+  daily: { label: '日常', desc: '轻松聊天、日常陪伴' },
+  deep:  { label: '深度', desc: '需要更长更深的对话' },
 };
 
-
-function TypingIndicator() {
+function MessageRow({ m, isKept, isThinkOpen, onToggleThink, onHold, onRelease }) {
+  const isAi = m.role === 'ai';
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '10px 14px', background: 'var(--bubble-receive)', borderRadius: '20px 20px 20px 6px', width: 56 }}>
-      {[0, 1, 2].map((i) =>
-      <div key={i} style={{
-        width: 6, height: 6, borderRadius: '50%', background: 'var(--text-tertiary)',
-        animation: `typing-dot 1.2s ease-in-out ${i * 0.2}s infinite`
-      }} />
-      )}
-    </div>);
-
-}
-
-function SystemCard({ text }) {
-  return (
-    <div style={{
-      background: 'var(--bg-secondary)', border: '1px dashed var(--border)',
-      borderRadius: 'var(--radius-md)', padding: '6px 14px',
-      fontSize: 'var(--text-sm)', color: 'var(--text-tertiary)',
-      textAlign: 'center', margin: '4px 40px', lineHeight: 1.5
-    }}>{text}</div>);
-
-}
-
-function Bubble({ msg, isNew, bubbleStyle, showAvatar, showTail, thinkingExpanded, onToggleThinking, bgColor, avatarConfig }) {
-  const isSend = msg.role === 'user';
-  const isProactive = msg.type === 'proactive';
-
-  if (msg.role === 'system') return <SystemCard text={msg.text} />;
-
-  const { connieAvatar, jingAvatar, showConnieAvatarInChat = true, showJingAvatarInChat = false } = avatarConfig || {};
-
-  const bs = bubbleStyle || 'default';
-
-  // Style presets
-  const BUBBLE_STYLES = {
-    default: {
-      sendBg: 'var(--bubble-send)', sendColor: 'var(--bubble-send-text)',
-      recvBg: 'var(--bubble-receive)', recvColor: 'var(--bubble-receive-text)',
-      sendRadius: '22px', recvRadius: '22px',
-      padding: '6px 12px', sendShadow: 'none', recvShadow: 'none',
-    },
-    imessage: {
-      sendBg: '#007AFF', sendColor: '#fff',
-      recvBg: 'var(--bubble-receive)', recvColor: 'var(--bubble-receive-text)',
-      sendRadius: '18px 18px 4px 18px', recvRadius: '18px 18px 18px 4px',
-      padding: '8px 14px', sendShadow: 'none', recvShadow: 'none',
-    },
-    line: {
-      sendBg: '#06C755', sendColor: '#fff',
-      recvBg: 'var(--bubble-receive)', recvColor: 'var(--bubble-receive-text)',
-      sendRadius: '18px 18px 4px 18px', recvRadius: '18px 18px 18px 4px',
-      padding: '10px 14px', sendShadow: 'none', recvShadow: 'none',
-    },
-    whatsapp: {
-      sendBg: '#DCF8C6', sendColor: '#111B21',
-      recvBg: '#fff', recvColor: '#111B21',
-      sendRadius: '8px 8px 0 8px', recvRadius: '8px 8px 8px 0',
-      padding: '8px 12px', sendShadow: '0 1px 1px rgba(0,0,0,0.06)', recvShadow: '0 1px 1px rgba(0,0,0,0.06)',
-    },
-    telegram: {
-      sendBg: '#EFFDDE', sendColor: '#111',
-      recvBg: '#fff', recvColor: '#111',
-      sendRadius: '14px 14px 0 14px', recvRadius: '14px 14px 14px 0',
-      padding: '8px 14px', sendShadow: '0 1px 2px rgba(0,0,0,0.08)', recvShadow: '0 1px 2px rgba(0,0,0,0.08)',
-    },
-  };
-
-  // Dark mode overrides for whatsapp/telegram
-  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-  if (isDark && bs === 'whatsapp') {
-    BUBBLE_STYLES.whatsapp.sendBg = '#005C4B';
-    BUBBLE_STYLES.whatsapp.sendColor = '#E9EDEF';
-    BUBBLE_STYLES.whatsapp.recvBg = '#202C33';
-    BUBBLE_STYLES.whatsapp.recvColor = '#E9EDEF';
-  }
-  if (isDark && bs === 'telegram') {
-    BUBBLE_STYLES.telegram.sendBg = '#2B5278';
-    BUBBLE_STYLES.telegram.sendColor = '#E1E3E6';
-    BUBBLE_STYLES.telegram.recvBg = '#182533';
-    BUBBLE_STYLES.telegram.recvColor = '#E1E3E6';
-  }
-  if (isDark && bs === 'imessage') {
-    BUBBLE_STYLES.imessage.recvBg = '#2C2C2E';
-    BUBBLE_STYLES.imessage.recvColor = '#E5E5EA';
-  }
-
-  const s = BUBBLE_STYLES[bs] || BUBBLE_STYLES.default;
-  const recvBg = (!isSend && isProactive)
-    ? 'color-mix(in oklch, var(--accent-pop) 10%, var(--bubble-receive))'
-    : s.recvBg;
-
-  const hasCustomBg = bgColor === 'transparent';
-  const tailSendR = (showTail && !hasCustomBg) ? '22px 22px 6px 22px' : s.sendRadius;
-  const tailRecvR = (showTail && !hasCustomBg) ? '22px 22px 22px 6px' : s.recvRadius;
-
-  const avatarWidth = 34;
-  const avatarGap = 8;
-  const avatarOffset = (showConnieAvatarInChat && !isSend) || (showJingAvatarInChat && isSend) ? avatarWidth + avatarGap : 0;
-
-  return (<div>
-    {msg.thinking && (
-      <div style={{ marginBottom: 4, paddingLeft: isSend ? 0 : (avatarOffset + 4), paddingRight: isSend ? (avatarOffset + 4) : 0 }}>
-        <button onClick={onToggleThinking} style={{
-          background: 'none', border: 'none', cursor: 'pointer', padding: 0,
-          display: 'flex', alignItems: 'center', gap: 3,
-          fontFamily: 'var(--font-body)', fontSize: 'var(--text-xs)',
-          color: 'var(--text-tertiary)', opacity: 0.65,
-        }}>
-          偷偷看他在想什么
-          <span style={{ display: 'inline-block', transition: 'transform 0.18s', transform: thinkingExpanded ? 'rotate(90deg)' : 'none', lineHeight: 1 }}>›</span>
-        </button>
-        {thinkingExpanded && (
-          <div style={{
-            marginTop: 6, padding: '8px 12px',
-            background: 'var(--bg-secondary)', borderRadius: 'var(--radius-sm)',
-            fontSize: 'var(--text-xs)', color: 'var(--text-secondary)',
-            lineHeight: 1.7, maxWidth: 240,
-            animation: 'card-in 160ms ease',
-          }}>
-            {msg.thinking}
+    <div className={`r-row ${isAi ? 'r-row-ai' : 'r-row-user'}`}
+      onMouseDown={onHold} onMouseUp={onRelease} onMouseLeave={onRelease}
+      onTouchStart={onHold} onTouchEnd={onRelease}
+      style={{ opacity: isKept ? 0.6 : 1 }}>
+      {isAi && <div className="r-spark">✦</div>}
+      <div className="r-bubble-stack">
+        {m.image && <img src={m.image} alt="" className="r-bubble-img" />}
+        {m.text && (
+          <div className={`r-bubble ${isAi ? 'r-bubble-ai' : 'r-bubble-user'}`}>
+            {m.text}
           </div>
         )}
-      </div>
-    )}
-    <div style={{
-      display: 'flex',
-      flexDirection: isSend ? 'row-reverse' : 'row',
-      alignItems: 'flex-start',
-      gap: avatarGap,
-      animation: isNew ? 'bubble-in 160ms ease forwards' : undefined,
-      transformOrigin: isSend ? 'bottom right' : 'bottom left',
-    }}>
-      {/* Avatar slot */}
-      {isSend ? (
-        showJingAvatarInChat && showTail ? (
-          <div style={{ width: avatarWidth, height: avatarWidth, borderRadius: '50%', flexShrink: 0, overflow: 'hidden', background: 'var(--accent-subtle)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontFamily: 'var(--font-display)', color: 'var(--accent)', position: 'relative', zIndex: 2 }}>
-            {jingAvatar ? <img src={jingAvatar} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : '静'}
-          </div>
-        ) : (showJingAvatarInChat ? <div style={{ width: avatarWidth, flexShrink: 0 }} /> : null)
-      ) : (
-        showConnieAvatarInChat ? (
-          <div style={{ width: avatarWidth, height: avatarWidth, borderRadius: '50%', flexShrink: 0, overflow: 'hidden', background: showAvatar ? 'var(--accent-subtle)' : 'transparent', border: showAvatar ? '1px solid var(--border)' : 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontFamily: 'var(--font-display)', color: 'var(--accent)', position: 'relative', zIndex: 2 }}>
-            {showAvatar ? (connieAvatar ? <img src={connieAvatar} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : 'C') : ''}
-          </div>
-        ) : null
-      )}
-      {/* Bubble content */}
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: isSend ? 'flex-end' : 'flex-start', maxWidth: '72%' }}>
-        {msg.image && (
-          <img src={msg.image} alt="" style={{ maxWidth: '100%', maxHeight: 240, borderRadius: 12, marginBottom: msg.text ? 6 : 0, display: 'block' }} />
-        )}
-        {msg.text && <div style={{ position: 'relative', display: 'inline-block' }}>
+        {m.role === 'system' && (
           <div style={{
-            position: 'relative',
-            zIndex: 2,
-            background: isSend ? s.sendBg : recvBg,
-            color: isSend ? s.sendColor : s.recvColor,
-            borderRadius: isSend ? tailSendR : tailRecvR,
-            padding: s.padding,
-            fontSize: 'var(--text-base)',
-            lineHeight: 1.5,
-            boxShadow: isSend ? s.sendShadow : s.recvShadow,
-            whiteSpace: 'pre-wrap',
-          }}>
-            {msg.text}
-          </div>
-          {showTail && !hasCustomBg && bs === 'default' && isSend && (
-            <>
-              <div style={{
-                position: 'absolute', bottom: 0, right: -6,
-                width: 18, height: 20,
-                background: s.sendBg,
-                borderTopLeftRadius: '18px 10px',
-                borderBottomLeftRadius: '16px 14px',
-                zIndex: 0,
-                pointerEvents: 'none',
-              }} />
-              <div style={{
-                position: 'absolute', bottom: 0, right: -18,
-                width: 18, height: 20,
-                background: bgColor || 'var(--bg-primary)',
-                borderBottomLeftRadius: 10,
-                zIndex: 1,
-                pointerEvents: 'none',
-              }} />
-            </>
+            padding: '6px 14px', borderRadius: 12,
+            background: 'rgba(255,250,235,0.08)',
+            border: '1px dashed var(--ink-faint)',
+            fontSize: 12, color: 'var(--ink-soft)',
+            textAlign: 'center', fontStyle: 'italic',
+          }}>{m.text}</div>
+        )}
+        <div className={`r-meta ${isAi ? 'r-meta-ai' : 'r-meta-user'}`}>
+          {m.time && <span className="r-time">{m.time}</span>}
+          {isAi && m.thinking && (
+            <button className="r-think-handle" onClick={onToggleThink}>
+              <span className="r-think-icon">✦</span>
+              <span>{isThinkOpen ? '收起' : '偷偷看他在想什么'}</span>
+              <span style={{
+                transform: isThinkOpen ? 'rotate(90deg)' : 'rotate(0deg)',
+                transition: 'transform 280ms cubic-bezier(0.16,1,0.3,1)',
+              }}>›</span>
+            </button>
           )}
-          {showTail && !hasCustomBg && bs === 'default' && !isSend && (
-            <>
-              <div style={{
-                position: 'absolute', bottom: 0, left: -6,
-                width: 18, height: 20,
-                background: recvBg,
-                borderTopRightRadius: '18px 10px',
-                borderBottomRightRadius: '16px 14px',
-                zIndex: 0,
-                pointerEvents: 'none',
-              }} />
-              <div style={{
-                position: 'absolute', bottom: 0, left: -18,
-                width: 18, height: 20,
-                background: bgColor || 'var(--bg-primary)',
-                borderBottomRightRadius: 10,
-                zIndex: 1,
-                pointerEvents: 'none',
-              }} />
-            </>
-          )}
-        </div>}
-        {msg.time && (
-          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', opacity: 0.45, marginTop: 3, paddingLeft: isSend ? 0 : 4, paddingRight: isSend ? 4 : 0 }}>
-            {msg.time}
-          </div>
+          {isKept && <span className="r-kept-marker">· 留下</span>}
+        </div>
+        {isAi && m.thinking && isThinkOpen && (
+          <div className="r-think-panel">{m.thinking}</div>
         )}
       </div>
     </div>
-  </div>);
-
+  );
 }
 
-function NoteCard({ onKeep, onDismiss, minimized, onExpand, noteStyle, content }) {
-  const ns = noteStyle || 'classic';
-
-  const NOTE_THEME = {
-    classic: { bg: 'var(--note-bg, #FDF8F0)', bgImage: 'repeating-linear-gradient(transparent, transparent 23px, var(--note-line, rgba(124,99,80,0.12)) 24px)', tape: true, tapeColor: 'color-mix(in oklch, var(--accent-pop) 45%, transparent)', rotate: '-0.5deg', radius: 4, textColor: 'var(--note-text, var(--text-deep))' },
-    kraft: { bg: '#C4A882', bgImage: 'none', tape: false, rotate: '-1deg', radius: 3, textColor: '#3C2F20', shadow: '0 2px 8px rgba(40,33,28,0.10)' },
-    pastel: { bg: 'linear-gradient(135deg, #F0E6F6, #E6EFF6)', bgImage: 'none', tape: true, tapeColor: 'rgba(180,140,200,0.35)', rotate: '-0.5deg', radius: 8, textColor: '#5A4A6A' },
-    torn: { bg: 'var(--note-bg, #FDF8F0)', bgImage: 'none', tape: false, rotate: '0deg', radius: 0, textColor: 'var(--note-text, var(--text-deep))', clipPath: 'polygon(0 0, 100% 0, 100% 88%, 97% 91%, 94% 87%, 90% 92%, 86% 87%, 82% 91%, 78% 87%, 73% 92%, 68% 87%, 63% 91%, 58% 87%, 53% 92%, 48% 87%, 43% 91%, 38% 87%, 33% 92%, 28% 87%, 23% 91%, 18% 87%, 13% 92%, 8% 87%, 3% 91%, 0 88%)' },
-    postit: { bg: '#FFF9B1', bgImage: 'none', tape: false, rotate: '-1.5deg', radius: '2px 2px 2px 16px', textColor: '#5A4A20', shadow: '0 2px 8px rgba(40,33,28,0.10)' },
-  };
-  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-  // Dark overrides
-  const darkOverrides = {
-    kraft: { bg: '#5C4A38', textColor: '#D4C4B8' },
-    pastel: { bg: 'linear-gradient(135deg, #3A2E42, #2E3642)', textColor: '#C8B8D8' },
-    postit: { bg: '#6B6030', textColor: '#E8E0B8' },
-  };
-  let theme = NOTE_THEME[ns] || NOTE_THEME.classic;
-  if (isDark && darkOverrides[ns]) theme = { ...theme, ...darkOverrides[ns] };
-
-  if (minimized) {
-    return (
-      <div onClick={onExpand} style={{
-        margin: '0 16px 8px', padding: '6px 12px',
-        background: theme.bg.startsWith('linear') ? undefined : theme.bg,
-        backgroundImage: theme.bg.startsWith('linear') ? theme.bg : undefined,
-        borderRadius: '0 0 6px 6px',
-        boxShadow: '0 1px 4px rgba(40,33,28,0.05)',
-        display: 'flex', alignItems: 'center', gap: 8,
-        cursor: 'pointer', transition: 'all 0.2s ease',
-        borderTop: '2px solid color-mix(in oklch, var(--accent-pop) 45%, transparent)',
-      }}>
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.5"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
-        <span style={{ fontFamily: "var(--font-note)", fontSize: 13, color: theme.textColor }}>Connie 留了一张纸条</span>
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5" style={{ marginLeft: 'auto' }}><path d="M6 9l6 6 6-6"/></svg>
-      </div>
-    );
+function SettingsSheet({ band, timeOverride, setTimeOverride, weather, setWeather, deepMode, setDeepMode, connieName, setConnieName, chatBgImage, setChatBgImage, onClose }) {
+  const [nameInput, setNameInput] = useState(connieName);
+  const bgFileRef = useRef(null);
+  const palette = PALETTES[band];
+  function pickBg(file) {
+    if (!file) return;
+    const r = new FileReader();
+    r.onload = () => setChatBgImage(r.result);
+    r.readAsDataURL(file);
   }
-
-  const isGradient = theme.bg.startsWith && theme.bg.startsWith('linear');
-
   return (
-    <div style={{ animation: 'note-in 300ms ease-out', padding: '0 16px', marginBottom: 12 }}>
-      <div style={{
-        background: isGradient ? undefined : theme.bg,
-        backgroundImage: isGradient ? theme.bg : theme.bgImage,
-        borderRadius: theme.radius,
-        padding: '16px 18px 12px 18px',
-        boxShadow: theme.shadow || '0 2px 8px color-mix(in oklch, var(--text-primary) 6%, transparent)',
-        position: 'relative',
-        transform: `rotate(${theme.rotate})`,
-        clipPath: theme.clipPath || 'none',
-        paddingBottom: theme.clipPath ? 28 : 12,
-      }}>
-        {/* Washi tape */}
-        {theme.tape && <div style={{
-          position: 'absolute', top: -8, left: '50%', transform: 'translateX(-50%) rotate(2deg)',
-          width: 44, height: 14,
-          background: theme.tapeColor,
-          borderRadius: 2,
-        }} />}
-        <p style={{ fontFamily: "var(--font-note)", fontSize: 17, color: theme.textColor, lineHeight: 1.6, marginTop: 4 }}>
-          {content || ''}
-        </p>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 16, marginTop: 10 }}>
-          <button onClick={onDismiss} style={{ background: 'none', border: 'none', fontFamily: "var(--font-body)", fontSize: 12, color: theme.textColor, opacity: 0.5, cursor: 'pointer' }}>知道了</button>
-          <button onClick={onKeep} style={{ background: 'none', border: 'none', fontFamily: "var(--font-body)", fontSize: 12, color: theme.textColor, cursor: 'pointer', borderBottom: '1px solid rgba(124,99,80,0.3)' }}>留着</button>
-        </div>
-      </div>
-    </div>);
+    <div className="r-sheet-bd" onClick={onClose}>
+      <div className="r-sheet" onClick={e => e.stopPropagation()}>
+        <div className="r-sheet-grip" />
+        <div className="r-sheet-title">这间房</div>
 
+        <div className="r-sheet-section">
+          <div className="r-sheet-label">她的备注</div>
+          <div className="r-name-edit-row">
+            <input
+              value={nameInput}
+              onChange={e => setNameInput(e.target.value)}
+              onBlur={() => setConnieName(nameInput || 'Connie')}
+              onKeyDown={e => { if (e.key === 'Enter') { setConnieName(nameInput || 'Connie'); onClose(); } }}
+              placeholder="给她起个名字"
+              className="r-sheet-input"
+            />
+          </div>
+          <div className="r-sheet-hint">改名是一种交流。换名字的时候她会知道。</div>
+        </div>
+
+        <div className="r-sheet-section">
+          <div className="r-sheet-label">聊天背景</div>
+          <input ref={bgFileRef} type="file" accept="image/*" style={{ display: 'none' }}
+            onChange={e => pickBg(e.target.files?.[0])} />
+          <div className="r-bg-picker">
+            <div className="r-bg-preview" onClick={() => bgFileRef.current?.click()}
+              style={chatBgImage ? {
+                backgroundImage: `url(${chatBgImage})`,
+                backgroundSize: 'cover', backgroundPosition: 'center',
+              } : {}}>
+              {!chatBgImage && <span>＋ 上传</span>}
+            </div>
+            <div className="r-bg-actions">
+              <button className="r-chip" onClick={() => bgFileRef.current?.click()}>
+                {chatBgImage ? '换一张' : '从相册选'}
+              </button>
+              {chatBgImage && (
+                <button className="r-chip" onClick={() => setChatBgImage('')}>用回时刻</button>
+              )}
+            </div>
+          </div>
+          <div className="r-sheet-hint">换上自己的背景后，气泡和工具栏都会透出这张图。</div>
+        </div>
+
+        <div className="r-sheet-section">
+          <div className="r-sheet-label">时刻</div>
+          <div className="r-sheet-options">
+            {[
+              ['auto', '随真实'], ['dawn', '黎明'], ['morning', '上午'], ['afternoon', '午后'],
+              ['golden', '黄金'], ['dusk', '黄昏'], ['night', '夜晚'], ['late', '深夜'],
+            ].map(([k, label]) => (
+              <button key={k} className={`r-chip ${timeOverride === k ? 'active' : ''}`}
+                onClick={() => setTimeOverride(k)}>{label}</button>
+            ))}
+          </div>
+        </div>
+
+        <div className="r-sheet-section">
+          <div className="r-sheet-label">天气</div>
+          <div className="r-sheet-options">
+            {[['clear', '晴'], ['rain', '雨'], ['fog', '雾']].map(([k, label]) => (
+              <button key={k} className={`r-chip ${weather === k ? 'active' : ''}`}
+                onClick={() => setWeather(k)}>{label}</button>
+            ))}
+          </div>
+        </div>
+
+        <div className="r-sheet-section">
+          <div className="r-sheet-row">
+            <div>
+              <div className="r-sheet-label">走深一点</div>
+              <div className="r-sheet-hint">房间会变暗，她会说得更慢。</div>
+            </div>
+            <button className={`r-toggle ${deepMode ? 'on' : ''}`}
+              onClick={() => setDeepMode(!deepMode)}>
+              <span />
+            </button>
+          </div>
+        </div>
+
+        <button className="r-sheet-close" onClick={onClose}>关上门</button>
+      </div>
+    </div>
+  );
 }
 
-export default function ChatPage({ tweaks }) {
+const NAV_TABS = [
+  { id: 'chat',     label: '聊天',  icon: (s) => <svg {...s}><path d="M21 12a8 8 0 0 1-11.5 7.2L4 21l1.5-4.5A8 8 0 1 1 21 12z"/></svg> },
+  { id: 'us',       label: '我们',  icon: (s) => <svg {...s}><path d="M20 9a6 6 0 0 0-8-5 6 6 0 0 0-8 5c0 6 8 11 8 11s8-5 8-11z"/></svg> },
+  { id: 'diary',    label: '日记',  icon: (s) => <svg {...s}><path d="M4 4h11a3 3 0 0 1 3 3v13H7a3 3 0 0 1-3-3z"/><path d="M9 8h6M9 12h6"/></svg> },
+  { id: 'play',     label: '玩乐',  icon: (s) => <svg {...s}><circle cx="12" cy="12" r="9"/><path d="M10 9l5 3-5 3z" fill="currentColor"/></svg> },
+  { id: 'settings', label: '设置',  icon: (s) => <svg {...s}><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.65 1.65 0 0 0-1.8-.3 1.65 1.65 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.65 1.65 0 0 0-1-1.5 1.65 1.65 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.65 1.65 0 0 0 .3-1.8 1.65 1.65 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.65 1.65 0 0 0 1.5-1 1.65 1.65 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.65 1.65 0 0 0 1.8.3h.1a1.65 1.65 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.65 1.65 0 0 0 1 1.5h.1a1.65 1.65 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.65 1.65 0 0 0-.3 1.8v.1a1.65 1.65 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.65 1.65 0 0 0-1.5 1z"/></svg> },
+];
+
+export default function ChatPage({ tweaks, activeTab, onNavigate }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
-  const [noteState, setNoteState] = useState('hidden');
-  const [noteData, setNoteData] = useState(null);
   const [typing, setTyping] = useState(false);
-  const [showPlus, setShowPlus] = useState(false);
-  const [breathIdx, setBreathIdx] = useState(0);
-  const [breathText, setBreathText] = useState('');
-  const [showSettings, setShowSettings] = useState(false);
-  const [settingsView, setSettingsView] = useState('main');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState([]);
-  const [noteHistory, setNoteHistory] = useState([]);
-  const [noteHistoryLoading, setNoteHistoryLoading] = useState(false);
-  const [connName, setConnName] = useState(() => localStorage.getItem('remoire_conn_name') || 'Connie');
-  const [nameInput, setNameInput] = useState(() => localStorage.getItem('remoire_conn_name') || 'Connie');
-  const [chatBg, setChatBg] = useState('');
-  const [chatBgImage, setChatBgImage] = useState(() => localStorage.getItem('remoire_chat_bg_image') || '');
-  const [connieAvatar, setConnieAvatar] = useState(null);
-  const [jingAvatar, setJingAvatar] = useState(null);
-  const [showConnieAvatarInChat, setShowConnieAvatarInChat] = useState(true);
-  const [showJingAvatarInChat, setShowJingAvatarInChat] = useState(false);
-  const [showEmojiPanel, setShowEmojiPanel] = useState(false);
-  const [memoryCandidate, setMemoryCandidate] = useState(null);
-  const [expandedThinking, setExpandedThinking] = useState(new Set());
-  const [pendingImage, setPendingImage] = useState(null);
+  const [streaming, setStreaming] = useState('');
+  const [showActions, setShowActions] = useState(false);
+  const [showModes, setShowModes] = useState(false);
+  const [showSheet, setShowSheet] = useState(false);
   const [chatMode, setChatMode] = useState(() => localStorage.getItem('remoire_chat_mode') || 'daily');
-  const [showModelPanel, setShowModelPanel] = useState(false);
-  const [modelSlots, setModelSlots] = useState([]);
-  const [modelStatus, setModelStatus] = useState('');
-  const fileInputRef = useRef(null);
+  const [connieName, setConnieName] = useState(() => localStorage.getItem('remoire_conn_name') || 'Connie');
+  const [editingName, setEditingName] = useState(false);
+  const [breathText, setBreathText] = useState('');
+  const [ambientIdx, setAmbientIdx] = useState(0);
+  const [expandedThink, setExpandedThink] = useState(new Set());
+  const [kept, setKept] = useState(new Set());
+  const [pendingImage, setPendingImage] = useState(null);
+  const [voiceHold, setVoiceHold] = useState(false);
+  const [chatBgImage, setChatBgImage] = useState(() => localStorage.getItem('remoire_chat_bg') || '');
+  const [timeOverride, setTimeOverride] = useState(() => localStorage.getItem('remoire_time_override') || 'auto');
+  const [weather, setWeather] = useState(() => localStorage.getItem('remoire_weather') || 'clear');
+  const [deepMode, setDeepMode] = useState(() => !!localStorage.getItem('remoire_deep_mode'));
+  const [noteData, setNoteData] = useState(null);
+  const [noteState, setNoteState] = useState('hidden');
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const searchInputRef = useRef(null);
+
+  const scrollRef = useRef(null);
   const inputRef = useRef(null);
-  const bottomRef = useRef(null);
+  const fileRef = useRef(null);
   const msgIdRef = useRef(100);
   const conversationIdRef = useRef(localStorage.getItem('remoire_conv_id') || null);
-  const currentSlot = modelSlots.find(s => s.slot === chatMode) || {};
-  const currentPreset = currentSlot.preset || null;
-  const currentModeMeta = CHAT_MODES[chatMode] || CHAT_MODES.daily;
+  const msgTimer = useRef(null);
+
+  const band = timeOverride === 'auto' ? currentBand() : timeOverride;
+  const palette = PALETTES[band];
+  const dark = isDarkBand(band);
+  const ambientLines = AMBIENT_BY_BAND[band] || ['在这里'];
+
+  useEffect(() => { localStorage.setItem('remoire_conn_name', connieName); }, [connieName]);
+  useEffect(() => {
+    if (chatBgImage) localStorage.setItem('remoire_chat_bg', chatBgImage);
+    else localStorage.removeItem('remoire_chat_bg');
+    window.dispatchEvent(new CustomEvent('remoire-ambient', { detail: { key: 'remoire_chat_bg', value: chatBgImage } }));
+  }, [chatBgImage]);
+  useEffect(() => { localStorage.setItem('remoire_time_override', timeOverride); window.dispatchEvent(new CustomEvent('remoire-ambient', { detail: { key: 'remoire_time_override', value: timeOverride } })); }, [timeOverride]);
+  useEffect(() => { localStorage.setItem('remoire_weather', weather); window.dispatchEvent(new CustomEvent('remoire-ambient', { detail: { key: 'remoire_weather', value: weather } })); }, [weather]);
+  useEffect(() => { const v = deepMode ? '1' : ''; localStorage.setItem('remoire_deep_mode', v); window.dispatchEvent(new CustomEvent('remoire-ambient', { detail: { key: 'remoire_deep_mode', value: v } })); }, [deepMode]);
+
+  useEffect(() => {
+    if (typing) return;
+    const t = setInterval(() => setAmbientIdx(i => (i + 1) % ambientLines.length), 11000);
+    return () => clearInterval(t);
+  }, [typing, band, ambientLines.length]);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+  }, [messages, streaming, typing]);
+
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 110) + 'px';
+  }, [input]);
 
   useEffect(() => {
     apiFetch('/chat/status').then(r => r.json()).then(res => {
@@ -408,18 +273,6 @@ export default function ChatPage({ tweaks }) {
     loadHistory();
   }, []);
 
-  async function loadModelSlots() {
-    try {
-      const res = await apiFetch('/settings/slots');
-      const data = await res.json();
-      if (data.ok && Array.isArray(data.data)) setModelSlots(data.data);
-    } catch (e) {}
-  }
-
-  useEffect(() => {
-    loadModelSlots();
-  }, []);
-
   useEffect(() => {
     async function loadNote() {
       try {
@@ -434,76 +287,6 @@ export default function ChatPage({ tweaks }) {
     loadNote();
   }, []);
 
-  useEffect(() => {
-    if (bottomRef.current) {
-      bottomRef.current.scrollTop = bottomRef.current.scrollHeight;
-    }
-  }, [messages, typing]);
-
-  useEffect(() => {
-    const el = inputRef.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, 132)}px`;
-    el.style.overflowY = el.scrollHeight > 132 ? 'auto' : 'hidden';
-  }, [input]);
-
-  useEffect(() => {
-    function resizeInput() {
-      const el = inputRef.current;
-      if (!el) return;
-      el.style.height = 'auto';
-      el.style.height = `${Math.min(el.scrollHeight, 132)}px`;
-      el.style.overflowY = el.scrollHeight > 132 ? 'auto' : 'hidden';
-    }
-    window.addEventListener('resize', resizeInput);
-    return () => window.removeEventListener('resize', resizeInput);
-  }, []);
-
-  function doSearch(q) {
-    setSearchQuery(q);
-    if (!q.trim()) { setSearchResults([]); return; }
-    const lower = q.toLowerCase();
-    setSearchResults(messages.filter(m => m.text && m.text.toLowerCase().includes(lower)));
-  }
-
-  async function loadNoteHistory() {
-    setNoteHistoryLoading(true);
-    try {
-      const res = await apiFetch('/note?limit=50');
-      const data = await res.json();
-      if (data.ok && data.data?.notes) setNoteHistory(data.data.notes);
-    } catch (e) {}
-    setNoteHistoryLoading(false);
-  }
-
-  async function updateSlotThinking(slot, value) {
-    setModelSlots(prev => prev.map(item => item.slot === slot ? { ...item, extended_thinking: value } : item));
-    setModelStatus('');
-    try {
-      const current = modelSlots.find(item => item.slot === slot) || {};
-      const res = await apiJsonFetch(`/settings/slots/${slot}`, {
-        method: 'PUT',
-        body: JSON.stringify({ extended_thinking: value }),
-      });
-      if (!res.ok) throw new Error(`保存失败：${res.status}`);
-      const data = await res.json();
-      if (data.ok && data.data) {
-        setModelSlots(prev => prev.map(item => item.slot === slot ? data.data : item));
-      }
-      setModelStatus('已保存');
-    } catch (e) {
-      setModelStatus(e.message || '保存失败');
-      loadModelSlots();
-    }
-  }
-
-  function chooseChatMode(mode) {
-    setChatMode(mode);
-    localStorage.setItem('remoire_chat_mode', mode);
-    setModelStatus('');
-  }
-
   async function fetchReply(txt, image) {
     const time = formatBJTime(new Date().toISOString());
     setTyping(true);
@@ -511,12 +294,9 @@ export default function ChatPage({ tweaks }) {
       const body = { message: txt || '（发了一张图片）', conversation_id: conversationIdRef.current || null, mode: chatMode };
       if (image) body.image = image;
       const res = await apiJsonFetch('/chat/send', {
-        method: 'POST',
-        body: JSON.stringify(body),
+        method: 'POST', body: JSON.stringify(body),
       });
-      if (!res.ok || !res.body) {
-        throw new Error(`后端返回错误：${res.status}`);
-      }
+      if (!res.ok || !res.body) throw new Error(`后端返回错误：${res.status}`);
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder('utf-8', { fatal: false });
@@ -534,20 +314,19 @@ export default function ChatPage({ tweaks }) {
         buffer = lines.pop();
         for (const line of lines) {
           if (!line.startsWith('data:')) continue;
-          const data = line.slice(5).trim();
           try {
-            const parsed = JSON.parse(data);
+            const parsed = JSON.parse(line.slice(5).trim());
             if (parsed.type === 'conversation_id') {
               conversationIdRef.current = parsed.conversation_id;
               localStorage.setItem('remoire_conv_id', parsed.conversation_id);
             } else if (parsed.type === 'chunk') {
               replyText += parsed.content;
+              setStreaming(replyText);
             } else if (parsed.type === 'thinking') {
               thinkingText += parsed.content;
             } else if (parsed.type === 'note') {
               setNoteData(parsed.note);
               setNoteState('visible');
-              setNoteHistory((items) => parsed.note ? [parsed.note, ...items.filter(n => n.id !== parsed.note.id)] : items);
             } else if (parsed.type === 'done') {
               streamDone = true;
             } else if (parsed.type === 'error') {
@@ -561,29 +340,22 @@ export default function ChatPage({ tweaks }) {
         if (!line.startsWith('data:')) continue;
         try {
           const parsed = JSON.parse(line.slice(5).trim());
-          if (parsed.type === 'chunk') replyText += parsed.content;
+          if (parsed.type === 'chunk') { replyText += parsed.content; setStreaming(replyText); }
           else if (parsed.type === 'thinking') thinkingText += parsed.content;
-          else if (parsed.type === 'note') {
-            setNoteData(parsed.note);
-            setNoteState('visible');
-            setNoteHistory((items) => parsed.note ? [parsed.note, ...items.filter(n => n.id !== parsed.note.id)] : items);
-          }
+          else if (parsed.type === 'note') { setNoteData(parsed.note); setNoteState('visible'); }
           else if (parsed.type === 'done') streamDone = true;
           else if (parsed.type === 'error') streamError = parsed.content || '后端生成回复时出错了。';
         } catch (e) {}
       }
 
-      if (streamError) {
-        throw new Error(streamError);
-      }
-      if (!streamDone) {
-        throw new Error('后端流式响应中断');
-      }
+      if (streamError) throw new Error(streamError);
+      if (!streamDone) throw new Error('后端流式响应中断');
 
       setTyping(false);
+      setStreaming('');
       const segments = replyText.split('\n\n').map(s => s.trim()).filter(s => s.length > 0);
       if (segments.length === 0) {
-        setMessages((m) => [...m, { id: ++msgIdRef.current, role: 'ai', text: '……我刚刚走神了，你再说一次好吗？', time, type: 'normal', isNew: true }]);
+        setMessages(m => [...m, { id: ++msgIdRef.current, role: 'ai', text: '……我刚刚走神了，你再说一次好吗？', time, type: 'normal', isNew: true }]);
       }
       for (let i = 0; i < segments.length; i++) {
         if (i > 0) {
@@ -593,10 +365,11 @@ export default function ChatPage({ tweaks }) {
         }
         const msgObj = { id: ++msgIdRef.current, role: 'ai', text: segments[i], time, type: 'normal', isNew: true };
         if (i === 0 && thinkingText) msgObj.thinking = thinkingText;
-        setMessages((m) => [...m, msgObj]);
+        setMessages(m => [...m, msgObj]);
       }
     } catch (e) {
       setTyping(false);
+      setStreaming('');
       const message = e.message?.includes('流式响应中断')
         ? '回复中断了，刚刚那次没有完整生成。'
         : e.message?.includes('模型输出被截断')
@@ -604,7 +377,7 @@ export default function ChatPage({ tweaks }) {
           : e.message?.startsWith('后端返回错误')
             ? e.message
             : '连不上后端，请确认后端在运行中。';
-      setMessages((m) => [...m, { id: ++msgIdRef.current, role: 'ai', text: message, time, type: 'normal', isNew: true }]);
+      setMessages(m => [...m, { id: ++msgIdRef.current, role: 'ai', text: message, time: formatBJTime(new Date().toISOString()), type: 'normal', isNew: true }]);
     }
   }
 
@@ -614,492 +387,443 @@ export default function ChatPage({ tweaks }) {
     const img = pendingImage;
     setInput('');
     setPendingImage(null);
-    setShowPlus(false);
+    setShowActions(false);
     const time = formatBJTime(new Date().toISOString());
     const userMsg = { id: ++msgIdRef.current, role: 'user', text: txt, time, isNew: true };
     if (img) userMsg.image = img;
-    setMessages((m) => [...m, userMsg]);
+    setMessages(m => [...m, userMsg]);
     await fetchReply(txt, img);
   }
 
-  function toggleThinking(id) {
-    setExpandedThinking(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
+  function toggleKeep(id) {
+    setKept(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  }
+  function holdMessage(id) { msgTimer.current = setTimeout(() => toggleKeep(id), 480); }
+  function releaseMessage() { if (msgTimer.current) clearTimeout(msgTimer.current); }
+  function toggleThink(id) {
+    setExpandedThink(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   }
 
+  function chooseChatMode(mode) {
+    setChatMode(mode);
+    localStorage.setItem('remoire_chat_mode', mode);
+  }
+
+  function pickPhoto(file) {
+    if (!file) return;
+    const r = new FileReader();
+    r.onload = () => { setPendingImage(r.result); setShowActions(false); inputRef.current?.focus(); };
+    r.readAsDataURL(file);
+  }
+
+  const cssVars = {
+    '--ink': palette.ink,
+    '--ink-soft': palette.inkSoft,
+    '--ink-faint': palette.inkFaint,
+    '--ink-accent': palette.inkAccent,
+    '--ai-bg': palette.aiBubble.bg,
+    '--ai-border': palette.aiBubble.border,
+    '--ai-edge': palette.aiBubble.edge,
+    '--ai-text': palette.aiBubble.text,
+    '--ai-shadow': palette.aiBubble.shadow,
+    '--user-bg': palette.userBubble.bg,
+    '--user-border': palette.userBubble.border,
+    '--user-edge': palette.userBubble.edge,
+    '--user-text': palette.userBubble.text,
+    '--warm-shadow': palette.warmShadow,
+    '--sheet-bg': palette.sheetBg,
+    '--sheet-bd': palette.sheetBd,
+    '--nav-bg': palette.navBg,
+    '--nav-border': palette.navBorder,
+    '--pop-bg': palette.popBg,
+    '--ink-on-sheet': palette.inkOnSheet,
+  };
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', position: 'relative' }}>
+    <div style={{
+      ...cssVars,
+      width: '100%', height: '100%',
+      position: 'relative', overflow: 'hidden',
+      display: 'flex', flexDirection: 'column',
+      fontFamily: "'Noto Serif SC', 'Cormorant Garamond', Georgia, serif",
+      color: palette.ink,
+    }}>
+      {/* Background */}
+      <div className="r-bg" style={chatBgImage ? {
+        backgroundImage: `url(${chatBgImage})`,
+        backgroundSize: 'cover', backgroundPosition: 'center',
+      } : { background: palette.bg }} />
+      {chatBgImage && (
+        <div className="r-bg-wash" style={{
+          background: dark
+            ? 'linear-gradient(180deg, rgba(20,12,8,0.32) 0%, rgba(20,12,8,0.22) 50%, rgba(20,12,8,0.38) 100%)'
+            : 'linear-gradient(180deg, rgba(255,240,220,0.22) 0%, rgba(255,235,210,0.10) 50%, rgba(120,80,50,0.18) 100%)',
+        }} />
+      )}
+      <svg className="r-grain"><filter id="r-noise"><feTurbulence baseFrequency="0.85" numOctaves="2" seed="3" /></filter><rect width="100%" height="100%" filter="url(#r-noise)" opacity="0.06" /></svg>
+
+      <Floaters kind={palette.floaterKind} />
+
+      {weather === 'rain' && <RainLayer />}
+      {weather === 'fog'  && <FogLayer />}
+
+      <div className="r-dim" style={{ opacity: deepMode ? 0.32 : 0 }} />
+
       {/* Header */}
-      <div style={{ padding: '14px 16px 10px', borderBottom: '1px solid var(--border-light)', background: 'var(--bg-primary)' }}>
-        <div style={{ display: 'flex', alignItems: 'center' }}>
-          <div style={{ width: 36 }} />
-          <div style={{ flex: 1, textAlign: 'center' }}>
-            <div style={{ fontSize: 'var(--text-md)', fontWeight: 500, color: 'var(--text-primary)', fontFamily: "var(--font-body)" }}>{connName}</div>
-            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginTop: 1, lineHeight: 1.4 }}>
-              {breathText || BREATH_STATES[breathIdx]}
+      <div className="r-header">
+        <button className="r-burger" onClick={() => { setSearchOpen(true); setTimeout(() => searchInputRef.current?.focus(), 100); }} title="搜索聊天">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+            <circle cx="11" cy="11" r="7" />
+            <path d="M21 21l-4.35-4.35" />
+          </svg>
+        </button>
+        <div className="r-header-center">
+          {editingName ? (
+            <input
+              autoFocus
+              value={connieName}
+              onChange={e => setConnieName(e.target.value)}
+              onBlur={() => setEditingName(false)}
+              onKeyDown={e => { if (e.key === 'Enter') setEditingName(false); }}
+              className="r-name-input"
+            />
+          ) : (
+            <button className="r-name" onClick={() => setEditingName(true)} title="改个备注">
+              {connieName}
+            </button>
+          )}
+          <div key={`${band}-${ambientIdx}`} className="r-state">
+            {breathText || ambientLines[ambientIdx]}
+          </div>
+        </div>
+        <button className="r-burger" onClick={() => setShowSheet(true)} title="这间房">
+          <span /><span /><span />
+        </button>
+      </div>
+
+      {/* Search overlay */}
+      {searchOpen && (
+        <div className="r-search-overlay">
+          <div className="r-search-bar">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+              <circle cx="11" cy="11" r="7" /><path d="M21 21l-4.35-4.35" />
+            </svg>
+            <input
+              ref={searchInputRef}
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="搜索聊天内容……"
+              className="r-search-input"
+            />
+            <button className="r-search-close" onClick={() => { setSearchOpen(false); setSearchQuery(''); }}>✕</button>
+          </div>
+          {searchQuery.trim() && (
+            <div className="r-search-results">
+              {messages.filter(m => m.text && m.text.toLowerCase().includes(searchQuery.toLowerCase())).length === 0 ? (
+                <div className="r-search-empty">没有找到相关内容</div>
+              ) : (
+                messages.filter(m => m.text && m.text.toLowerCase().includes(searchQuery.toLowerCase())).map(m => (
+                  <div key={m.id} className="r-search-item" onClick={() => { setSearchOpen(false); setSearchQuery(''); }}>
+                    <div className="r-search-item-role">{m.role === 'ai' ? connieName : '你'}</div>
+                    <div className="r-search-item-text">{m.text}</div>
+                    {m.time && <div className="r-search-item-time">{m.time}</div>}
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Note card */}
+      {noteState === 'visible' && noteData && (() => {
+        const noteStyle = tweaks?.noteStyle || 'washi';
+        const dismissNote = async () => {
+          setNoteState('hidden');
+          try { await apiJsonFetch(`/note/${noteData.id}/read`, { method: 'POST', body: JSON.stringify({ action: 'dismiss' }) }); } catch (e) {}
+        };
+        const keepNote = async () => {
+          setNoteState('hidden');
+          try { await apiJsonFetch(`/note/${noteData.id}/read`, { method: 'POST', body: JSON.stringify({ action: 'keep' }) }); } catch (e) {}
+        };
+        const noteActions = (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 14, marginTop: 8 }}>
+            <button onClick={dismissNote} style={{ background: 'none', border: 'none', fontSize: 12, color: 'var(--ink-soft)', cursor: 'pointer', fontFamily: "'Noto Serif SC', serif" }}>知道了</button>
+            <button onClick={keepNote} style={{ background: 'none', border: 'none', fontSize: 12, color: 'var(--ink-accent)', cursor: 'pointer', fontFamily: "'Noto Serif SC', serif", borderBottom: '1px solid var(--ink-accent)' }}>留着</button>
+          </div>
+        );
+        const noteLabel = <div style={{ fontStyle: 'italic', fontSize: 11, color: 'var(--ink-soft)', marginBottom: 6, letterSpacing: '0.08em' }}>✦ Connie 留了一张纸条</div>;
+
+        if (noteStyle === 'washi') return (
+          <div style={{ padding: '0 16px 8px', position: 'relative', zIndex: 10 }}>
+            <div style={{ position: 'relative', padding: '16px 16px 12px' }}>
+              <div style={{
+                position: 'absolute', top: -2, left: 24, right: 24, height: 22,
+                background: 'linear-gradient(90deg, rgba(255,220,180,0.35) 0%, rgba(255,200,150,0.25) 40%, rgba(240,190,140,0.30) 100%)',
+                borderRadius: 2, transform: 'rotate(-0.8deg)',
+                boxShadow: '0 1px 3px rgba(120,70,30,0.08)',
+                backdropFilter: 'blur(6px) saturate(1.1)', WebkitBackdropFilter: 'blur(6px) saturate(1.1)',
+              }} />
+              <div style={{
+                position: 'absolute', bottom: 0, left: 34, right: 44, height: 18,
+                background: 'linear-gradient(90deg, rgba(180,210,200,0.30) 0%, rgba(160,200,190,0.22) 100%)',
+                borderRadius: 2, transform: 'rotate(0.6deg)',
+                boxShadow: '0 1px 3px rgba(120,70,30,0.06)',
+                backdropFilter: 'blur(6px) saturate(1.1)', WebkitBackdropFilter: 'blur(6px) saturate(1.1)',
+              }} />
+              <div style={{
+                background: 'rgba(255,250,235,0.12)',
+                backdropFilter: 'blur(12px) saturate(1.2)', WebkitBackdropFilter: 'blur(12px) saturate(1.2)',
+                border: '1px solid rgba(255,240,220,0.18)', borderRadius: 4,
+                padding: '12px 14px', transform: 'rotate(-0.4deg)',
+                color: 'var(--ink)', fontFamily: "var(--font-note), 'Noto Serif SC', serif", fontSize: 14, lineHeight: 1.7,
+              }}>
+                {noteLabel}
+                <div>{noteData.content}</div>
+                {noteActions}
+              </div>
             </div>
           </div>
-          <IconButton variant="ghost" size={36} onClick={() => setShowSettings(true)}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>
-          </IconButton>
+        );
+
+        if (noteStyle === 'frost') return (
+          <div style={{ padding: '0 16px 8px', position: 'relative', zIndex: 10 }}>
+            <div style={{
+              position: 'relative', padding: '12px 16px',
+              background: 'rgba(255,250,235,0.10)',
+              backdropFilter: 'blur(16px) saturate(1.3)', WebkitBackdropFilter: 'blur(16px) saturate(1.3)',
+              borderRadius: 16,
+              border: '1px solid rgba(255,240,220,0.20)',
+              boxShadow: '0 4px 16px -6px rgba(120,70,30,0.10), inset 0 1px 0 rgba(255,250,235,0.30)',
+              color: 'var(--ink)', fontFamily: "var(--font-note), 'Noto Serif SC', serif", fontSize: 14, lineHeight: 1.7,
+            }}>
+              <div style={{
+                position: 'absolute', inset: 0, borderRadius: 16, overflow: 'hidden', pointerEvents: 'none',
+              }}>
+                <div style={{
+                  position: 'absolute', top: 0, left: 0, right: 0, height: '40%',
+                  background: 'linear-gradient(180deg, rgba(255,250,235,0.18) 0%, transparent 100%)',
+                  mixBlendMode: 'overlay',
+                }} />
+              </div>
+              <div style={{ position: 'relative' }}>
+                {noteLabel}
+                <div>{noteData.content}</div>
+                {noteActions}
+              </div>
+            </div>
+          </div>
+        );
+
+        if (noteStyle === 'torn') return (
+          <div style={{ padding: '0 16px 8px', position: 'relative', zIndex: 10 }}>
+            <div style={{
+              background: 'rgba(255,250,235,0.14)',
+              backdropFilter: 'blur(10px) saturate(1.15)', WebkitBackdropFilter: 'blur(10px) saturate(1.15)',
+              borderRadius: 3, padding: '12px 14px',
+              clipPath: 'polygon(0 0, 100% 0, 100% 88%, 98% 91%, 95% 88%, 92% 92%, 88% 88%, 85% 91%, 80% 88%, 75% 92%, 70% 88%, 65% 91%, 60% 88%, 55% 92%, 50% 88%, 45% 91%, 40% 88%, 35% 92%, 30% 88%, 25% 91%, 20% 88%, 15% 92%, 10% 88%, 5% 91%, 2% 88%, 0 92%)',
+              transform: 'rotate(-0.4deg)',
+              color: 'var(--ink)', fontFamily: "var(--font-note), 'Noto Serif SC', serif", fontSize: 14, lineHeight: 1.7,
+            }}>
+              {noteLabel}
+              <div>{noteData.content}</div>
+              {noteActions}
+            </div>
+          </div>
+        );
+
+        return (
+          <div style={{ padding: '0 16px 8px', position: 'relative', zIndex: 10 }}>
+            <div style={{ position: 'relative', padding: '14px 0 0' }}>
+              <div style={{
+                position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%) rotate(2deg)',
+                width: 36, height: 12, background: 'rgba(130,189,197,0.35)', borderRadius: 1,
+                backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)',
+              }} />
+              <div style={{
+                background: 'rgba(255,250,235,0.14)',
+                backdropFilter: 'blur(10px) saturate(1.15)', WebkitBackdropFilter: 'blur(10px) saturate(1.15)',
+                border: '1px solid rgba(255,240,220,0.15)', borderRadius: 4,
+                padding: '12px 14px', transform: 'rotate(-0.4deg)',
+                color: 'var(--ink)', fontFamily: "var(--font-note), 'Noto Serif SC', serif", fontSize: 14, lineHeight: 1.7,
+              }}>
+                {noteLabel}
+                <div>{noteData.content}</div>
+                {noteActions}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Conversation */}
+      <div ref={scrollRef} className="r-scroll" style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', scrollbarWidth: 'none' }}>
+        <div style={{ padding: '20px 16px 12px', display: 'flex', flexDirection: 'column', gap: 18 }}>
+          {messages.map(m => {
+            if (m.role === 'system') {
+              return (
+                <div key={m.id} style={{
+                  padding: '6px 14px', borderRadius: 12,
+                  background: 'rgba(255,250,235,0.08)',
+                  border: '1px dashed var(--ink-faint)',
+                  fontSize: 12, color: 'var(--ink-soft)',
+                  textAlign: 'center', fontStyle: 'italic',
+                  margin: '0 40px',
+                }}>{m.text}</div>
+              );
+            }
+            return (
+              <MessageRow
+                key={m.id} m={m}
+                isKept={kept.has(m.id)}
+                isThinkOpen={expandedThink.has(m.id)}
+                onToggleThink={() => toggleThink(m.id)}
+                onHold={() => holdMessage(m.id)}
+                onRelease={releaseMessage}
+              />
+            );
+          })}
+
+          {streaming && (
+            <div className="r-row r-row-ai">
+              <div className="r-spark">✦</div>
+              <div className="r-bubble r-bubble-ai r-cursor">{streaming}</div>
+            </div>
+          )}
+
+          {typing && !streaming && (
+            <div className="r-row r-row-ai">
+              <div className="r-spark r-spark-active">✦</div>
+              <div className="r-thinking-dots">
+                <span /><span /><span />
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Note */}
-      {noteState === 'visible' && noteData && (
-        <div style={{ padding: '12px 16px 0' }}>
-          <NoteCard content={noteData.content} onKeep={async () => {
-            setNoteState('minimized');
-            try { await apiJsonFetch(`/note/${noteData.id}/read`, { method: 'POST', body: JSON.stringify({ action: 'keep' }) }); } catch (e) {}
-          }} onDismiss={async () => {
-            setNoteState('hidden');
-            try { await apiJsonFetch(`/note/${noteData.id}/read`, { method: 'POST', body: JSON.stringify({ action: 'dismiss' }) }); } catch (e) {}
-          }} noteStyle={tweaks && tweaks.noteStyle} />
-        </div>
-      )}
-      {noteState === 'minimized' && noteData && (
-        <NoteCard minimized content={noteData.content} onExpand={() => setNoteState('visible')} noteStyle={tweaks && tweaks.noteStyle} />
-      )}
-
-      {/* Messages */}
-      <div ref={bottomRef} style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '16px 16px 8px', display: 'flex', flexDirection: 'column', gap: 10, background: chatBgImage ? `url(${chatBgImage}) center/cover fixed` : (chatBg || undefined), transition: 'background 0.3s' }}>
-        {messages.map((msg, idx) => {
-          let showAvatar = false, showTail = false;
-          if (msg.role !== 'system') {
-            let pi = idx - 1;
-            while (pi >= 0 && messages[pi].role === 'system') pi--;
-            let ni = idx + 1;
-            while (ni < messages.length && messages[ni].role === 'system') ni++;
-            const prev = pi >= 0 ? messages[pi] : null;
-            const next = ni < messages.length ? messages[ni] : null;
-            showAvatar = msg.role === 'ai' && (!prev || prev.role !== 'ai');
-            showTail = !next || next.role !== msg.role;
-          }
-          return <Bubble key={msg.id} msg={msg} isNew={msg.isNew}
-            bubbleStyle={tweaks && tweaks.bubbleStyle}
-            showAvatar={showAvatar} showTail={showTail}
-            thinkingExpanded={expandedThinking.has(msg.id)}
-            onToggleThinking={() => toggleThinking(msg.id)}
-            bgColor={chatBgImage ? 'transparent' : chatBg}
-            avatarConfig={{ connieAvatar, jingAvatar, showConnieAvatarInChat, showJingAvatarInChat }} />;
-        })}
-        {typing &&
-        <div style={{ display: 'flex', alignItems: 'flex-end' }}>
-            <TypingIndicator />
-          </div>
-        }
-      </div>
-
-      {/* Memory candidate bar */}
-      {memoryCandidate && (
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 10,
-          padding: '9px 16px', background: 'var(--bg-elevated)',
-          borderTop: '1px solid var(--border-light)',
-          animation: 'card-in 160ms ease',
-        }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.5"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 5v5l3 3" /></svg>
-          <span style={{ flex: 1, fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-            要记下来吗？<span style={{ color: 'var(--text-deep)', fontWeight: 500 }}>「{memoryCandidate.text}」</span>
-          </span>
-          <button onClick={() => {
-            setMemoryCandidate(null);
-            const t = new Date();
-            const time = `${t.getHours().toString().padStart(2,'0')}:${t.getMinutes().toString().padStart(2,'0')}`;
-            setMessages(m => [...m, { id: ++msgIdRef.current, role: 'system', text: `已记住：${memoryCandidate.text}` }]);
-          }} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--text-xs)', color: 'var(--accent)', fontWeight: 500, padding: '2px 6px' }}>记住</button>
-          <button onClick={() => setMemoryCandidate(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', padding: '2px 6px' }}>跳过</button>
-        </div>
-      )}
-
-      {/* Emoji/sticker panel */}
-      {showEmojiPanel && (
-        <div style={{
-          background: 'var(--bg-elevated)', borderTop: '1px solid var(--border-light)',
-          padding: '12px 16px', animation: 'card-in 160ms ease',
-        }}>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            {['(˘ᵕ˘)', '(っ˘ω˘ς)', 'ʕ•ᴥ•ʔ', '(ᵔ◡ᵔ)', '(´▽`)', '(｡•̀ᴗ-)✧', '(≧∇≦)/', '(´；ω；｀)', 'ヾ(•ω•`)o', '(¬_¬)', '(◕‿◕)', '(๑˃ᴗ˂)ﻭ'].map(k =>
-              <button key={k} onClick={() => { setInput(i => i + k); setShowEmojiPanel(false); }} style={{
-                background: 'var(--bg-secondary)', border: '1px solid var(--border-light)',
-                borderRadius: 'var(--radius-sm)', padding: '5px 8px',
-                fontSize: 13, color: 'var(--text-secondary)', cursor: 'pointer',
-                fontFamily: 'var(--font-body)', lineHeight: 1,
-              }}>{k}</button>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Input area */}
-      <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => {
-        const f = e.target.files[0];
-        if (!f) return;
-        const reader = new FileReader();
-        reader.onload = () => setPendingImage(reader.result);
-        reader.readAsDataURL(f);
-        e.target.value = '';
-      }} />
-      <div style={{ padding: '8px 12px 16px', background: 'var(--bg-primary)', borderTop: '1px solid var(--border-light)' }}>
+      {/* Input bar */}
+      <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }}
+        onChange={e => pickPhoto(e.target.files?.[0])} />
+      <div className="r-input-wrap">
         {pendingImage && (
-          <div style={{ marginBottom: 8, position: 'relative', display: 'inline-block' }}>
-            <img src={pendingImage} alt="preview" style={{ maxHeight: 120, maxWidth: 200, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)' }} />
-            <button onClick={() => setPendingImage(null)} style={{ position: 'absolute', top: -6, right: -6, width: 20, height: 20, borderRadius: '50%', background: 'var(--text-secondary)', color: '#fff', border: 'none', fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>✕</button>
+          <div className="r-pending">
+            <img src={pendingImage} alt="" />
+            <button onClick={() => setPendingImage(null)}>✕</button>
           </div>
         )}
-        {showPlus &&
-        <div style={{ display: 'flex', gap: 8, marginBottom: 10, animation: 'card-in 160ms ease' }}>
-            {[['image', '图片'], ['map-pin', '位置'], ['bell', '提醒']].map(([icon, label]) =>
-          <button key={label} onClick={() => { if (icon === 'image') { fileInputRef.current?.click(); } setShowPlus(false); }} style={{ flex: 1, padding: '8px 4px', background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-sm)', fontSize: 11, color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  {icon === 'image' && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><path d="M21 15l-5-5L5 21" /></svg>}
-                  {icon === 'map-pin' && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>}
-                  {icon === 'bell' && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>}
-                </span>
-                {label}
+        {showActions && (
+          <div className="r-action-row">
+            {[
+              ['photo', '照片', () => fileRef.current?.click()],
+              ['place', '此处', () => {}],
+              ['hold',  '提醒', () => {}],
+            ].map(([k, label, fn]) => (
+              <button key={k} className="r-action-tile" onClick={fn}>
+                <span className="r-action-glyph">{k === 'photo' ? '◰' : k === 'place' ? '◉' : '◌'}</span>
+                <span className="r-action-label">{label}</span>
               </button>
-          )}
+            ))}
           </div>
-        }
-        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8 }}>
-          <IconButton size={44} onClick={() => setShowPlus(!showPlus)}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" strokeWidth="1.5"><path d="M12 5v14M5 12h14" /></svg>
-          </IconButton>
-          <div style={{ position: 'relative', flexShrink: 0 }}>
-            <button onClick={() => setShowModelPanel(v => !v)} style={{
-              minHeight: 44, padding: '6px 12px',
-              borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)',
-              background: chatMode === 'deep' ? 'var(--accent-subtle)' : 'var(--bg-elevated)',
-              color: chatMode === 'deep' ? 'var(--accent)' : 'var(--text-secondary)',
-              cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontFamily: 'var(--font-body)', fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap',
-            }}>
-              {currentModeMeta.label}
-            </button>
-            {showModelPanel && (
-              <div style={{
-                position: 'absolute', left: 0, bottom: 44, width: 258, zIndex: 80,
-                background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-md)',
-                boxShadow: 'var(--shadow-lg)', padding: '10px 12px',
-              }}>
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  {Object.entries(CHAT_MODES).map(([mode, meta]) => {
-                    const slot = modelSlots.find(s => s.slot === mode) || {};
-                    const active = chatMode === mode;
-                    return (
-                      <button key={mode} onClick={() => { chooseChatMode(mode); setShowModelPanel(false); }} style={{
-                        textAlign: 'left', minHeight: 66, padding: '9px 4px',
-                        border: 'none', borderBottom: mode === 'daily' ? '1px solid var(--border-light)' : 'none',
-                        background: 'transparent', color: 'var(--text-primary)', cursor: 'pointer',
-                        fontFamily: 'var(--font-body)', display: 'grid', gridTemplateColumns: '1fr auto', gap: 10, alignItems: 'center',
-                      }}>
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{ fontSize: 16, fontWeight: 500, color: active ? 'var(--accent)' : 'var(--text-primary)', marginBottom: 4 }}>{meta.fullLabel}</div>
-                          <div style={{ fontSize: 12, color: 'var(--text-tertiary)', lineHeight: 1.35 }}>{meta.desc}</div>
-                          <div style={{ fontSize: 11, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 5 }}>{slot.preset?.model_name || '未选择模型'}</div>
-                        </div>
-                        {active && (
-                          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M20 6 9 17l-5-5" />
-                          </svg>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-                <div style={{ borderTop: '1px solid var(--border-light)', marginTop: 6, paddingTop: 10 }}>
-                  <button onClick={() => updateSlotThinking(chatMode, !currentSlot.extended_thinking)} style={{
-                    width: '100%', border: 'none', background: currentSlot.extended_thinking ? 'var(--accent-subtle)' : 'var(--bg-primary)',
-                    borderRadius: 'var(--radius-sm)', padding: '9px 10px', cursor: 'pointer',
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
-                    fontFamily: 'var(--font-body)', color: 'var(--text-primary)',
-                  }}>
-                    <div style={{ textAlign: 'left' }}>
-                      <div style={{ fontSize: 15, fontWeight: 500 }}>Extended thinking</div>
-                      <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>Think longer for complex tasks</div>
-                    </div>
-                    <span style={{
-                      width: 42, height: 24, borderRadius: 12, padding: 2, flexShrink: 0,
-                      background: currentSlot.extended_thinking ? 'var(--accent)' : 'var(--border)',
-                      display: 'flex', justifyContent: currentSlot.extended_thinking ? 'flex-end' : 'flex-start',
-                      transition: 'all 0.16s ease',
-                    }}>
-                      <span style={{ width: 20, height: 20, borderRadius: '50%', background: 'var(--bg-elevated)', boxShadow: 'var(--shadow-sm)' }} />
-                    </span>
-                  </button>
-                  {modelStatus && <div style={{ fontSize: 10, color: modelStatus.includes('失败') ? 'var(--danger)' : 'var(--success)', marginTop: 6 }}>{modelStatus}</div>}
-                </div>
-              </div>
-            )}
-          </div>
-          <div style={{ flex: 1, position: 'relative', minWidth: 0 }}>
-            <textarea
-              ref={inputRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.nativeEvent.isComposing || e.keyCode === 229) return;
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  sendMessage();
-                }
-              }}
-              placeholder="说点什么…"
-              rows={1}
-              style={{
-                width: '100%', minHeight: 44, maxHeight: 132,
-                background: 'var(--bg-elevated)', border: '1px solid var(--border-light)',
-                borderRadius: 'var(--radius-md)', padding: '11px 14px',
-                fontFamily: "var(--font-chat)", fontSize: 'var(--text-base)',
-                color: 'var(--text-primary)', outline: 'none', resize: 'none',
-                lineHeight: 1.45, whiteSpace: 'pre-wrap', overflowWrap: 'break-word',
-                display: 'block',
-              }} />
-            
-          </div>
-          <IconButton size={44} onClick={() => setShowEmojiPanel(e => !e)}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={showEmojiPanel ? 'var(--accent)' : 'var(--text-secondary)'} strokeWidth="1.5">
-              <circle cx="12" cy="12" r="9" />
-              <path d="M8.5 14.5s1 2 3.5 2 3.5-2 3.5-2" strokeLinecap="round" />
-              <circle cx="9" cy="10" r="1" fill={showEmojiPanel ? 'var(--accent)' : 'var(--text-secondary)'} stroke="none" />
-              <circle cx="15" cy="10" r="1" fill={showEmojiPanel ? 'var(--accent)' : 'var(--text-secondary)'} stroke="none" />
+        )}
+
+        <div className="r-input-bar">
+          <button className="r-ibtn" onClick={() => setShowActions(v => !v)}
+            style={{ transform: showActions ? 'rotate(45deg)' : 'rotate(0)' }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+              <path d="M12 5v14M5 12h14" strokeLinecap="round" />
             </svg>
-          </IconButton>
-          {(input.trim() || pendingImage) ?
-          <button onClick={sendMessage} style={{ background: 'var(--accent)', color: '#FAF8F4', border: 'none', borderRadius: 'var(--radius-sm)', padding: '8px 14px', fontSize: 14, fontWeight: 500, cursor: 'pointer', flexShrink: 0, height: 44 }}>发送</button> :
+          </button>
 
-          <IconButton size={44}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" strokeWidth="1.5"><path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" y1="19" x2="12" y2="23" /><line x1="8" y1="23" x2="16" y2="23" /></svg>
-            </IconButton>
-          }
-        </div>
-      </div>
-      {/* Settings panel overlay */}
-      {showSettings && (
-        <div style={{ position: 'absolute', inset: 0, zIndex: 200, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
-          {/* Backdrop */}
-          <div onClick={() => { setShowSettings(false); setSettingsView('main'); }} style={{ position: 'absolute', inset: 0, background: 'rgba(40,33,28,0.35)' }} />
-          {/* Panel */}
-          <div style={{
-            position: 'relative', background: 'var(--bg-primary)',
-            borderRadius: '20px 20px 0 0', maxHeight: '82vh', overflowY: 'auto',
-            animation: 'page-in 220ms cubic-bezier(0.4,0,0.2,1)',
-          }}>
-            {/* Drag handle */}
-            <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 0 4px' }}>
-              <div style={{ width: 36, height: 4, borderRadius: 2, background: 'var(--border)' }} />
-            </div>
-
-            {settingsView === 'search' && (
-              <div style={{ padding: '4px 20px 24px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-                  <button onClick={() => setSettingsView('main')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: 'var(--text-tertiary)' }}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M19 12H5M12 5l-7 7 7 7" /></svg>
-                  </button>
-                  <span style={{ fontSize: 'var(--text-md)', fontWeight: 500, color: 'var(--text-deep)' }}>查找聊天内容</span>
-                </div>
-                <input
-                  autoFocus
-                  value={searchQuery}
-                  onChange={e => doSearch(e.target.value)}
-                  placeholder="输入关键词搜索…"
-                  style={{ width: '100%', background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-sm)', padding: '10px 14px', fontSize: 'var(--text-sm)', color: 'var(--text-primary)', fontFamily: 'var(--font-body)', outline: 'none', marginBottom: 4 }}
-                />
-                <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginBottom: 12 }}>搜索范围：当前已加载的消息</div>
-                {searchQuery && searchResults.length === 0 && (
-                  <div style={{ textAlign: 'center', padding: 20, color: 'var(--text-tertiary)', fontSize: 'var(--text-sm)' }}>没有找到相关内容</div>
-                )}
-                <div style={{ maxHeight: 320, overflowY: 'auto' }}>
-                  {searchResults.map(m => (
-                    <div key={m.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--border-light)' }}>
-                      <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginBottom: 3 }}>{m.role === 'user' ? '静儿' : 'Connie'} · {m.time}</div>
-                      <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)', lineHeight: 1.6 }}>{m.text}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {settingsView === 'notes' && (
-              <div style={{ padding: '4px 20px 24px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-                  <button onClick={() => setSettingsView('main')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: 'var(--text-tertiary)' }}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M19 12H5M12 5l-7 7 7 7" /></svg>
-                  </button>
-                  <span style={{ fontSize: 'var(--text-md)', fontWeight: 500, color: 'var(--text-deep)' }}>小纸条历史</span>
-                </div>
-                {noteHistoryLoading && (
-                  <div style={{ textAlign: 'center', padding: 20, color: 'var(--text-tertiary)', fontSize: 'var(--text-sm)' }}>加载中…</div>
-                )}
-                {!noteHistoryLoading && noteHistory.length === 0 && (
-                  <div style={{ textAlign: 'center', padding: 20, color: 'var(--text-tertiary)', fontSize: 'var(--text-sm)' }}>还没有纸条呢</div>
-                )}
-                <div style={{ maxHeight: 400, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {noteHistory.map(n => (
-                    <div key={n.id} style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-sm)', padding: '12px 14px' }}>
-                      <div style={{ fontFamily: 'var(--font-note, var(--font-diary))', fontSize: 14, color: 'var(--text-deep)', lineHeight: 1.7, marginBottom: 6 }}>{n.content}</div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-tertiary)' }}>
-                        <span>{formatBJTime(n.created_at)}</span>
-                        <span style={{ color: n.is_read ? 'var(--text-tertiary)' : 'var(--accent-pop)' }}>{n.is_read ? (n.kept ? '已收藏' : '已读') : '未读'}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {settingsView === 'main' && (<>
-            <div style={{ padding: '4px 20px 16px', fontSize: 'var(--text-md)', fontWeight: 500, color: 'var(--text-deep)', textAlign: 'center' }}>聊天设置</div>
-
-            {/* 我们 */}
-            <div style={{ padding: '0 20px 8px' }}>
-              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', letterSpacing: '0.06em', marginBottom: 12 }}>我们</div>
-              <div style={{ display: 'flex', gap: 24, justifyContent: 'center', marginBottom: 12 }}>
-                {/* 静儿头像 */}
-                <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-                  <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'var(--accent-subtle)', border: '1.5px dashed var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, color: 'var(--accent)', fontFamily: 'var(--font-display)', position: 'relative' }}>
-                    {jingAvatar ? <img src={jingAvatar} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} /> : '静'}
-                    <div style={{ position: 'absolute', bottom: -2, right: -2, width: 20, height: 20, borderRadius: '50%', background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid var(--bg-primary)' }}>
-                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#FAF8F4" strokeWidth="2.5"><path d="M12 5v14M5 12h14" /></svg>
-                    </div>
-                  </div>
-                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>静儿</span>
-                  <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => { const f = e.target.files[0]; if (f) setJingAvatar(URL.createObjectURL(f)); }} />
-                </label>
-                {/* Connie 头像 */}
-                <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-                  <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'var(--accent-subtle)', border: '1.5px dashed var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, color: 'var(--accent)', fontFamily: 'var(--font-display)', position: 'relative' }}>
-                    {connieAvatar ? <img src={connieAvatar} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} /> : 'C'}
-                    <div style={{ position: 'absolute', bottom: -2, right: -2, width: 20, height: 20, borderRadius: '50%', background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid var(--bg-primary)' }}>
-                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#FAF8F4" strokeWidth="2.5"><path d="M12 5v14M5 12h14" /></svg>
-                    </div>
-                  </div>
-                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>{connName}</span>
-                  <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => { const f = e.target.files[0]; if (f) setConnieAvatar(URL.createObjectURL(f)); }} />
-                </label>
-              </div>
-              {/* 头像显示开关 */}
-              {[
-                { label: '聊天中显示 Connie 头像', val: showConnieAvatarInChat, set: setShowConnieAvatarInChat },
-                { label: '聊天中显示我的头像', val: showJingAvatarInChat, set: setShowJingAvatarInChat },
-              ].map(({ label, val, set }) => (
-                <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderTop: '1px solid var(--border-light)' }}>
-                  <span style={{ flex: 1, fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>{label}</span>
-                  <div onClick={() => set(v => !v)} style={{ width: 38, height: 22, borderRadius: 11, background: val ? 'var(--accent)' : 'var(--border)', position: 'relative', cursor: 'pointer', transition: 'background 0.2s', flexShrink: 0 }}>
-                    <div style={{ position: 'absolute', top: 3, left: val ? 19 : 3, width: 16, height: 16, borderRadius: '50%', background: '#fff', transition: 'left 0.18s', boxShadow: '0 1px 3px rgba(0,0,0,0.15)' }} />
-                  </div>
-                </div>
-              ))}
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <input
-                  value={nameInput}
-                  onChange={e => setNameInput(e.target.value)}
-                  placeholder="备注名"
-                  style={{ flex: 1, background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-sm)', padding: '8px 12px', fontSize: 'var(--text-sm)', color: 'var(--text-primary)', fontFamily: 'var(--font-body)', outline: 'none' }}
-                />
-                <button onClick={() => {
-                  const newName = nameInput.trim();
-                  if (newName && newName !== connName) {
-                    setConnName(newName);
-                    localStorage.setItem('remoire_conn_name', newName);
-                    const sysText = `静儿修改你的备注为「${newName}」`;
-                    const time = formatBJTime(new Date().toISOString());
-                    setMessages(m => [...m, { id: ++msgIdRef.current, role: 'system', text: sysText, time, isNew: true }]);
-                    setShowSettings(false);
-                    fetchReply(sysText);
-                    return;
-                  }
-                  setShowSettings(false);
-                }} style={{ background: 'var(--accent)', color: '#FAF8F4', border: 'none', borderRadius: 'var(--radius-sm)', padding: '8px 14px', fontSize: 'var(--text-sm)', cursor: 'pointer', flexShrink: 0 }}>保存</button>
-              </div>
-            </div>
-
-            <div style={{ height: 1, background: 'var(--border-light)', margin: '12px 0' }} />
-
-            {/* 内容管理 */}
-            <div style={{ padding: '0 20px 8px' }}>
-              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', letterSpacing: '0.06em', marginBottom: 8 }}>内容管理</div>
-              <div onClick={() => setSettingsView('search')} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 0', borderBottom: '1px solid var(--border-light)', cursor: 'pointer' }}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.5"><path d="M21 21l-6-6m2-5a7 7 0 1 1-14 0 7 7 0 0 1 14 0z" /></svg>
-                <span style={{ flex: 1, fontSize: 'var(--text-base)', color: 'var(--text-primary)' }}>查找聊天内容</span>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5"><path d="M9 18l6-6-6-6" /></svg>
-              </div>
-              <div onClick={() => { setSettingsView('notes'); loadNoteHistory(); }} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 0', borderBottom: '1px solid var(--border-light)', cursor: 'pointer' }}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.5"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" /></svg>
-                <span style={{ flex: 1, fontSize: 'var(--text-base)', color: 'var(--text-primary)' }}>小纸条历史</span>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5"><path d="M9 18l6-6-6-6" /></svg>
-              </div>
-            </div>
-
-            <div style={{ height: 1, background: 'var(--border-light)', margin: '12px 0' }} />
-
-            {/* 外观 */}
-            <div style={{ padding: '0 20px 8px' }}>
-              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', letterSpacing: '0.06em', marginBottom: 12 }}>外观</div>
-              <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', marginBottom: 8 }}>聊天背景</div>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
-                {BG_PRESETS.map(p => (
-                  <button key={p.value} onClick={() => { setChatBg(p.value); setChatBgImage(''); localStorage.removeItem('remoire_chat_bg_image'); }} style={{
-                    width: 44, height: 44, borderRadius: 10, flexShrink: 0, cursor: 'pointer',
-                    background: p.value || 'var(--bg-primary)',
-                    border: (!chatBgImage && chatBg === p.value) ? '2px solid var(--accent)' : '1.5px solid var(--border)',
-                    position: 'relative',
-                  }}>
-                    {!p.value && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5" style={{ position: 'absolute', inset: 0, margin: 'auto' }}><path d="M18 6L6 18M6 6l12 12" /></svg>}
+          <div style={{ position: 'relative' }}>
+            <button className="r-mode-label" onClick={() => setShowModes(v => !v)}
+              title={CHAT_MODES[chatMode].desc}>
+              {CHAT_MODES[chatMode].label}
+            </button>
+            {showModes && (
+              <div className="r-mode-pop">
+                {Object.entries(CHAT_MODES).map(([k, v]) => (
+                  <button key={k} className={`r-mode-row ${chatMode === k ? 'active' : ''}`}
+                    onClick={() => { chooseChatMode(k); setShowModes(false); }}>
+                    <div className="r-mode-row-name">{v.label}</div>
+                    <div className="r-mode-row-desc">{v.desc}</div>
                   </button>
                 ))}
-                <label style={{
-                  width: 44, height: 44, borderRadius: 10, flexShrink: 0, cursor: 'pointer',
-                  background: chatBgImage ? `url(${chatBgImage}) center/cover` : 'var(--bg-elevated)',
-                  border: chatBgImage ? '2px solid var(--accent)' : '1.5px dashed var(--border)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}>
-                  {!chatBgImage && <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5"><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><path d="M21 15l-5-5L5 21" /></svg>}
-                  <input type="file" accept="image/*" hidden onChange={e => {
-                    const file = e.target.files?.[0];
-                    if (!file) return;
-                    const reader = new FileReader();
-                    reader.onload = () => {
-                      const dataUrl = reader.result;
-                      setChatBgImage(dataUrl);
-                      setChatBg('');
-                      localStorage.setItem('remoire_chat_bg_image', dataUrl);
-                    };
-                    reader.readAsDataURL(file);
-                    e.target.value = '';
-                  }} />
-                </label>
+                <div className="r-mode-divider" />
+                <button className="r-mode-row" onClick={() => { setDeepMode(!deepMode); setShowModes(false); }}>
+                  <div className="r-mode-row-name">{deepMode ? '回到浅处' : '走深一点'}</div>
+                  <div className="r-mode-row-desc">房间变暗、间隔变长</div>
+                </button>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 0', borderTop: '1px solid var(--border-light)', opacity: 0.5 }}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.5"><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></svg>
-                <span style={{ flex: 1, fontSize: 'var(--text-base)', color: 'var(--text-primary)' }}>气泡样式</span>
-                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>即将开放</span>
-              </div>
-            </div>
-
-            <div style={{ height: 1, background: 'var(--border-light)', margin: '12px 0' }} />
-
-            {/* 危险区 */}
-            <div style={{ padding: '0 20px 32px' }}>
-              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', letterSpacing: '0.06em', marginBottom: 8 }}>危险区</div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 0', cursor: 'pointer' }} onClick={() => {
-                if (window.confirm('确定清除所有聊天记录？')) {
-                  setMessages([]);
-                  setShowSettings(false);
-                  setSettingsView('main');
-                }
-              }}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" strokeWidth="1.5"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
-                <span style={{ flex: 1, fontSize: 'var(--text-base)', color: 'var(--danger)' }}>清除聊天记录</span>
-              </div>
-            </div>
-            </>)}
+            )}
           </div>
+
+          <textarea
+            ref={inputRef}
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => {
+              if (e.nativeEvent.isComposing) return;
+              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+            }}
+            placeholder={deepMode ? '慢慢说……' : '说点什么……'}
+            rows={1}
+            className="r-input"
+          />
+
+          {(input.trim() || pendingImage) ? (
+            <button className="r-ibtn r-ibtn-send" onClick={sendMessage}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                <path d="M12 19V5M5 12l7-7 7 7" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+          ) : (
+            <button className={`r-ibtn ${voiceHold ? 'r-ibtn-mic holding' : ''}`}
+              onMouseDown={() => setVoiceHold(true)} onMouseUp={() => setVoiceHold(false)} onMouseLeave={() => setVoiceHold(false)}
+              onTouchStart={() => setVoiceHold(true)} onTouchEnd={() => setVoiceHold(false)}>
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+                <rect x="9" y="3" width="6" height="12" rx="3" />
+                <path d="M5 11v1a7 7 0 0 0 14 0v-1M12 19v3" strokeLinecap="round" />
+              </svg>
+              {voiceHold && <div className="r-mic-ripple" />}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Bottom nav */}
+      <div className="r-nav">
+        {NAV_TABS.map(t => {
+          const svgProps = { width: 22, height: 22, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.4 };
+          return (
+            <button key={t.id} className={`r-nav-btn ${activeTab === t.id ? 'active' : ''}`}
+              onClick={() => onNavigate(t.id)}>
+              {t.icon(svgProps)}
+              <span>{t.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Settings sheet */}
+      {showSheet && (
+        <SettingsSheet
+          band={band}
+          timeOverride={timeOverride} setTimeOverride={setTimeOverride}
+          weather={weather} setWeather={setWeather}
+          deepMode={deepMode} setDeepMode={setDeepMode}
+          connieName={connieName} setConnieName={setConnieName}
+          chatBgImage={chatBgImage} setChatBgImage={setChatBgImage}
+          onClose={() => setShowSheet(false)}
+        />
+      )}
+
+      {voiceHold && (
+        <div className="r-voice-overlay">
+          <div className="r-voice-wave"><span /><span /><span /><span /><span /></div>
+          <div className="r-voice-hint">松开发送 · 上滑取消</div>
         </div>
       )}
-    </div>);
-
+    </div>
+  );
 }

@@ -1125,51 +1125,126 @@ export function BubbleSettings({ tweaks, onBack }) {
 }
 
 // ── Note Style ──
+function NotePreviewWashi() {
+  return (
+    <div style={{ position: 'relative', padding: '14px 16px 12px', minHeight: 52 }}>
+      <div style={{
+        position: 'absolute', top: -3, left: 20, right: 20, height: 22,
+        background: 'linear-gradient(90deg, rgba(255,220,180,0.35) 0%, rgba(255,200,150,0.25) 40%, rgba(240,190,140,0.30) 100%)',
+        borderRadius: 2,
+        transform: 'rotate(-0.8deg)',
+        boxShadow: '0 1px 3px rgba(120,70,30,0.08)',
+        backdropFilter: 'blur(6px) saturate(1.1)',
+        WebkitBackdropFilter: 'blur(6px) saturate(1.1)',
+      }} />
+      <div style={{
+        position: 'absolute', bottom: -2, left: 30, right: 40, height: 18,
+        background: 'linear-gradient(90deg, rgba(180,210,200,0.30) 0%, rgba(160,200,190,0.22) 100%)',
+        borderRadius: 2,
+        transform: 'rotate(0.6deg)',
+        boxShadow: '0 1px 3px rgba(120,70,30,0.06)',
+        backdropFilter: 'blur(6px) saturate(1.1)',
+        WebkitBackdropFilter: 'blur(6px) saturate(1.1)',
+      }} />
+      <div style={{
+        background: 'rgba(255,250,235,0.12)',
+        backdropFilter: 'blur(12px) saturate(1.2)',
+        WebkitBackdropFilter: 'blur(12px) saturate(1.2)',
+        border: '1px solid rgba(255,240,220,0.18)',
+        borderRadius: 3,
+        padding: '10px 12px',
+        transform: 'rotate(-0.5deg)',
+      }}>
+        <div style={{ fontFamily: "var(--font-note)", fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.6 }}>今天也要好好的呀~</div>
+      </div>
+    </div>
+  );
+}
+
+function NotePreviewFrost() {
+  return (
+    <div style={{
+      position: 'relative', padding: '12px 16px', minHeight: 52,
+      background: 'rgba(255,250,235,0.10)',
+      backdropFilter: 'blur(16px) saturate(1.3)',
+      WebkitBackdropFilter: 'blur(16px) saturate(1.3)',
+      borderRadius: 16,
+      border: '1px solid rgba(255,240,220,0.20)',
+      boxShadow: '0 4px 16px -6px rgba(120,70,30,0.10), inset 0 1px 0 rgba(255,250,235,0.30)',
+    }}>
+      <div style={{
+        position: 'absolute', inset: 0, borderRadius: 16, overflow: 'hidden', pointerEvents: 'none',
+      }}>
+        <div style={{
+          position: 'absolute', top: 0, left: 0, right: 0, height: '40%',
+          background: 'linear-gradient(180deg, rgba(255,250,235,0.18) 0%, transparent 100%)',
+          mixBlendMode: 'overlay',
+        }} />
+      </div>
+      <div style={{ fontFamily: "var(--font-note)", fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.6, position: 'relative' }}>今天也要好好的呀~</div>
+    </div>
+  );
+}
+
 export function NoteSettings({ tweaks, onBack }) {
   const NOTE_OPTIONS = [
-    { id: 'classic', name: '经典便签', desc: '横线纸 + 和纸胶带' },
-    { id: 'kraft', name: '牛皮纸', desc: '质朴牛皮纸质感' },
-    { id: 'pastel', name: '柔彩便签', desc: '淡紫色渐变' },
+    { id: 'washi', name: '和风胶带', desc: '半透明胶带贴住的纸条' },
+    { id: 'frost', name: '毛玻璃纸条', desc: '磨砂透明的轻薄便签' },
+    { id: 'classic', name: '经典便签', desc: '横线纸 + 胶带' },
     { id: 'torn', name: '撕纸条', desc: '手撕纸边缘效果' },
-    { id: 'postit', name: '便利贴', desc: '经典黄色便利贴' },
   ];
-  const current = tweaks?.noteStyle || 'classic';
-  const notePreviewStyles = {
-    classic: { bg: '#FDF8F0', tape: true, tapeColor: 'rgba(130,189,197,0.45)' },
-    kraft: { bg: '#C4A882' }, pastel: { bg: 'linear-gradient(135deg, #F0E6F6, #E6EFF6)', tape: true, tapeColor: 'rgba(180,140,200,0.35)' },
-    torn: { bg: '#FDF8F0', torn: true }, postit: { bg: '#FFF9B1' },
-  };
+  const current = tweaks?.noteStyle || 'washi';
+
+  function renderPreview(id) {
+    if (id === 'washi') return <NotePreviewWashi />;
+    if (id === 'frost') return <NotePreviewFrost />;
+    if (id === 'torn') return (
+      <div style={{
+        background: 'rgba(255,250,235,0.14)', backdropFilter: 'blur(10px) saturate(1.15)',
+        WebkitBackdropFilter: 'blur(10px) saturate(1.15)',
+        borderRadius: 3, padding: '10px 12px', minHeight: 44,
+        clipPath: 'polygon(0 0, 100% 0, 100% 85%, 98% 88%, 95% 85%, 92% 90%, 88% 85%, 85% 88%, 80% 85%, 75% 90%, 70% 85%, 65% 88%, 60% 85%, 55% 90%, 50% 85%, 45% 88%, 40% 85%, 35% 90%, 30% 85%, 25% 88%, 20% 85%, 15% 90%, 10% 85%, 5% 88%, 2% 85%, 0 90%)',
+        transform: 'rotate(-0.5deg)',
+      }}>
+        <div style={{ fontFamily: "var(--font-note)", fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.5 }}>今天也要好好的呀~</div>
+      </div>
+    );
+    return (
+      <div style={{ position: 'relative', padding: '10px 12px', minHeight: 44 }}>
+        <div style={{
+          position: 'absolute', top: -5, left: '50%', transform: 'translateX(-50%) rotate(2deg)',
+          width: 30, height: 10, background: 'rgba(130,189,197,0.35)', borderRadius: 1,
+          backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)',
+        }} />
+        <div style={{
+          background: 'rgba(255,250,235,0.14)', backdropFilter: 'blur(10px) saturate(1.15)',
+          WebkitBackdropFilter: 'blur(10px) saturate(1.15)',
+          borderRadius: 4, padding: '10px 12px', transform: 'rotate(-0.5deg)',
+          border: '1px solid rgba(255,240,220,0.15)',
+        }}>
+          <div style={{ fontFamily: "var(--font-note)", fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.5 }}>今天也要好好的呀~</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px', paddingBottom: 88 }}>
+    <div>
       <SubPageHeader onBack={onBack} title="便签样式" subtitle="选择 Connie 留纸条的风格" />
       <Stack gap="sm">
-        {NOTE_OPTIONS.map(opt => {
-          const ps = notePreviewStyles[opt.id] || {};
-          const isGrad = ps.bg?.startsWith?.('linear');
-          return (
-            <Card key={opt.id} onClick={() => setTweakVal('noteStyle', opt.id)} padding="md"
-              style={{ border: current === opt.id ? '2px solid var(--accent)' : undefined }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                <div>
-                  <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-primary)' }}>{opt.name}</span>
-                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>{opt.desc}</div>
-                </div>
-                {current === opt.id && <div style={{ width: 18, height: 18, borderRadius: '50%', background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3"><path d="M5 13l4 4L19 7"/></svg></div>}
+        {NOTE_OPTIONS.map(opt => (
+          <Card key={opt.id} onClick={() => setTweakVal('noteStyle', opt.id)} padding="md"
+            style={{ border: current === opt.id ? '2px solid var(--accent)' : undefined }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+              <div>
+                <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-primary)' }}>{opt.name}</span>
+                <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>{opt.desc}</div>
               </div>
-              <div style={{
-                background: isGrad ? undefined : ps.bg, backgroundImage: isGrad ? ps.bg : undefined,
-                borderRadius: opt.id === 'postit' ? '2px 2px 2px 16px' : 4,
-                padding: '10px 12px', position: 'relative', minHeight: 44,
-                boxShadow: 'var(--shadow-sm)', transform: opt.id === 'postit' ? 'rotate(-1deg)' : 'rotate(-0.5deg)',
-                clipPath: ps.torn ? 'polygon(0 0, 100% 0, 100% 85%, 98% 88%, 95% 85%, 92% 90%, 88% 85%, 85% 88%, 80% 85%, 75% 90%, 70% 85%, 65% 88%, 60% 85%, 55% 90%, 50% 85%, 45% 88%, 40% 85%, 35% 90%, 30% 85%, 25% 88%, 20% 85%, 15% 90%, 10% 85%, 5% 88%, 2% 85%, 0 90%)' : 'none',
-              }}>
-                {ps.tape && <div style={{ position: 'absolute', top: -5, left: '50%', transform: 'translateX(-50%) rotate(2deg)', width: 30, height: 10, background: ps.tapeColor, borderRadius: 1 }} />}
-                <div style={{ fontFamily: "var(--font-note)", fontSize: 13, color: opt.id === 'kraft' ? '#3C2F20' : 'var(--text-deep)', lineHeight: 1.5 }}>今天也要好好的呀~</div>
-              </div>
-            </Card>
-          );
-        })}
+              {current === opt.id && <div style={{ width: 18, height: 18, borderRadius: '50%', background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3"><path d="M5 13l4 4L19 7"/></svg></div>}
+            </div>
+            {renderPreview(opt.id)}
+          </Card>
+        ))}
       </Stack>
     </div>
   );

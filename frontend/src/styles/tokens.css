@@ -1,6 +1,7 @@
 /* ── Design Tokens · Our Nest ── */
 /* Display: Petrona (人文衬线) · Body: Manrope (温暖几何无衬线) · 中文: LXGW WenKai (霞鹜文楷，开源温暖手写感) */
 @import url('https://fonts.googleapis.com/css2?family=Petrona:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&family=Manrope:wght@400;500;600;700&family=Caveat:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&family=Noto+Serif+SC:wght@200;300;400;500;600&family=Spectral:ital,wght@0,300;0,400;1,300&display=swap');
 @import url('https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css');
 
 @font-face {

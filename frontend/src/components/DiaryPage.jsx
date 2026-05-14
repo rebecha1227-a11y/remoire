@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { SectionLabel } from "./primitives";
 import { apiFetch, apiJsonFetch } from "../utils/api";
+import RoomShell from './RoomShell';
 
 
 // ── CSS for flip animations ──
@@ -980,7 +981,7 @@ function DiaryFeed({ activities }) {
 }
 
 // ── Main DiaryPage ──
-export default function DiaryPage({ tweaks }) {
+export default function DiaryPage({ tweaks, nav }) {
   const [openBook, setOpenBook] = useState(null);
   const [writing, setWriting] = useState(false);
   const [jingerDiary, setJingerDiary] = useState(JINGER_DIARY_INIT);
@@ -1087,15 +1088,11 @@ export default function DiaryPage({ tweaks }) {
 
 
   return (
+    <RoomShell nav={nav}>
     <div style={{
-      position: 'relative', height: '100%',
-      background: 'var(--bg-primary)',
-      backgroundImage: `
-        linear-gradient(rgba(114,102,92,0.05) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(114,102,92,0.05) 1px, transparent 1px)
-      `,
-      backgroundSize: '16px 16px',
-      overflow: 'hidden'
+      position: 'relative', flex: 1,
+      background: 'transparent',
+      overflow: 'hidden', zIndex: 10
     }}>
       {openBook &&
         <OpenBook
@@ -1138,5 +1135,6 @@ export default function DiaryPage({ tweaks }) {
         <DiaryFeed activities={activities} />
       </div>
     </div>
+    </RoomShell>
   );
 }

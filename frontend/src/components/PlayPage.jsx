@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Card, SectionLabel } from './primitives';
+import RoomShell from './RoomShell';
 
-export default function PlayPage() {
+export default function PlayPage({ nav }) {
   const [space, setSpace] = useState(null);
 
   if (space) {
@@ -30,7 +31,8 @@ export default function PlayPage() {
   }
 
   return (
-    <div style={{ overflowY: 'auto', height: '100%', padding: '20px 16px', paddingBottom: 88 }}>
+    <RoomShell nav={nav}>
+    <div style={{ overflowY: 'auto', flex: 1, padding: '20px 16px', paddingBottom: 16, position: 'relative', zIndex: 10 }}>
       <div style={{ marginBottom: 'var(--space-6)' }}>
         <SectionLabel>共读</SectionLabel>
         <Card padding="lg" style={{ animation: 'card-in 180ms ease' }}>
@@ -111,5 +113,6 @@ export default function PlayPage() {
         }}>+ 创建新世界</button>
       </div>
     </div>
+    </RoomShell>
   );
 }

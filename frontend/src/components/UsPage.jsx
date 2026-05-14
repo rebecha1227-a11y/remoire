@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { SectionLabel, Pill, Stack } from './primitives';
+import RoomShell from './RoomShell';
 
 const MEMORIES = [
   { id: 1, type: 'fact',       text: '你在备考法语四级',       tag: '进行中'   },
@@ -106,29 +107,34 @@ function MiniCalendar() {
         ))}
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2 }}>
-        {cells.map((d, i) => (
-          <div key={i} onClick={() => d && setSelected(d)} style={{
-            display: 'flex', flexDirection: 'column',
-            alignItems: 'center', justifyContent: 'center',
-            minHeight: 44,
-            borderRadius: 'var(--radius-sm)',
-            background: isSelected(d) ? 'var(--accent)' : 'transparent',
-            color: isSelected(d) ? 'var(--bg-elevated)'
-              : isToday(d) ? 'var(--accent)'
-              : d ? 'var(--text-primary)' : 'transparent',
-            fontSize: 12, cursor: d ? 'pointer' : 'default',
-            fontWeight: (isSelected(d) || isToday(d)) ? 500 : 400,
-          }}>
-            {d || ''}
-            {d && CALENDAR_EVENTS[d] && !isSelected(d) && <CalendarDot type={CALENDAR_EVENTS[d]} />}
-          </div>
-        ))}
+        {cells.map((d, i) => {
+          const sel = isSelected(d);
+          const tod = isToday(d);
+          return (
+            <div key={i} onClick={() => d && setSelected(d)} style={{
+              display: 'flex', flexDirection: 'column',
+              alignItems: 'center', justifyContent: 'center',
+              minHeight: 44,
+              borderRadius: 'var(--radius-sm)',
+              background: sel ? 'var(--accent)' : 'transparent',
+              boxShadow: (!sel && tod) ? 'inset 0 0 0 1.5px var(--accent)' : 'none',
+              color: sel ? '#fff'
+                : tod ? 'var(--ink)'
+                : d ? 'var(--ink)' : 'transparent',
+              fontSize: 13, cursor: d ? 'pointer' : 'default',
+              fontWeight: (sel || tod) ? 600 : 400,
+            }}>
+              {d || ''}
+              {d && CALENDAR_EVENTS[d] && !sel && <CalendarDot type={CALENDAR_EVENTS[d]} />}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
 }
 
-export default function UsPage({ tweaks = {} }) {
+export default function UsPage({ tweaks = {}, nav }) {
   const dayCount = tweaks.dayCount || 142;
   const [reminders, setReminders] = useState(REMINDERS);
 
@@ -143,7 +149,8 @@ export default function UsPage({ tweaks = {} }) {
   };
 
   return (
-    <div style={{ overflowY: 'auto', height: '100%', paddingBottom: 88 }}>
+    <RoomShell nav={nav}>
+    <div style={{ overflowY: 'auto', flex: 1, paddingBottom: 16, position: 'relative', zIndex: 10 }}>
       <div style={{
         textAlign: 'center',
         padding: 'var(--space-7) 0 var(--space-5)',
@@ -266,5 +273,6 @@ export default function UsPage({ tweaks = {} }) {
         </div>
       </div>
     </div>
+    </RoomShell>
   );
 }

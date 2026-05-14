@@ -9,10 +9,11 @@ import {
   BubbleSettings, NoteSettings, CoverSettings, FontSettings,
   NoteHistorySettings, MemoryCandidatesSettings,
 } from './SettingsSubPages';
+import RoomShell from './RoomShell';
 
 export { SettingsToggle, SettingRow, SettingsSectionTitle, SubPageHeader, ChevronRight, setTweakVal };
 
-export default function SettingsPage({ tweaks }) {
+export default function SettingsPage({ tweaks, nav }) {
   const [panel, setPanel] = useState(null);
   const [toggles, setToggles] = useState({
     noteCard: true, diaryUnlock: true,
@@ -37,22 +38,32 @@ export default function SettingsPage({ tweaks }) {
       memoryCandidates: MemoryCandidatesSettings,
     };
     const Page = subPages[panel];
-    if (Page) return <Page tweaks={tweaks} onBack={() => setPanel(null)} />;
+    if (Page) return <RoomShell nav={nav}><div style={{ overflowY: 'auto', flex: 1, padding: '16px 20px', paddingBottom: 16, position: 'relative', zIndex: 10 }}><Page tweaks={tweaks} onBack={() => setPanel(null)} /></div></RoomShell>;
   }
   function toggle(k) { setToggles(t => ({ ...t, [k]: !t[k] })); }
 
   const currentBubble = (tweaks && tweaks.bubbleStyle) || 'default';
-  const currentNote = (tweaks && tweaks.noteStyle) || 'classic';
+  const currentNote = (tweaks && tweaks.noteStyle) || 'washi';
   const BUBBLE_NAMES = { default: '默认', imessage: 'iMessage', line: 'LINE', whatsapp: 'WhatsApp', telegram: 'Telegram' };
-  const NOTE_NAMES = { classic: '经典便签', kraft: '牛皮纸', pastel: '柔彩便签', torn: '撕纸条', postit: '便利贴' };
+  const NOTE_NAMES = { washi: '和风胶带', frost: '毛玻璃纸条', classic: '经典便签', torn: '撕纸条' };
 
   return (
-    <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px', paddingBottom: 88 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 0 16px', borderBottom: '1px solid var(--border-light)', marginBottom: 4 }}>
-        <div style={{ width: 52, height: 52, borderRadius: '50%', background: 'var(--accent-subtle)', border: '1.5px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "var(--font-display)", fontSize: 22, color: 'var(--accent)', fontWeight: 500 }}>C</div>
+    <RoomShell nav={nav}>
+    <div style={{ overflowY: 'auto', flex: 1, padding: '16px 20px', paddingBottom: 16, position: 'relative', zIndex: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 0 16px', borderBottom: '1px solid var(--nav-border)', marginBottom: 4 }}>
+        <div style={{
+          width: 52, height: 52, borderRadius: '50%',
+          background: 'var(--ai-bg)',
+          border: '1px solid var(--ai-border)',
+          backdropFilter: 'blur(9px) saturate(1.15)',
+          WebkitBackdropFilter: 'blur(9px) saturate(1.15)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontFamily: "'Noto Serif SC', 'Cormorant Garamond', serif",
+          fontSize: 22, color: 'var(--ink-accent)', fontWeight: 500,
+        }}>C</div>
         <div>
-          <div style={{ fontFamily: "var(--font-display)", fontSize: 20, fontWeight: 500, color: 'var(--text-deep)' }}>我们的小窝</div>
-          <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>Connie × 静儿 · 第 {tweaks?.dayCount || 142} 天</div>
+          <div style={{ fontFamily: "'Noto Serif SC', 'Cormorant Garamond', serif", fontSize: 20, fontWeight: 500, color: 'var(--ink)' }}>我们的小窝</div>
+          <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: 2 }}>Connie × 静儿 · 第 {tweaks?.dayCount || 142} 天</div>
         </div>
       </div>
 
@@ -97,5 +108,6 @@ export default function SettingsPage({ tweaks }) {
       <SettingsSectionTitle title="" />
       <SettingRow label="清除所有数据" danger><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" strokeWidth="1.5"><path d="M9 18l6-6-6-6"/></svg></SettingRow>
     </div>
+    </RoomShell>
   );
 }
