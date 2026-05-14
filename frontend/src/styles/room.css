@@ -221,6 +221,7 @@
 }
 .r-row-ai   { justify-content: flex-start; }
 .r-row-user { justify-content: flex-end; }
+.r-row-ai .r-bubble-stack { align-items: flex-start; }
 .r-row-user .r-bubble-stack { align-items: flex-end; }
 .r-bubble-stack {
   display: flex; flex-direction: column;

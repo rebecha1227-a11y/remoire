@@ -1,7 +1,71 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card, Pill, SectionLabel, Stack } from "./primitives";
 import { SettingsToggle, SettingRow, SettingsSectionTitle, SubPageHeader, setTweakVal } from "./settingsShared";
 import { apiFetch, apiJsonFetch } from "../utils/api";
+
+function GlassSelect({ value, onChange, options, placeholder = '请选择', style }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const selected = options.find(o => o.value === value);
+
+  useEffect(() => {
+    if (!open) return;
+    function close(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    document.addEventListener('pointerdown', close);
+    return () => document.removeEventListener('pointerdown', close);
+  }, [open]);
+
+  return (
+    <div ref={ref} style={{ position: 'relative', ...style }}>
+      <button onClick={() => setOpen(v => !v)} style={{
+        width: '100%', minHeight: 40, padding: '8px 32px 8px 10px',
+        borderRadius: 'var(--radius-sm)',
+        border: '1px solid rgba(255,255,255,0.18)',
+        background: 'rgba(255,250,235,0.10)',
+        backdropFilter: 'blur(12px) saturate(1.2)',
+        WebkitBackdropFilter: 'blur(12px) saturate(1.2)',
+        color: 'var(--ink)', fontSize: 'var(--text-sm)', fontFamily: 'var(--font-body)',
+        textAlign: 'left', cursor: 'pointer', position: 'relative',
+        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+      }}>
+        {selected ? selected.label : placeholder}
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" strokeWidth="2"
+          style={{ position: 'absolute', right: 10, top: '50%', transform: `translateY(-50%) rotate(${open ? 180 : 0}deg)`, transition: 'transform 0.2s' }}>
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+      </button>
+      {open && (
+        <div style={{
+          position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 100,
+          borderRadius: 'var(--radius-md)',
+          border: '1px solid rgba(255,255,255,0.15)',
+          background: 'rgba(255,250,235,0.12)',
+          backdropFilter: 'blur(20px) saturate(1.3)',
+          WebkitBackdropFilter: 'blur(20px) saturate(1.3)',
+          boxShadow: '0 8px 32px rgba(40,33,28,0.25)',
+          overflow: 'hidden',
+          animation: 'card-in 150ms ease',
+        }}>
+          {options.map(opt => (
+            <button key={opt.value} onClick={() => { onChange(opt.value); setOpen(false); }} style={{
+              width: '100%', padding: '10px 12px', border: 'none',
+              background: opt.value === value ? 'rgba(255,255,255,0.12)' : 'transparent',
+              color: 'var(--ink)', fontSize: 'var(--text-sm)', fontFamily: 'var(--font-body)',
+              textAlign: 'left', cursor: 'pointer', display: 'block',
+              borderBottom: '1px solid rgba(255,255,255,0.06)',
+              transition: 'background 0.15s',
+            }}
+              onPointerEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.10)'}
+              onPointerLeave={e => e.currentTarget.style.background = opt.value === value ? 'rgba(255,255,255,0.12)' : 'transparent'}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // SettingsSubPages — all settings detail panels
 
@@ -433,8 +497,10 @@ export function ModelSettings({ onBack }) {
 
   const fieldStyle = {
     width: '100%', minHeight: 40, padding: '8px 10px', borderRadius: 'var(--radius-sm)',
-    border: '1px solid var(--border-light)', background: 'var(--bg-secondary)',
-    color: 'var(--text-primary)', fontSize: 'var(--text-sm)', fontFamily: 'var(--font-body)',
+    border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(255,250,235,0.10)',
+    backdropFilter: 'blur(12px) saturate(1.2)',
+    WebkitBackdropFilter: 'blur(12px) saturate(1.2)',
+    color: 'var(--ink)', fontSize: 'var(--text-sm)', fontFamily: 'var(--font-body)',
   };
   const labelStyle = {
     fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', display: 'block',
@@ -486,13 +552,16 @@ export function ModelSettings({ onBack }) {
                 </div>
                 <Pill tone={current.preset_id ? 'success' : 'neutral'}>{current.preset_id ? '已配置' : '未配置'}</Pill>
               </div>
-              <select value={current.preset_id || ''} onChange={e => saveSlot(slot.id, { preset_id: e.target.value || null })}
-                style={{ ...fieldStyle, marginBottom: 10 }}>
-                <option value="">不使用预设</option>
-                {presets.map(preset => (
-                  <option key={preset.id} value={preset.id}>{preset.nickname} · {preset.model_name}</option>
-                ))}
-              </select>
+              <GlassSelect
+                value={current.preset_id || ''}
+                onChange={v => saveSlot(slot.id, { preset_id: v || null })}
+                placeholder="不使用预设"
+                options={[
+                  { value: '', label: '不使用预设' },
+                  ...presets.map(p => ({ value: p.id, label: `${p.nickname} · ${p.model_name}` })),
+                ]}
+                style={{ marginBottom: 10 }}
+              />
               <SettingRow label="扩展思考" sub="开启后允许保存思考内容；是否生效取决于模型。">
                 <SettingsToggle on={!!current.extended_thinking} onChange={v => saveSlot(slot.id, { extended_thinking: v })} />
               </SettingRow>
@@ -575,12 +644,15 @@ export function ModelSettings({ onBack }) {
             <div style={{ marginBottom: 10 }}>
               <label style={labelStyle}>模型名称</label>
               {draftModels.length > 0 ? (
-                <select value={draft.model_name} onChange={e => updateDraft('model_name', e.target.value)} style={fieldStyle}>
-                  <option value="">选择模型</option>
-                  {draftModels.map(model => (
-                    <option key={model.id} value={model.id}>{model.id}</option>
-                  ))}
-                </select>
+                <GlassSelect
+                  value={draft.model_name}
+                  onChange={v => updateDraft('model_name', v)}
+                  placeholder="选择模型"
+                  options={[
+                    { value: '', label: '选择模型' },
+                    ...draftModels.map(m => ({ value: m.id, label: m.id })),
+                  ]}
+                />
               ) : (
                 <input type="text" value={draft.model_name} onChange={e => updateDraft('model_name', e.target.value)}
                   placeholder="拉取失败时可手动填写" style={fieldStyle} />
