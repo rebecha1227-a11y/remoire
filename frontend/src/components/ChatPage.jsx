@@ -85,8 +85,19 @@ const MessageRow = memo(function MessageRow({ m, isKept, isThinkOpen, onToggleTh
   );
 });
 
-function SettingsSheet({ band, timeOverride, setTimeOverride, weather, setWeather, deepMode, setDeepMode, connieName, setConnieName, chatBgImage, setChatBgImage, replyStyle, setReplyStyle, onClose }) {
+function SettingsSheet({ band, timeOverride, setTimeOverride, weather, setWeather, deepMode, setDeepMode, connieName, setConnieName, chatBgImage, setChatBgImage, replyStyle, setReplyStyle, onRename, onClose }) {
   const [nameInput, setNameInput] = useState(connieName);
+  const prevNameRef = useRef(connieName);
+  function commitName() {
+    const newName = (nameInput || 'Connie').trim();
+    if (newName !== prevNameRef.current) {
+      prevNameRef.current = newName;
+      setConnieName(newName);
+      if (onRename) onRename(newName);
+    } else {
+      setConnieName(newName);
+    }
+  }
   const bgFileRef = useRef(null);
   const palette = PALETTES[band];
   function pickBg(file) {
@@ -107,8 +118,8 @@ function SettingsSheet({ band, timeOverride, setTimeOverride, weather, setWeathe
             <input
               value={nameInput}
               onChange={e => setNameInput(e.target.value)}
-              onBlur={() => setConnieName(nameInput || 'Connie')}
-              onKeyDown={e => { if (e.key === 'Enter') { setConnieName(nameInput || 'Connie'); onClose(); } }}
+              onBlur={() => commitName()}
+              onKeyDown={e => { if (e.key === 'Enter') { commitName(); onClose(); } }}
               placeholder="给她起个名字"
               className="r-sheet-input"
             />
@@ -238,6 +249,7 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
   const msgIdRef = useRef(100);
   const conversationIdRef = useRef(localStorage.getItem('remoire_conv_id') || null);
   const msgTimer = useRef(null);
+  const nameBeforeEdit = useRef(connieName);
 
   const band = timeOverride === 'auto' ? currentBand() : timeOverride;
   const palette = PALETTES[band];
@@ -291,7 +303,8 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
           for (const m of data.data.messages) {
             const time = formatBJTime(m.created_at);
             if (m.role === 'assistant') {
-              if (replyStyle === 'whole') {
+              const mode = m.display_mode || 'split';
+              if (mode === 'whole') {
                 const msgObj = { id: ++msgIdRef.current, role: 'ai', text: m.content.trim(), time, type: 'normal', formatted: true };
                 if (m.thinking) msgObj.thinking = m.thinking;
                 loaded.push(msgObj);
@@ -336,7 +349,7 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
     const time = formatBJTime(new Date().toISOString());
     setTyping(true);
     try {
-      const body = { message: txt || '（发了一张图片）', conversation_id: conversationIdRef.current || null, mode: chatMode };
+      const body = { message: txt || '（发了一张图片）', conversation_id: conversationIdRef.current || null, mode: chatMode, reply_style: replyStyle };
       if (image) body.image = image;
       const res = await apiJsonFetch('/chat/send', {
         method: 'POST', body: JSON.stringify(body),
@@ -454,6 +467,13 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
     setExpandedThink(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   }, []);
 
+  function handleRename(newName) {
+    const sysText = `静儿修改你的备注为「${newName}」`;
+    const time = formatBJTime(new Date().toISOString());
+    setMessages(m => [...m, { id: ++msgIdRef.current, role: 'system', text: sysText, time, isNew: true }]);
+    fetchReply(sysText);
+  }
+
   function chooseChatMode(mode) {
     setChatMode(mode);
     localStorage.setItem('remoire_chat_mode', mode);
@@ -533,12 +553,12 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
               autoFocus
               value={connieName}
               onChange={e => setConnieName(e.target.value)}
-              onBlur={() => setEditingName(false)}
-              onKeyDown={e => { if (e.key === 'Enter') setEditingName(false); }}
+              onBlur={() => { setEditingName(false); if (connieName !== nameBeforeEdit.current) handleRename(connieName); }}
+              onKeyDown={e => { if (e.key === 'Enter') { setEditingName(false); if (connieName !== nameBeforeEdit.current) handleRename(connieName); } }}
               className="r-name-input"
             />
           ) : (
-            <button className="r-name" onClick={() => setEditingName(true)} title="改个备注">
+            <button className="r-name" onClick={() => { nameBeforeEdit.current = connieName; setEditingName(true); }} title="改个备注">
               {connieName}
             </button>
           )}
@@ -816,6 +836,17 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
               if (e.nativeEvent.isComposing) return;
               if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
             }}
+            onPaste={e => {
+              const items = e.clipboardData?.items;
+              if (!items) return;
+              for (const item of items) {
+                if (item.type.startsWith('image/')) {
+                  e.preventDefault();
+                  pickPhoto(item.getAsFile());
+                  return;
+                }
+              }
+            }}
             placeholder={deepMode ? '慢慢说……' : '说点什么……'}
             rows={1}
             className="r-input"
@@ -865,6 +896,7 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
           connieName={connieName} setConnieName={setConnieName}
           chatBgImage={chatBgImage} setChatBgImage={setChatBgImage}
           replyStyle={replyStyle} setReplyStyle={setReplyStyle}
+          onRename={handleRename}
           onClose={() => setShowSheet(false)}
         />
       )}

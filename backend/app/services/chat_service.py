@@ -96,7 +96,7 @@ async def get_or_create_conversation(conversation_id: str | None = None) -> str:
 async def get_history(conversation_id: str, limit: int = 20) -> list[dict]:
     async with get_db() as db:
         async with db.execute(
-            "SELECT role, content, thinking, image, created_at FROM messages WHERE conversation_id = ? ORDER BY created_at DESC LIMIT ?",
+            "SELECT role, content, thinking, image, display_mode, created_at FROM messages WHERE conversation_id = ? ORDER BY created_at DESC LIMIT ?",
             (conversation_id, limit),
         ) as cur:
             rows = await cur.fetchall()
@@ -107,16 +107,17 @@ async def get_history(conversation_id: str, limit: int = 20) -> list[dict]:
             item["thinking"] = r["thinking"]
         if r["image"]:
             item["image"] = r["image"]
+        item["display_mode"] = r["display_mode"] or "split"
         result.append(item)
     return result
 
-async def save_message(conversation_id: str, role: str, content: str, thinking: str = "", image: str = "") -> str:
+async def save_message(conversation_id: str, role: str, content: str, thinking: str = "", image: str = "", display_mode: str = "split") -> str:
     msg_id = str(uuid.uuid4())
     now = datetime.utcnow().isoformat()
     async with get_db() as db:
         await db.execute(
-            "INSERT INTO messages (id, conversation_id, role, content, thinking, image, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (msg_id, conversation_id, role, content, thinking or None, image or None, now),
+            "INSERT INTO messages (id, conversation_id, role, content, thinking, image, display_mode, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (msg_id, conversation_id, role, content, thinking or None, image or None, display_mode, now),
         )
         await db.execute(
             "UPDATE conversations SET updated_at = ? WHERE id = ?",
@@ -202,7 +203,7 @@ async def _ensure_chinese_thinking(config, thinking: str) -> str:
         return thinking
 
 
-async def stream_chat(conversation_id: str, user_message: str, image: str | None = None, mode: str = "daily"):
+async def stream_chat(conversation_id: str, user_message: str, image: str | None = None, mode: str = "daily", reply_style: str = "split"):
     await save_message(conversation_id, "user", user_message, image=image or "")
 
     history = await get_history(conversation_id, limit=20)
@@ -277,7 +278,13 @@ async def stream_chat(conversation_id: str, user_message: str, image: str | None
         return
 
     full_reply = assistant_msg.get("content", "")
-    thinking_from_non_stream = assistant_msg.get("reasoning_content", "")
+    import re
+    _think_match = re.search(r'<(?:thinking|think)>(.*?)</(?:thinking|think)>', full_reply, re.DOTALL)
+    if _think_match:
+        thinking_from_non_stream = _think_match.group(1) + "\n" + assistant_msg.get("reasoning_content", "")
+        full_reply = re.sub(r'<(?:thinking|think)>.*?</(?:thinking|think)>\s*', '', full_reply, flags=re.DOTALL)
+    else:
+        thinking_from_non_stream = assistant_msg.get("reasoning_content", "")
     finish_reason = assistant_msg.get("_finish_reason")
     if finish_reason and finish_reason not in ("stop", "tool_calls"):
         logger.warning("LLM 返回可能被截断：finish_reason=%s", finish_reason)
@@ -311,12 +318,15 @@ async def stream_chat(conversation_id: str, user_message: str, image: str | None
                         thinking_text += piece
                     else:
                         text = chunk["content"]
-                        if not full_reply and not in_think_tag and text.lstrip().startswith("<think>"):
-                            in_think_tag = True
-                            text = text.lstrip().removeprefix("<think>")
+                        for open_tag in ("<thinking>", "<think>"):
+                            if not full_reply and not in_think_tag and text.lstrip().startswith(open_tag):
+                                in_think_tag = True
+                                text = text.lstrip().removeprefix(open_tag)
+                                break
                         if in_think_tag:
-                            if "</think>" in text:
-                                before, after = text.split("</think>", 1)
+                            close_tag = "</thinking>" if "</thinking>" in text else ("</think>" if "</think>" in text else None)
+                            if close_tag:
+                                before, after = text.split(close_tag, 1)
                                 thinking_text += before
                                 in_think_tag = False
                                 if after:
@@ -343,7 +353,7 @@ async def stream_chat(conversation_id: str, user_message: str, image: str | None
         yield {"type": "thinking", "content": all_thinking}
 
     if full_reply:
-        await save_message(conversation_id, "assistant", full_reply, thinking=all_thinking)
+        await save_message(conversation_id, "assistant", full_reply, thinking=all_thinking, display_mode=reply_style)
 
     if not full_reply:
         return

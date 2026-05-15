@@ -1,13 +1,8 @@
-import { useState } from 'react';
-import { SectionLabel, Pill, Stack } from './primitives';
+import { useState, useEffect } from 'react';
+import { SectionLabel, Stack } from './primitives';
 import RoomShell from './RoomShell';
-
-const MEMORIES = [
-  { id: 1, type: 'fact',       text: '你在备考法语四级',       tag: '进行中'   },
-  { id: 2, type: 'event',      text: '那天你第一次说想去京都', tag: '高频浮现' },
-  { id: 3, type: 'unresolved', text: '答应了要给自己买那本书', tag: '未完成'   },
-  { id: 4, type: 'date',       text: '你在备考法语四级',       tag: '特殊日期' },
-];
+import MemoryPalace from './MemoryPalace';
+import { apiFetch } from '../utils/api';
 
 const REMINDERS = [
   { id: 1, text: '交材料截止',   time: '今天 15:00', urgent: true,  done: false },
@@ -21,12 +16,6 @@ const CALENDAR_EVENTS = {
   18: 'event', 22: 'reminder', 28: 'special', 30: 'reminder',
 };
 
-const TAG_TONE = {
-  '进行中':   'success',
-  '高频浮现': 'accent',
-  '未完成':   'warning',
-  '特殊日期': 'pop',
-};
 
 function CalendarDot({ type }) {
   const colors = {
@@ -137,10 +126,41 @@ function MiniCalendar() {
 export default function UsPage({ tweaks = {}, nav }) {
   const dayCount = tweaks.dayCount || 142;
   const [reminders, setReminders] = useState(REMINDERS);
+  const [showPalace, setShowPalace] = useState(false);
+  const [memStats, setMemStats] = useState(null);
+  const [latestMemory, setLatestMemory] = useState(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const [statsRes, memRes] = await Promise.all([
+          apiFetch('/memory/stats'),
+          apiFetch('/memory?limit=1&sort_by=created_at'),
+        ]);
+        const sd = await statsRes.json();
+        const md = await memRes.json();
+        if (sd.ok) setMemStats(sd.data);
+        const items = md.ok ? (md.data?.items || []) : [];
+        if (items.length > 0) setLatestMemory(items[0]);
+      } catch (e) {}
+    })();
+  }, [showPalace]);
 
   function toggleDone(id) {
     setReminders((r) => r.map((x) => x.id === id ? { ...x, done: !x.done } : x));
   }
+
+  if (showPalace) {
+    return (
+      <RoomShell nav={nav}>
+        <div style={{ overflowY: 'auto', flex: 1, position: 'relative', zIndex: 10 }}>
+          <MemoryPalace onBack={() => setShowPalace(false)} />
+        </div>
+      </RoomShell>
+    );
+  }
+
+  const totalMem = memStats ? (memStats.core + memStats.long + memStats.short + memStats.consciousness) : null;
 
   return (
     <RoomShell nav={nav}>
@@ -162,7 +182,41 @@ export default function UsPage({ tweaks = {}, nav }) {
       </div>
 
       <div style={{ padding: '0 14px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <div className="r-glass" style={{ position: 'relative', animation: 'card-in 180ms 40ms ease both' }}>
+        <div className="r-glass" onClick={() => setShowPalace(true)} style={{
+          position: 'relative', animation: 'card-in 180ms 20ms ease both',
+          cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 14,
+        }}>
+          <div style={{
+            width: 44, height: 44, borderRadius: 12, flexShrink: 0,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'rgba(124,99,80,0.10)',
+          }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ink-accent, var(--accent))" strokeWidth="1.5">
+              <path d="M4 4h11a3 3 0 0 1 3 3v13H7a3 3 0 0 1-3-3z"/><path d="M9 8h6M9 12h6"/>
+            </svg>
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 15, fontWeight: 500, color: 'var(--ink, var(--text-primary))' }}>记忆宫殿</span>
+              {totalMem != null && (
+                <span style={{ fontSize: 12, color: 'var(--ink-soft, var(--text-tertiary))' }}>{totalMem} 条记忆</span>
+              )}
+            </div>
+            {latestMemory && (
+              <div style={{
+                fontSize: 12, color: 'var(--ink-faint, var(--text-tertiary))',
+                marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }}>
+                {latestMemory.content}
+              </div>
+            )}
+          </div>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft, var(--text-tertiary))" strokeWidth="1.5" style={{ flexShrink: 0 }}>
+            <path d="M9 18l6-6-6-6"/>
+          </svg>
+        </div>
+
+        <div className="r-glass" style={{ position: 'relative', animation: 'card-in 180ms 60ms ease both' }}>
           <SectionLabel style={{ marginBottom: 'var(--space-4)' }}>今日概览</SectionLabel>
           <Stack gap="md">
             <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'flex-start' }}>
@@ -192,7 +246,7 @@ export default function UsPage({ tweaks = {}, nav }) {
           </Stack>
         </div>
 
-        <div className="r-glass" style={{ position: 'relative', animation: 'card-in 180ms 80ms ease both' }}>
+        <div className="r-glass" style={{ position: 'relative', animation: 'card-in 180ms 100ms ease both' }}>
           <SectionLabel>提醒与待办</SectionLabel>
           <div>
             {reminders.map((r, idx) => (
@@ -235,35 +289,9 @@ export default function UsPage({ tweaks = {}, nav }) {
           </div>
         </div>
 
-        <div className="r-glass" style={{ position: 'relative', animation: 'card-in 180ms 120ms ease both' }}>
+        <div className="r-glass" style={{ position: 'relative', animation: 'card-in 180ms 140ms ease both', marginBottom: 'var(--space-6)' }}>
           <SectionLabel>共同日历</SectionLabel>
           <MiniCalendar />
-        </div>
-
-        <div className="r-glass" style={{ position: 'relative', animation: 'card-in 180ms 160ms ease both', marginBottom: 'var(--space-6)' }}>
-          <SectionLabel>记忆摘要</SectionLabel>
-          <div>
-            {MEMORIES.map((m, idx) => (
-              <div
-                key={m.id}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: 'var(--space-3)',
-                  padding: 'var(--space-3) 0',
-                  borderBottom: idx < MEMORIES.length - 1 ? '1px solid rgba(0,0,0,0.06)' : 'none',
-                }}
-              >
-                <span style={{
-                  fontSize: 'var(--text-sm)',
-                  color: 'var(--text-secondary)',
-                  lineHeight: 1.5,
-                }}>{m.text}</span>
-                <Pill tone={TAG_TONE[m.tag] || 'accent'}>{m.tag}</Pill>
-              </div>
-            ))}
-          </div>
         </div>
       </div>
     </div>
