@@ -1,7 +1,7 @@
 # 设计系统 · Our Nest
 
-**版本**：v1.1
-**日期**：2026-05-01
+**版本**：v2.0
+**日期**：2026-05-15
 **作者**：Con con × 静儿
 
 > 这份文档是给做原型和写前端代码的人读的。
@@ -14,18 +14,19 @@
 
 ### 核心气质
 
-**Paper-like editorial mobile · Neo-minimal but intimate · Quiet luxury**
+**Liquid Glass Ambient · Neo-minimal but intimate · Quiet luxury**
 
-一句话：**这是两个人的私人笔记本，不是 app。**
+一句话：**这是两个人的客厅，随时间变化，有光有暗有天气。**
 
 设计语言必须传递：
-- 有纸的温度，不是屏幕的冷光
-- 有人在场，不是系统界面
+- 有呼吸的温度——玻璃表面透着背后的氛围光
+- 有人在场——不是系统界面，是一间有人住的房间
+- 随时间流动——清晨是花瓣和柔光，深夜是星空和烛火
 - 克制但不冷漠，安静但不空洞
 
 ### 气质参考（给设计者的感性描述）
 
-想象你打开一本精心装帧的笔记本——封面是亚麻质感的米白色，翻开后是暖奶油色的纸张，上面有两种笔迹：一种是你自己的，一种是另一个人的。页边距很宽，文字之间留着呼吸的空间。偶尔有一张便签贴在页面上，歪歪的，像是某天随手写下的。
+想象你走进一间两个人的客厅——窗外的光随时辰变化，清晨是暖粉色的，午后是蜜金色的，入夜后是深蓝的星空。房间里的一切——聊天气泡、小纸条、导航栏——都像玻璃器皿，半透明地映着窗外的光。偶尔有花瓣飘过（清晨），或者光尘在空气里浮动（白天），或者星星在闪烁（深夜）。
 
 这就是我们要的感觉。
 
@@ -35,8 +36,9 @@
 
 ### 2.1 设计理念
 
-所有颜色来自同一个暖灰棕色相，无跳跃饱和色，无渐变背景。
-像一间用木头和亚麻布置的房间——墙壁是暖白，家具是深棕，偶尔有一只浅蓝色的杯子。
+静态色板作为基底/回退值（定义在 `tokens.css`），运行时由 **氛围系统** 动态覆盖。氛围系统在 `frontend/src/utils/ambient.js` 中定义了 7 个时段调色板（dawn / morning / afternoon / golden / dusk / night / late），由 `RoomShell` 组件实时注入 CSS Variables，覆盖下方的静态值。
+
+基底色仍然来自同一个暖灰棕色相——像一间用木头和亚麻布置的房间。但运行时，窗外的光会洒进来：清晨是粉杏色，午后是蜜金色，入夜后是深靛蓝。所有界面元素（气泡、卡片、导航栏）都采用液态玻璃风格（`backdrop-filter: blur() saturate()`），透出背后的氛围渐变。
 
 ### 2.2 完整色板
 
@@ -84,10 +86,10 @@
      气泡色 · Chat Bubbles
      两个人的笔迹颜色
      ═══════════════════════════════════════════ */
-  --bubble-send:         #C8B49E;   /* 发送方气泡 · 低饱和暖棕 */
-  --bubble-send-text:    #FAF8F4;   /* 发送方文字 */
-  --bubble-receive:      #EDE9E3;   /* 接收方气泡 */
-  --bubble-receive-text: #28211C;   /* 接收方文字 */
+  --bubble-send:         #7C6350;   /* 发送方气泡 · 沉稳暖棕（实际渲染走玻璃拟态，见 2.6 氛围系统） */
+  --bubble-send-text:    #FAF8F4;   /* 发送方文字（回退值，运行时由 --user-text 覆盖） */
+  --bubble-receive:      #EDE9E3;   /* 接收方气泡（回退值，运行时由 --ai-bg 覆盖） */
+  --bubble-receive-text: #28211C;   /* 接收方文字（回退值，运行时由 --ai-text 覆盖） */
 
   /* ═══════════════════════════════════════════
      语义色 · Semantic
@@ -157,12 +159,67 @@
 
 | 禁止 | 原因 |
 |---|---|
-| 任何渐变背景（包括 linear-gradient） | 破坏 paper-like 质感 |
+| 纯色平面背景作为主页面底色（已改为时段渐变氛围） | 缺乏呼吸感，与液态玻璃不搭 |
 | 紫色 / 蓝色作为高亮色 | 与暖色系统冲突 |
 | 纯白 #FFFFFF 作为卡片背景 | 太冷，在暖背景上刺眼 |
-| 半透明毛玻璃在非导航区域 | 滥用会破坏纸质感 |
+| 不透明实色卡片背景（已改为液态玻璃风格） | 遮住氛围渐变，失去通透感 |
 | 高饱和色大面积使用 | 打破安静的色彩关系 |
-| rgba(0,0,0,...) 作为阴影色 | 太冷，必须用暖色系阴影 |
+| rgba(0,0,0,...) 作为阴影色（白天时段） | 太冷，白天必须用暖色系阴影；夜间 GLASS_DARK 允许 rgba(0,0,0,...) |
+
+### 2.6 氛围系统 (Ambient System)
+
+整个 app 运行在一个随时间变化的氛围环境中。核心由两个文件实现：
+
+- **调色板定义**：`frontend/src/utils/ambient.js`
+- **运行时注入**：`frontend/src/components/RoomShell.jsx`
+
+#### 7 个时段 (Time Bands)
+
+| 时段 | 时间范围 | 背景渐变基调 | 墨色(ink) | 浮动物(Floaters) | 玻璃层 |
+|---|---|---|---|---|---|
+| **dawn** | 5:00–8:00 | 粉杏 → 烟紫 | 深棕 #2A1B12 | 花瓣 (petals) | GLASS_LIGHT |
+| **morning** | 8:00–12:00 | 暖黄 → 亚麻 | 深棕 #2D1E10 | 光尘 (motes) | GLASS_LIGHT |
+| **afternoon** | 12:00–17:00 | 蜜金 → 赭棕 | 深棕 #2A1A0C | 光尘 (motes) | GLASS_LIGHT |
+| **golden** | 17:00–19:00 | 金橙 → 深赭 | 奶白 #FFEEDA | 光尘 (motes) | GLASS_WARM |
+| **dusk** | 19:00–21:00 | 橘红 → 靛紫 | 奶白 #FBEEDD | 光尘 (motes) | GLASS_WARM |
+| **night** | 21:00–1:00 | 深靛 → 墨蓝 | 暖米 #EFE3CD | 星星 (stars) | GLASS_DARK |
+| **late** | 1:00–5:00 | 炭褐 → 纯黑 | 暖米 #EFE5D2 | 星星+烛光 (stars-candles) | GLASS_DARK |
+
+所有背景使用 `radial-gradient`，从页面中心向外扩散。
+
+#### 3 层玻璃参数 (Glass Tiers)
+
+每个时段对应三组玻璃参数之一，控制气泡、卡片、导航栏的半透明样式：
+
+| 玻璃层 | 适用时段 | AI 气泡背景 | 用户气泡背景 | 阴影色调 |
+|---|---|---|---|---|
+| **GLASS_LIGHT** | dawn / morning / afternoon | `rgba(255,252,240, 0.16)` | `rgba(255,200,145, 0.22)` | 暖棕 `rgba(120,70,30,...)` |
+| **GLASS_WARM** | golden / dusk | `rgba(255,245,220, 0.14)` | `rgba(255,200,140, 0.22)` | 深棕 `rgba(40,18,5,...)` |
+| **GLASS_DARK** | night / late | `rgba(255,240,210, 0.10)` | `rgba(255,170,95, 0.18)` | 纯黑 `rgba(0,0,0,...)` |
+
+#### 浮动物 (Floaters)
+
+- **petals** (花瓣)：从顶部飘落，粉色半透明椭圆，带旋转
+- **motes** (光尘)：空中缓慢漂浮的暖色小光点
+- **stars** (星星)：固定位置闪烁，暖黄色，有呼吸动画 (`r-twinkle`)
+- **stars-candles** (星星+烛光)：星星 + 橘色模糊光晕缓慢漂移
+
+#### 天气效果层
+
+RoomShell 支持叠加天气效果（通过 `localStorage` 的 `remoire_weather` 控制）：
+- **rain**：线条型雨滴从顶部落下
+- **fog**：大面积模糊光带缓慢飘移
+
+#### RoomShell 工作方式
+
+`RoomShell` 包裹所有页面，作为最外层容器：
+1. 根据当前时间选择时段 → 取出对应 palette
+2. 将 palette 中所有值注入为 CSS Variables（`--ink`、`--ai-bg`、`--user-bg`、`--nav-bg` 等）
+3. 同时覆盖 tokens.css 中的基础变量（`--text-primary`、`--accent`、`--bg-elevated` 等）
+4. 渲染背景渐变层、噪点纹理层、浮动物层、天气层
+5. 通过 `nav` prop 渲染底部导航栏（导航栏在 RoomShell 内部，不是 fixed 定位）
+
+设置页支持手动覆盖时段（`remoire_time_override`），以及自定义聊天背景图（`remoire_chat_bg`）。
 
 ---
 
@@ -291,63 +348,65 @@ font-family: 'JetBrains Mono', monospace;
 
 ## 五、组件规范
 
-### 5.1 消息气泡
+### 5.1 消息气泡（液态玻璃风格）
+
+气泡采用液态玻璃渲染，背景是半透明的，透出 RoomShell 的氛围渐变。颜色随时段自动变化（见 2.6 氛围系统）。
 
 ```css
-/* 发送方（右侧）—— 你的笔迹 */
-.bubble-send {
-  background: var(--bubble-send);          /* #C8B49E */
-  color: var(--bubble-send-text);          /* #FAF8F4 */
-  border-radius: 20px 20px 6px 20px;      /* 右下角尖 */
-  padding: 10px 14px;
-  max-width: 78%;
-  font-family: var(--font-chat);           /* Manrope */
-  font-size: var(--text-base);             /* 14.5px */
+/* 基础气泡 —— 所有气泡共享的玻璃质感 */
+.r-bubble {
+  padding: 9px 16px;
+  border-radius: 20px;
+  font-size: 15px;
   line-height: 1.6;
-  box-shadow: none;                        /* 气泡不加阴影，只用颜色区分 */
+  letter-spacing: 0.02em;
+  backdrop-filter: blur(9px) saturate(1.15);
+  -webkit-backdrop-filter: blur(9px) saturate(1.15);
+  isolation: isolate;
 }
 
-/* 接收方（左侧）—— Connie 的笔迹 */
-.bubble-receive {
-  background: var(--bubble-receive);       /* #EDE9E3 */
-  color: var(--bubble-receive-text);       /* #28211C */
-  border-radius: 20px 20px 20px 6px;      /* 左下角尖 */
-  padding: 10px 14px;
-  max-width: 78%;
-  box-shadow: none;                        /* 同上 */
+/* 气泡顶部高光 —— 模拟玻璃顶部的光线折射 */
+.r-bubble::before {
+  content: '';
+  position: absolute; inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(180deg, rgba(255,250,235,0.20) 0%, transparent 42%);
+  mix-blend-mode: overlay;
+  opacity: 0.7;
 }
 
-/* AI 主动消息 —— 用浅色背景区分，不用 opacity */
-.bubble-proactive {
-  /* 继承 .bubble-receive 样式 */
-  background: color-mix(in oklch, var(--accent-pop) 10%, transparent);
-  max-width: 72%;                          /* 比普通回复稍窄 */
+/* AI 气泡（左侧）—— Connie 的声音 */
+.r-bubble-ai {
+  background: var(--ai-bg);               /* 由氛围系统注入，如 rgba(255,252,240,0.16) */
+  border: 1px solid var(--ai-border);      /* 如 rgba(120,75,35,0.20) */
+  color: var(--ai-text);                   /* 跟随 --ink，暗色时段自动变浅 */
+  box-shadow:
+    0 4px 12px -5px var(--warm-shadow),
+    inset 0 1px 0 var(--ai-edge);          /* 内侧顶部高光边 */
 }
 
-/* 时间戳 */
-.bubble-timestamp {
-  font-size: var(--text-xs);               /* 11px */
-  color: var(--text-tertiary);
-  opacity: 0.45;
-  margin-top: 3px;
+/* 用户气泡（右侧）—— 你的声音 */
+.r-bubble-user {
+  background: var(--user-bg);              /* 如 rgba(255,200,145,0.22) */
+  border: 1px solid var(--user-border);    /* 如 rgba(150,80,30,0.30) */
+  color: var(--user-text);
+  box-shadow:
+    0 4px 14px -5px var(--warm-shadow),
+    inset 0 1px 0 var(--user-edge);
 }
 ```
 
-#### 气泡风格变体
+> **回退说明**：tokens.css 中的 `--bubble-send: #7C6350` 和 `--bubble-receive: #EDE9E3` 仍保留为静态回退值。RoomShell 加载后会用 `--ai-bg` / `--user-bg` 等玻璃参数覆盖。
 
-支持 5 种气泡外观，在设置页切换，通过 `bubbleStyle` 参数控制：
+#### 各时段玻璃参数速查
 
-| 风格 | 发送背景 | 接收背景 | 圆角风格 |
-|---|---|---|---|
-| **default** | `#C8B49E` | `#EDE9E3` | 20px，一角 6px |
-| **imessage** | `#007AFF` | 浅灰 | 18px，一角 4px |
-| **line** | `#06C755` | 浅灰 | 标准 |
-| **whatsapp** | `#DCF8C6` | 白 | 8px，一角 0 |
-| **telegram** | `#EFFDDE` | 白 | 14px，一角 0 |
+| 玻璃层 | AI 气泡 bg | AI 气泡 border | 用户气泡 bg | 用户气泡 border |
+|---|---|---|---|---|
+| GLASS_LIGHT（白天） | `rgba(255,252,240, 0.16)` | `rgba(120,75,35, 0.20)` | `rgba(255,200,145, 0.22)` | `rgba(150,80,30, 0.30)` |
+| GLASS_WARM（黄昏） | `rgba(255,245,220, 0.14)` | `rgba(255,220,180, 0.26)` | `rgba(255,200,140, 0.22)` | `rgba(255,180,110, 0.40)` |
+| GLASS_DARK（深夜） | `rgba(255,240,210, 0.10)` | `rgba(255,220,180, 0.18)` | `rgba(255,170,95, 0.18)` | `rgba(255,180,110, 0.40)` |
 
-暗色模式下 WhatsApp 和 Telegram 风格有独立的深色覆盖值。
-
-**禁止**：发送气泡用纯强调色（太重）；接收气泡用纯白（太冷）；渐变气泡（已删除）。
+**禁止**：不透明实色气泡背景（破坏通透感）；接收气泡用纯白（太冷）；气泡上使用 bounce/spring 动效。
 
 ### 5.2 系统型插入块
 
@@ -476,48 +535,49 @@ font-family: 'JetBrains Mono', monospace;
 
 ### 5.6 底部导航栏
 
+导航栏不再使用 `position: fixed`，而是通过 `RoomShell` 的 `nav` prop 渲染在氛围容器内部，自然融入背景渐变。
+
 ```css
-.nav-bottom {
-  position: fixed;
-  bottom: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 100%;
-  max-width: 430px;
-  background: var(--bg-primary);
-  backdrop-filter: blur(20px);             /* 仅导航栏允许模糊 */
-  -webkit-backdrop-filter: blur(20px);
-  border-top: 1px solid var(--border-light);
-  padding: 8px 0 env(safe-area-inset-bottom, 20px);   /* 底部安全区 */
+/* 导航栏 —— 液态玻璃，位于 RoomShell 内 */
+.r-nav {
+  position: relative;
+  z-index: 10;
   display: flex;
-  justify-content: space-around;
-  z-index: 100;
+  padding: 6px 6px 28px;                  /* 底部留安全区 */
+  border-top: 1px solid var(--nav-border); /* 动态色，跟随时段 */
+  background: var(--nav-bg);               /* 如 rgba(255,250,235,0.22) */
+  backdrop-filter: blur(11px) saturate(1.2);
+  -webkit-backdrop-filter: blur(11px) saturate(1.2);
+  box-shadow:
+    0 -6px 18px -10px var(--warm-shadow),
+    inset 0 1px 0 var(--ai-edge);
 }
 
-.nav-item {
+.r-nav-btn {
+  flex: 1;
+  background: transparent;
+  border: none;
+  cursor: pointer;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
-  transition: all 0.2s ease;
+  gap: 3px;
+  padding: 8px 4px;
+  color: var(--ink-soft);                  /* 非激活态：柔和墨色 */
+  transition: color 240ms, transform 240ms;
 }
 
-.nav-item.active {
-  opacity: 1;
-  color: var(--accent);                    /* #7C6350 */
+.r-nav-btn.active {
+  color: var(--ink);                       /* 激活态：跟随时段的主墨色 */
 }
-.nav-item.active svg { stroke: var(--accent); }
-
-.nav-item.inactive {
-  color: var(--text-secondary);            /* 不再用 opacity，用颜色区分 */
+.r-nav-btn.active svg {
+  filter: drop-shadow(0 0 6px var(--ink-accent));
 }
 
-.nav-label {
+.r-nav-btn span {
   font-size: 10px;
-  font-family: var(--font-body);
+  letter-spacing: 0.12em;
 }
-.nav-label.active { font-weight: 500; }
-.nav-label.inactive { font-weight: 400; }
 ```
 
 **禁止**：
@@ -526,113 +586,77 @@ font-family: 'JetBrains Mono', monospace;
 
 ### 5.7 小纸条浮层
 
-静默惊喜机制，本质是“我在你不在的时候，也在想你”。非强 push，而是打开界面的静静发现。
+静默惊喜机制，本质是”我在你不在的时候，也在想你”。非强 push，而是打开界面的静静发现。
 
-设计必须传达出“对方真的在你桌上留了一张字条”的物理惊喜感，结合拟物但克制（Tactile Skeuomorphism）的风格。
+所有便签款式都采用液态玻璃风格——半透明背景 + `backdrop-filter: blur() saturate()`，透出氛围渐变。没有实色背景，没有物理配件（夹子、图钉已移除）。
 
 5.7.1 便签款式库 (Note Variants)
 
-便签支持 5 种外观，在设置页切换：
+便签支持 4 种外观，在设置页切换（`noteStyle` 参数），默认 `washi`：
+
+**款式 1：和风胶带 (washi) — 默认**
+
+顶部和底部各有一条半透明胶带，中间是玻璃纸。
+
+- 顶部胶带：暖琥珀色 `linear-gradient(90deg, rgba(255,220,180,0.35) ... rgba(240,190,140,0.30))`，微旋转
+- 底部胶带：冷青色 `linear-gradient(90deg, rgba(180,210,200,0.30) ... rgba(160,200,190,0.22))`
+- 纸面：`background: rgba(255,250,235,0.12)` + `backdrop-filter: blur(12px) saturate(1.2)`
+- 边框：`1px solid rgba(255,240,220,0.18)`，`border-radius: 4px`
+- 整体微旋转 `rotate(-0.4deg)`
+
+**款式 2：毛玻璃纸条 (frost)**
+
+圆润的玻璃卡片，顶部有光线覆盖层。
+
+- 背景：`rgba(255,250,235,0.10)` + `backdrop-filter: blur(16px) saturate(1.3)`
+- 圆角：16px
+- 顶部高光：`linear-gradient(180deg, rgba(255,250,235,0.18) 0%, transparent 100%)` + `mix-blend-mode: overlay`
+- 阴影：`0 4px 16px -6px rgba(120,70,30,0.10), inset 0 1px 0 rgba(255,250,235,0.30)`
+
+**款式 3：经典便签 (classic)**
+
+居中胶带 + 玻璃纸。
+
+- 胶带：`rgba(130,189,197,0.35)`（accent-pop 色），36×12px，居中，微旋转
+- 纸面：同 washi 的玻璃纸面参数
+
+**款式 4：撕纸条 (torn)**
+
+底部锯齿裁切 + 玻璃。
+
+- 背景：`rgba(255,250,235,0.14)` + `backdrop-filter: blur(10px) saturate(1.15)`
+- 底部锯齿：`clipPath: polygon(...)` 模拟手撕边缘
+- 圆角：3px，微旋转
+
+5.7.2 便签文字与排版
 
 ```css
-/* 款式 1：经典横线纸 (Classic) — 默认 */
-.note-classic {
-  background: #FDF8F0;
-  background-image: repeating-linear-gradient(
-    transparent, transparent 23px,
-    rgba(124,99,80,0.12) 24px              /* 暖棕色横线 */
-  );
-  border-radius: 4px;
-  box-shadow: var(--shadow-md);
-  transform: rotate(-0.5deg);
-  /* 顶部用 accent-pop 色纸胶带固定 */
-}
-
-/* 款式 2：牛皮纸 (Kraft) */
-.note-kraft {
-  background: #C4A882;
-  border-radius: 4px;
-  box-shadow: 0 2px 8px rgba(40,33,28,0.10);
-  transform: rotate(-1deg);
-  /* 无胶带，无纹路 */
-}
-
-/* 款式 3：粉彩渐变 (Pastel) */
-.note-pastel {
-  background: linear-gradient(135deg, #F0E6F6, #E6EFF6);
-  border-radius: 8px;
-  box-shadow: var(--shadow-md);
-  transform: rotate(-0.5deg);
-  /* 紫色系纸胶带 */
-}
-
-/* 款式 4：撕边纸 (Torn) */
-.note-torn {
-  background: #FDF8F0;
-  border-radius: 0;
-  box-shadow: var(--shadow-md);
-  /* 底部用 clipPath polygon 模拟锯齿撕边 */
-}
-
-/* 款式 5：便利贴 (Post-it) */
-.note-postit {
-  background: #FFF9B1;
-  border-radius: 2px 2px 2px 16px;         /* 左下翘角 */
-  box-shadow: 0 2px 8px rgba(40,33,28,0.10);
-  transform: rotate(-1.5deg);
-}
-```
-
-注意：便签阴影统一用 `--shadow-md`，不再使用 `--shadow-paper-lift`（太重）。
-
-5.7.2 固定物配件 (Fasteners)
-每个便签随机搭配一种“固定方式”，增强在屏幕上的“附着感”。
-
-纸胶带 (Washi Tape)：半透明，倾斜贴在便签四角之一。颜色使用 --success(柔和绿) 或 --accent-pop(浅蓝) 的 60% 透明度版本，边缘需有锯齿感。
-
-黄铜板夹 (Brass Clip)：位于便签正上方，使用深金棕色，带微弱金属高光。
-
-图钉 (Push Pin)：红色或金色小图钉，带向下的小阴影。
-
-5.7.3 便签文字与排版
-```css
-/* 便签文字 —— Connie 的专属手写体 */
 .note-text {
-  font-family: var(--font-note);           /* 'ShouShuTi', 'JustAnotherHand', 'Caveat', cursive */
-  font-size: 17px; 
-  color: var(--text-deep);                 /* #574337 */
-  line-height: 1.6;
-  /* 旋转由便签卡片整体控制，文字不单独旋转 */
+  font-family: var(--font-note), 'Noto Serif SC', serif;
+  font-size: 14px;
+  color: var(--ink);                       /* 跟随氛围时段 */
+  line-height: 1.7;
 }
 ```
 
-5.7.4 交互动作
-用户可以选择“留着”或“知道了”。
+5.7.3 交互动作
 
-CSS
-.note-float-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 16px;
-  margin-top: 12px;
-}
+用户可以选择”留着”或”知道了”，按钮在右下角。
 
-/* “留着” —— 像把纸条收进抽屉 */
+```css
+/* “留着” —— 用 ink-accent 高亮 + 下划线 */
 .note-action-keep {
-  font-family: var(--font-body);
   font-size: 12px;
-  color: var(--accent);
-  cursor: pointer;
-  border-bottom: 1px solid rgba(124, 99, 80, 0.3); /* 细微的下划线 */
+  color: var(--ink-accent);
+  border-bottom: 1px solid var(--ink-accent);
 }
 
-/* “知道了” —— 纸条淡出消失 */
+/* “知道了” —— 柔和墨色 */
 .note-action-dismiss {
-  font-family: var(--font-body);
   font-size: 12px;
-  color: var(--text-tertiary);
-  cursor: pointer;
+  color: var(--ink-soft);
 }
+```
 
 ### 5.8 关系计时器
 
@@ -953,36 +977,19 @@ CSS
 
 ---
 
-## 十、暗色模式切换
+## 十、明暗与时段适配
 
-通过在 `<html>` 标签上添加 `data-theme="dark"` 属性切换。
+暗色模式不再是简单的手动开关。app 通过氛围系统自动在 7 个时段之间平滑过渡：
 
-```css
-[data-theme="dark"] {
-  --bg-primary:      var(--bg-primary-dark);
-  --bg-secondary:    var(--bg-secondary-dark);
-  --bg-elevated:     var(--bg-elevated-dark);
-  --text-primary:    var(--text-primary-dark);
-  --text-deep:       var(--text-deep-dark);
-  --text-secondary:  var(--text-secondary-dark);
-  --text-tertiary:   var(--text-tertiary-dark);
-  --accent:          var(--accent-dark);
-  --accent-light:    var(--accent-light-dark);
-  --accent-subtle:   var(--accent-subtle-dark);
-  --accent-pop:      var(--accent-pop-dark);
-  --border:          var(--border-dark);
-  --border-light:    var(--border-light-dark);
-  --bubble-send:     var(--bubble-send-dark);
-  --bubble-send-text: var(--bubble-send-text-dark);
-  --bubble-receive:  var(--bubble-receive-dark);
-  --bubble-receive-text: var(--bubble-receive-text-dark);
-  --success:         var(--success-dark);
-  --warning:         var(--warning-dark);
-  --danger:          var(--danger-dark);
-}
-```
+- **白天时段**（dawn / morning / afternoon）：浅色背景，深色墨字，GLASS_LIGHT 玻璃
+- **过渡时段**（golden / dusk）：暖橘深色背景，浅色墨字，GLASS_WARM 玻璃
+- **夜间时段**（night / late）：深色背景，暖米墨字，GLASS_DARK 玻璃
 
-所有组件只用 CSS Variable 引用颜色，暗色模式切换时整体自动跟随，不需要单独适配每个组件。
+`RoomShell` 根据当前时间自动选择时段，并将对应的 ink / accent / glass 参数注入为 CSS Variables。所有组件只引用这些变量，无需单独适配明暗。
+
+`tokens.css` 中的 `[data-theme="dark"]` 选择器仍保留，作为手动强制暗色的后备方案。但主要机制是氛围系统的自动时段切换。
+
+设置页可通过 `remoire_time_override` 手动锁定到某个时段（如 `night`），覆盖自动检测。
 
 ---
 
@@ -992,11 +999,11 @@ CSS
 
 | # | 禁止 | 原因 |
 |---|---|---|
-| 1 | 渐变背景（页面级） | 破坏 paper-like 质感 |
+| 1 | 纯色平面背景作为主页面底色 | 已改为时段氛围渐变，纯色缺乏呼吸感 |
 | 2 | 渐变按钮 | AI Slop 典型特征 |
 | 3 | emoji 主导视觉层级 | 降低 editorial 气质 |
 | 4 | 左侧 3px 强调色竖线装饰卡片 | 通用 SaaS 套路 |
-| 5 | 玻璃拟态在非导航区使用 | 滥用 |
+| 5 | 不透明实色卡片/气泡背景 | 遮住氛围渐变，液态玻璃要求通透 |
 | 6 | DM Sans / Inter / Roboto / Cormorant Garamond / Instrument Sans 作为主字体 | 太通用或已在 impeccable 反射清单 |
 | 7 | 紫色 / 蓝色高亮 | 与暖色系统不符 |
 | 8 | 纯白 #FFFFFF 卡片背景 | 太冷 |
@@ -1005,7 +1012,7 @@ CSS
 | 11 | 底部导航 active 用气泡填充 | 通用手机 app 套路 |
 | 12 | bounce / spring 动效 | 太弹，破坏安静感 |
 | 13 | font-weight 700+ 在标题 | 太重 |
-| 14 | rgba(0,0,0,...) 阴影 | 太冷，必须用暖色阴影 |
+| 14 | rgba(0,0,0,...) 阴影（白天时段） | 太冷；夜间 GLASS_DARK 允许使用 |
 | 15 | 大面积使用 accent-pop | 点缀色只能点缀 |
 
 ---
@@ -1020,14 +1027,14 @@ CSS
 | `radiusScale` | 0.8 | 0–2 | 所有 `--radius-*` 乘以此系数 |
 | `shadowAlpha` | 1.5 | 0–3 | 阴影透明度系数 |
 | `spacingScale` | 0.9 | 0.7–1.5 | 所有 `--space-*` 乘以此系数 |
-| `bubbleSendBg` | `#96836e` | 任意色值 | 发送气泡颜色（覆盖 CSS Variable） |
+| `bubbleSendBg` | `#7C6350` | 任意色值 | 发送气泡颜色（覆盖 CSS Variable） |
 | `bubbleRecvBg` | `#ede9e3` | 任意色值 | 接收气泡颜色 |
 | `accentColor` | `#7c6350` | 任意色值 | 主强调色 |
 | `bgPrimary` | `#f6f2ed` | 任意色值 | 主背景色 |
 | `paperTexture` | 4 | 0–20 | 纸张纹理强度 |
 | `darkMode` | true | bool | 暗色模式开关 |
-| `bubbleStyle` | default | 5 种 | 气泡风格 |
-| `noteStyle` | classic | 5 种 | 便签款式 |
+| `bubbleStyle` | default | default 等 | 气泡风格（实际渲染均为液态玻璃） |
+| `noteStyle` | washi | washi / frost / classic / torn | 便签款式 |
 
 此外，设置页支持上传自定义字体（ttf/otf）覆盖 5 个场景字体（聊天/小纸条/日记/共读/平行世界），以及上传自定义日记封面图。
 
@@ -1044,4 +1051,4 @@ CSS
 
 ---
 
-*Con con × 静儿 · 2026.05.01*
+*Con con × 静儿 · 2026.05.15*

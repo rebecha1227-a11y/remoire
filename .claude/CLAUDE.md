@@ -97,11 +97,14 @@ Phase 1 — 文档设计完成，准备开发
 
 - 所有 LLM 调用走 `app/llm.py` 的 `call_llm()`，兼容 OpenAI 格式
 - SQLite 开 WAL：`PRAGMA journal_mode=WAL`
-- CSS Variables 管理颜色，暗色模式通过 `[data-theme="dark"]` 切换变量
+- CSS Variables 管理颜色，运行时由 RoomShell 氛围系统动态覆盖（`var(--ink)` / `var(--ink-soft)` 等）
+- 所有页面用 `<RoomShell>` 包裹，导航栏通过 `nav` prop 传入 RoomShell 内部
+- 气泡使用液态玻璃效果（`backdrop-filter: blur()` + 半透明 rgba），不用实色背景
+- 时段色值来自 `ambient.js` PALETTES，7 个时段自动切换（dawn/morning/afternoon/golden/dusk/night/late）
 - 字体：Display 用 **Petrona**（Google Fonts，人文衬线），Body UI 用 **Manrope**（Google Fonts，温暖几何无衬线），中文用 **LXGW WenKai 霞鹜文楷**（开源温暖手写感）。组件里硬编码改用 `var(--font-display)` / `var(--font-body)`
 - 移动端优先，430px 设计基准
 - API 统一格式：`{ "ok": bool, "data": ..., "error": ... }`
-- 阴影用 `rgba(40,33,28,...)` 暖棕色
+- 阴影用 `rgba(40,33,28,...)` 暖棕色（夜间时段 GLASS_DARK 例外）
 - 图标用 lucide-react，outline，stroke-width 1.5
 - memories 表预留 `embedding BLOB` 字段
 - 记忆写入响应带 `associated` 关联旧记忆
@@ -110,32 +113,33 @@ Phase 1 — 文档设计完成，准备开发
 ## DON'T
 
 - ❌ Inter / DM Sans / Roboto 字体
-- ❌ 渐变背景、渐变按钮
+- ❌ 渐变按钮
 - ❌ 紫色/蓝色高亮
 - ❌ #FFFFFF 卡片背景
 - ❌ 左侧彩色竖线装饰
-- ❌ blur() 在非导航区
+- ❌ 不透明实色卡片背景（用液态玻璃 rgba + backdrop-filter）
 - ❌ bounce/spring 动效
 - ❌ 六宫格/仪表盘
 - ❌ 模型切换在聊天主页
 - ❌ 默认展示思维链
 - ❌ emoji 作视觉主导
 - ❌ font-weight 700+
-- ❌ rgba(0,0,0,...) 阴影
 - ❌ 大面积 accent-pop
 
 ## 色值速查
 
 | 变量 | 值 | 用途 |
 |---|---|---|
-| --bg-primary | #F6F2ED | 主背景 |
-| --bg-elevated | #FAF8F4 | 卡片 |
+| --bg-primary | #F6F2ED | 主背景（静态 fallback） |
+| --bg-elevated | #FAF8F4 | 卡片（静态 fallback） |
 | --text-primary | #28211C | 主文字 |
 | --text-deep | #574337 | 重点标题 |
-| --accent | #7C6350 | 按钮/激活 |
+| --accent | #7C6350 | 按钮/激活（可被用户自定义色覆盖） |
 | --accent-pop | #82BDC5 | 点缀 |
-| --bubble-send | #7C6350 | 发送气泡 |
-| --bubble-receive | #EDE9E3 | 接收气泡 |
+| --bubble-send | #7C6350 | 发送气泡（静态 fallback） |
+| --bubble-receive | #EDE9E3 | 接收气泡（静态 fallback） |
+
+**注意**：运行时 RoomShell 氛围系统会根据时段动态覆盖以上变量（ink/accent/background 等），具体色值见 `frontend/src/utils/ambient.js` 的 PALETTES。
 
 ## 术语表
 
