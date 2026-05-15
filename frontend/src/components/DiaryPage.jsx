@@ -535,9 +535,9 @@ function TOCPage({ entries, author, onSelect }) {
       onMouseEnter={(ev) => ev.currentTarget.style.background = 'rgba(0,0,0,0.02)'}
       onMouseLeave={(ev) => ev.currentTarget.style.background = 'transparent'}>
         
-          <span style={{ fontFamily: "var(--font-body)", fontSize: 11, color: 'var(--text-tertiary)', minWidth: 38, flexShrink: 0 }}>{e.date}</span>
-          <span style={{ fontFamily: "var(--font-body)", fontSize: 9, color: 'var(--text-tertiary)', minWidth: 16 }}>{e.weekday}</span>
-          <span style={{ fontFamily: "var(--font-diary)", fontSize: 16, color: 'var(--text-primary)', flex: 1 }}>{e.title}</span>
+          <span style={{ fontFamily: "var(--font-body)", fontSize: 11, color: '#8B7E74', minWidth: 38, flexShrink: 0 }}>{e.date}</span>
+          <span style={{ fontFamily: "var(--font-body)", fontSize: 9, color: '#8B7E74', minWidth: 16 }}>{e.weekday}</span>
+          <span style={{ fontFamily: "var(--font-diary)", fontSize: 16, color: '#3D3229', flex: 1 }}>{e.title}</span>
           {e.locked &&
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--warning)" strokeWidth="1.5" style={{ flexShrink: 0 }}>
               <rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" />
@@ -584,7 +584,7 @@ function DiaryMessageBoard({ entry, author, lockedConnie, onAddInteraction, onDe
 
   return (
     <div style={{ marginTop: 24, paddingTop: 14, borderTop: '1px dashed rgba(100,90,80,0.18)' }}>
-      <div style={{ fontFamily: 'var(--font-body)', fontSize: 10, letterSpacing: 1.2, color: 'var(--text-tertiary)', textTransform: 'uppercase', marginBottom: 10 }}>
+      <div style={{ fontFamily: 'var(--font-body)', fontSize: 10, letterSpacing: 1.2, color: '#8B7E74', textTransform: 'uppercase', marginBottom: 10 }}>
         留言板
       </div>
       {interactions.filter(i => i.type !== 'wrote').length > 0 ? (
@@ -602,16 +602,16 @@ function DiaryMessageBoard({ entry, author, lockedConnie, onAddInteraction, onDe
                   <button onClick={() => { if (window.confirm('删除这条留言？')) onDeleteInteraction(entry.id, item.id); }} style={{
                     background: 'none', border: 'none', cursor: 'pointer', padding: 2, opacity: 0.35, transition: 'opacity 0.15s',
                   }} onMouseEnter={e => e.currentTarget.style.opacity = 0.8} onMouseLeave={e => e.currentTarget.style.opacity = 0.35}>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /></svg>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#8B7E74" strokeWidth="1.5"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /></svg>
                   </button>
                 )}
               </div>
-              {item.content && <div style={{ fontFamily: 'var(--font-diary)', fontSize: 15, color: 'var(--text-secondary)', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{item.content}</div>}
+              {item.content && <div style={{ fontFamily: 'var(--font-diary)', fontSize: 15, color: '#5C5047', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{item.content}</div>}
             </div>
           ))}
         </div>
       ) : (
-        <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 12, fontFamily: 'var(--font-body)' }}>
+        <div style={{ fontSize: 12, color: '#8B7E74', marginBottom: 12, fontFamily: 'var(--font-body)' }}>
           还没有留言。可以在这里把话轻轻放下。
         </div>
       )}
@@ -628,7 +628,7 @@ function DiaryMessageBoard({ entry, author, lockedConnie, onAddInteraction, onDe
       <textarea value={text} onChange={e => setText(e.target.value)} placeholder={lockedConnie ? '写给 Connie：我想看看这篇，可以吗…' : (isConnieDiary ? '写给 Connie…' : '写下给这篇日记的话…')} style={{
         width: '100%', minHeight: 58, resize: 'vertical', boxSizing: 'border-box',
         border: '1px solid var(--border-light)', borderRadius: 8, padding: '9px 10px',
-        background: 'rgba(250,248,244,0.62)', color: 'var(--text-primary)', fontFamily: 'var(--font-body)', fontSize: 13, lineHeight: 1.5,
+        background: 'rgba(250,248,244,0.62)', color: '#3D3229', fontFamily: 'var(--font-body)', fontSize: 13, lineHeight: 1.5,
       }} />
       {error && <div style={{ marginTop: 6, fontSize: 11, color: 'var(--warning)', fontFamily: 'var(--font-body)' }}>{error}</div>}
       <button onClick={() => submit(lockedConnie ? 'unlock_request' : 'comment')} disabled={!text.trim() || sending} style={{
@@ -690,7 +690,7 @@ function ContentPage({ entry, author, onAddInteraction, onDeleteInteraction }) {
         <div style={{ fontFamily: "var(--font-display)", fontSize: 28, fontWeight: 300, color: isDark ? (isConnie ? '#7AACBC' : '#D4A0B4') : (isConnie ? '#5A6878' : '#9B6B7B'), lineHeight: 1 }}>
           {entry.date.split('-')[1]}
         </div>
-        <div style={{ fontSize: 9, color: 'var(--text-tertiary)', marginTop: 3, letterSpacing: 1, fontFamily: "var(--font-body)" }}>{entry.weekday}</div>
+        <div style={{ fontSize: 9, color: '#8B7E74', marginTop: 3, letterSpacing: 1, fontFamily: "var(--font-body)" }}>{entry.weekday}</div>
       </div>
 
       <div style={{ flex: 1, padding: '22px 16px 16px 14px', overflowY: 'auto' }}>
@@ -700,7 +700,7 @@ function ContentPage({ entry, author, onAddInteraction, onDeleteInteraction }) {
           marginBottom: 12, opacity: 0.7
         }}>{isConnie ? 'Connie' : 'Jinger'}</div>
 
-        <div style={{ fontFamily: 'var(--font-diary)', fontSize: 18, color: 'var(--text-deep)', marginBottom: 12 }}>
+        <div style={{ fontFamily: 'var(--font-diary)', fontSize: 18, color: '#574337', marginBottom: 12 }}>
           {entry.title}
         </div>
 
@@ -713,7 +713,7 @@ function ContentPage({ entry, author, onAddInteraction, onDeleteInteraction }) {
         ) : (
           <div style={{
             fontSize: 18,
-            color: 'var(--text-primary)', lineHeight: 1.85, whiteSpace: 'pre-wrap', fontFamily: "var(--font-diary)"
+            color: '#3D3229', lineHeight: 1.85, whiteSpace: 'pre-wrap', fontFamily: "var(--font-diary)"
           }}>{entry.body}</div>
         )}
 
@@ -981,7 +981,7 @@ function DiaryFeed({ activities }) {
 }
 
 // ── Main DiaryPage ──
-export default function DiaryPage({ tweaks, nav }) {
+export default function DiaryPage({ tweaks, nav, active }) {
   const [openBook, setOpenBook] = useState(null);
   const [writing, setWriting] = useState(false);
   const [jingerDiary, setJingerDiary] = useState(JINGER_DIARY_INIT);
@@ -1011,7 +1011,7 @@ export default function DiaryPage({ tweaks, nav }) {
     }
     loadDiaries();
     return () => { cancelled = true; };
-  }, []);
+  }, [active]);
 
   const activities = useMemo(() => {
     const items = [];

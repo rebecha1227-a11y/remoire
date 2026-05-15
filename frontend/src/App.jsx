@@ -110,7 +110,7 @@ export default function App() {
   const pages = useMemo(() => ({
     chat:     <ChatPage tweaks={tweaks} activeTab={tab} onNavigate={setTab} />,
     us:       <UsPage tweaks={tweaks} nav={nav} />,
-    diary:    <DiaryPage tweaks={tweaks} nav={nav} />,
+    diary:    <DiaryPage tweaks={tweaks} nav={nav} active={tab === 'diary'} />,
     play:     <PlayPage tweaks={tweaks} nav={nav} />,
     settings: <SettingsPage tweaks={tweaks} nav={nav} />,
   }), [tweaks, tab]);
