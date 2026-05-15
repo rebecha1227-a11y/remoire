@@ -47,6 +47,7 @@ conversations          会话容器（同一段聊天）
 messages               统一消息记录（核心）
 memory_candidates      记忆候选（等待确认）
 memories               正式记忆（已确认）
+memory_links           记忆之间的关联线
 special_dates          特殊日期（纪念日等）
 reminders              提醒 / 待办 / 共同事件
 diaries                日记
@@ -273,17 +274,16 @@ CREATE TABLE IF NOT EXISTS usage_logs (
 ```sql
 CREATE TABLE IF NOT EXISTS memory_candidates (
     id TEXT PRIMARY KEY,                          -- UUID v4
+    conversation_id TEXT,                         -- 来源会话（当前实现）
+    message_id TEXT,                              -- 来源消息（预留）
     content TEXT NOT NULL,                         -- 候选记忆的文本内容
-    source_type TEXT NOT NULL,                     -- 'chat' / 'import' / 'manual'
-    source_id TEXT,                                -- 关联的消息 ID 或导入批次 ID
     proposed_memory_type TEXT,                     -- AI 建议的类型：
                                                    --   'fact' / 'event' / 'unresolved' /
-                                                   --   'reminder' / 'date' / 'ignore'
-    proposed_valence REAL DEFAULT 0.0,             -- 情感效价 -1.0(痛苦) ~ 1.0(愉悦)
-    proposed_arousal REAL DEFAULT 0.0,             -- 情感强度 0.0(平静) ~ 1.0(激烈)
-    proposed_tags TEXT,                            -- JSON array: ["法语", "考试", "deadline"]
-    proposed_unresolved BOOLEAN DEFAULT 0,         -- AI 是否认为这是一件未完成的事
-    confidence REAL DEFAULT 0.0,                   -- AI 的置信度 0.0 ~ 1.0
+                                                   --   'date'
+    proposed_layer TEXT DEFAULT 'long',            -- 'core' / 'long' / 'short' / 'consciousness'
+    proposed_event_date TEXT,                      -- 事件发生日期 YYYY-MM-DD，不确定则 NULL
+    tags_json TEXT,                                -- JSON array: ["法语", "考试", "deadline"]
+    confidence REAL DEFAULT 0.5,                   -- AI 的置信度 0.0 ~ 1.0
     status TEXT DEFAULT 'pending',                 -- 'pending' 待确认
                                                    -- 'accepted' 已确认为正式记忆
                                                    -- 'rejected' 已拒绝
@@ -293,62 +293,87 @@ CREATE TABLE IF NOT EXISTS memory_candidates (
 ```
 
 入库规则：
-- `confidence < 0.45` → 仅保留候选，不主动推给用户确认
-- `confidence 0.45 ~ 0.75` → 推给用户确认
-- `confidence > 0.75` 且是 fact / date / unresolved → 可自动入正式记忆
+- 当前实现：`confidence >= 0.7` 自动入正式记忆，低于 0.7 留在候选区
+- 后续可细化为：低置信度仅保存、中置信度推给用户、高置信度自动入库
 
 ### 11. memories — 正式记忆
 
-用户确认过的、或高置信度自动入库的长期记忆。这是小窝的灵魂。
+用户确认过的、或高置信度自动入库的正式记忆。这是小窝的灵魂。
 
 ```sql
 CREATE TABLE IF NOT EXISTS memories (
     id TEXT PRIMARY KEY,                          -- UUID v4
     content TEXT NOT NULL,                         -- 记忆内容
+    tags_json TEXT,                                -- JSON array
+    layer TEXT NOT NULL DEFAULT 'long',            -- 'core' / 'long' / 'short' / 'consciousness'
     memory_type TEXT NOT NULL,                     -- 'fact' 人物事实（生日、偏好、目标）
                                                    -- 'event' 关系事件（重要对话、纪念片段）
                                                    -- 'unresolved' 未完成的事
-                                                   -- 'reminder' 需要提醒的内容
                                                    -- 'date' 特殊日期
+    event_date TEXT,                               -- 事件发生日期 YYYY-MM-DD
+    event_time TEXT,                               -- 事件发生时间 HH:MM，可选
+    timezone TEXT DEFAULT 'Asia/Shanghai',
+    expires_at TEXT,                               -- 短期记忆过期时间，预留
     valence REAL DEFAULT 0.0,                      -- 情感效价
     arousal REAL DEFAULT 0.0,                      -- 情感强度
-    decay_rate REAL DEFAULT 0.05,                  -- 遗忘速率（越小越持久）
+    decay_rate REAL DEFAULT 0.05,                  -- 当前按 layer 写入的每日保留率参数
     weight REAL DEFAULT 1.0,                       -- 当前权重（衰减后会降低）
     unresolved BOOLEAN DEFAULT 0,                  -- 是否未解决
-    tags TEXT,                                     -- JSON array
-    source_type TEXT,                              -- 来源类型
-    source_id TEXT,                                -- 来源 ID
-    pinned BOOLEAN DEFAULT 0,                      -- 是否被用户手动固定（锚点记忆）
+    pinned BOOLEAN DEFAULT 0,                      -- 兼容字段；当前等价于 layer='core'
     last_triggered_at DATETIME,                    -- 上次被浮现/使用的时间
     trigger_count INTEGER DEFAULT 0,               -- 被关联浮现的总次数
     embedding BLOB,                                -- 向量嵌入（预留字段）
                                                    -- 首发阶段为 NULL，用关键词+tag匹配
                                                    -- 记忆 > 300 条后填入向量数据
+    source_candidate_id TEXT,                      -- 来源候选 ID
     created_at DATETIME NOT NULL DEFAULT (datetime('now')),
     updated_at DATETIME NOT NULL DEFAULT (datetime('now'))
 );
 ```
 
-衰减参数参考：
+四层保留率参数：
 
-| 记忆类型 | 推荐 decay_rate | 含义 |
+| layer | decay_rate 当前语义 | 含义 |
 |---|---|---|
-| 普通事实 fact | 0.06 | 比较快淡掉（"今天中午吃了什么"） |
-| 关系事件 event | 0.04 | 慢慢淡掉但不会很快消失 |
-| 特殊日期 date | 0.015 | 非常持久（"静儿生日是4月12日"） |
-| 未完成 unresolved | 0.01 | 几乎不衰减，直到被 resolve |
+| `core` | 0.0 | 不衰减 |
+| `long` | 每天保留 0.995 | 长期记忆，慢慢变淡 |
+| `short` | 每天保留 0.95 | 短期记忆，较快变淡 |
+| `consciousness` | 每天保留 0.95 | 意识层备忘，较快变淡 |
 
-衰减公式：
+当前说明：
+- 字段和写入规则已实现。
+- 每晚衰减任务尚未实现，`weight` 目前不会自动变化。
+- `pinned=true` 会同步为 `layer='core'`、`decay_rate=0.0`、`weight=1.0`。
+- `pinned=false` 如果当前是 core，会回到 long。
+- 字段名仍叫 `decay_rate`，但 Phase A 的 `0.995/0.95` 是每日保留率语义，不是指数衰减常数。
+
+后续衰减公式建议：
 ```
-weight(t) = weight₀ × e^(-decay_rate × t / (1 + arousal × 5 + revisit_bonus))
+effective_retention = 1 - ((1 - daily_retention) / (1 + arousal * 5 + revisit_bonus))
+weight_next = weight_current × effective_retention
 ```
 
 其中：
-- `t`：距 `created_at` 的天数
-- `weight₀`：初始权重，默认 1.0
-- `decay_rate`：衰减速率，按 memory_type 不同取值（见上表）
+- `daily_retention`：当前 `decay_rate` 字段中的每日保留率
+- `weight_current`：当前权重
 - `arousal`：情感强度 0.0~1.0，高 arousal 记忆遗忘更慢
 - `revisit_bonus`：激活续命加成，计算方式为 `min(trigger_count × 0.1, 1.0)`。每次被 `recall()` 或 `find_associated()` 命中时 `trigger_count` +1，同时 `last_triggered_at` 更新为当前时间。这意味着经常被唤起的记忆衰减更慢（分母更大），但 bonus 封顶为 1.0 防止无限续命
+
+### 12. memory_links — 记忆关联线
+
+保存“写就是读”生成的关联关系。它不是故事串联，只是记忆图谱的基础边。
+
+```sql
+CREATE TABLE IF NOT EXISTS memory_links (
+    id TEXT PRIMARY KEY,
+    source_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+    target_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+    link_type TEXT NOT NULL DEFAULT 'relates_to',
+    weight REAL NOT NULL DEFAULT 0.5,
+    description TEXT,
+    created_at TEXT NOT NULL
+);
+```
 
 ### 关联记忆机制（写就是读）
 
@@ -384,7 +409,7 @@ score = relevance × (1 + arousal × 0.3) × weight_factor
 2. 替换 `find_associated()` 函数的内部实现
 3. 前端和 API 接口完全不用改
 
-### 4. special_dates — 特殊日期
+### 13. special_dates — 特殊日期
 
 纪念日、生日、deadline 等。独立于 memories 表，因为有循环/非循环逻辑。
 
@@ -401,7 +426,7 @@ CREATE TABLE IF NOT EXISTS special_dates (
 );
 ```
 
-### 5. reminders — 提醒 / 待办 / 共同事件
+### 14. reminders — 提醒 / 待办 / 共同事件
 
 统一对象设计，不拆三个表。
 
@@ -430,7 +455,7 @@ CREATE TABLE IF NOT EXISTS reminders (
 );
 ```
 
-### 6. diaries — 日记
+### 15. diaries — 日记
 
 ```sql
 CREATE TABLE IF NOT EXISTS diaries (
@@ -448,7 +473,7 @@ CREATE TABLE IF NOT EXISTS diaries (
 );
 ```
 
-### 7. diary_unlock_logs — 日记解锁记录
+### 16. diary_unlock_logs — 日记解锁记录
 
 这是整个产品最有差异化的交互。每次 AI 尝试解锁都会留下一条记录。
 
@@ -469,7 +494,7 @@ CREATE TABLE IF NOT EXISTS diary_unlock_logs (
 );
 ```
 
-### 8. notes — 小纸条
+### 17. notes — 小纸条
 
 AI 在你不在的时候留下的短文字。
 
@@ -484,7 +509,7 @@ CREATE TABLE IF NOT EXISTS notes (
 );
 ```
 
-### 9. model_configs — 模型配置
+### 18. model_configs — 模型配置
 
 支持任何 OpenAI 兼容 API 的模型槽位配置。
 
@@ -503,7 +528,7 @@ CREATE TABLE IF NOT EXISTS model_configs (
 );
 ```
 
-### 10. books — 共读书目（P1）
+### 19. books — 共读书目（P1）
 
 ```sql
 CREATE TABLE IF NOT EXISTS books (
@@ -515,7 +540,7 @@ CREATE TABLE IF NOT EXISTS books (
 );
 ```
 
-### 11. reading_notes — 共读批注（P1）
+### 20. reading_notes — 共读批注（P1）
 
 ```sql
 CREATE TABLE IF NOT EXISTS reading_notes (
@@ -531,7 +556,7 @@ CREATE TABLE IF NOT EXISTS reading_notes (
 );
 ```
 
-### 12. play_spaces — 平行空间（P1）
+### 21. play_spaces — 平行空间（P1）
 
 ```sql
 CREATE TABLE IF NOT EXISTS play_spaces (
@@ -545,7 +570,7 @@ CREATE TABLE IF NOT EXISTS play_spaces (
 );
 ```
 
-### 13. signals — 轻量生活信号（P1）
+### 22. signals — 轻量生活信号（P1）
 
 ```sql
 CREATE TABLE IF NOT EXISTS signals (
@@ -556,7 +581,7 @@ CREATE TABLE IF NOT EXISTS signals (
 );
 ```
 
-### 14. device_snapshots — iPhone 设备快照
+### 23. device_snapshots — iPhone 设备快照
 
 iPhone 通过 iOS 快捷指令定时（每 3 小时）上传设备数据。AI 在生成对话和主动消息时读取最新快照作为上下文。
 
@@ -581,7 +606,7 @@ CREATE TABLE IF NOT EXISTS device_snapshots (
 - `raw_json` 存完整上传数据，方便以后加新字段（比如海拔、WiFi 名）不用改表结构
 - 认证方式：URL 查询参数 `key`（独立的 `DEVICE_SECRET_KEY`），因为 iOS 快捷指令无法方便地设置 HTTP Header
 
-### 15. app_usage_events — App 使用追踪
+### 24. app_usage_events — App 使用追踪
 
 通过 iOS 快捷指令自动化，每次打开/关闭指定 App 时发一个请求。服务器用 toggle 逻辑自动判断是开还是关。
 
@@ -605,7 +630,7 @@ Toggle 逻辑：
 - 服务器支持任意数量的 App，App 名称由 URL 路径决定
 - AI 读取时按 App 汇总当日使用时长（open/close 配对计算分钟数）
 
-### 16. push_subscriptions — Web Push 推送订阅
+### 25. push_subscriptions — Web Push 推送订阅
 
 存储前端注册的 Web Push 订阅信息，用于在用户不在 Remoire 页面时推送通知。
 
@@ -733,16 +758,18 @@ backend/migrations/
 
 ```bash
 # 每天凌晨 4 点自动备份（cron）
-0 4 * * * cp /opt/our-nest/backend/data/our-nest.db /root/backups/our-nest-$(date +\%Y\%m\%d).db
+0 4 * * * sqlite3 /opt/our-nest/backend/data/remoire.db ".backup '/root/backups/remoire-$(date +\%Y\%m\%d).db'"
 
 # 保留最近 30 天备份，自动清理旧的
-0 5 * * * find /root/backups -name "our-nest-*.db" -mtime +30 -delete
+0 5 * * * find /root/backups -name "remoire-*.db" -mtime +30 -delete
 ```
 
 手动备份到本地电脑：
 ```bash
-scp root@你的VPS:/opt/our-nest/backend/data/our-nest.db ~/Downloads/
+scp root@你的VPS:/root/backups/remoire-最近日期.db ~/Downloads/remoire-backup.db
 ```
+
+Remoire 使用 SQLite WAL mode，运行中备份不要直接 `cp` 主 `.db` 文件。优先使用 `sqlite3 ".backup"` 生成一致快照。
 
 ---
 

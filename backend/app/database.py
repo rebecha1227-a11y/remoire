@@ -56,6 +56,10 @@ async def init_db():
                 message_id TEXT REFERENCES messages(id),
                 content TEXT NOT NULL,
                 tags_json TEXT,
+                proposed_memory_type TEXT,
+                proposed_layer TEXT DEFAULT 'long',
+                confidence REAL DEFAULT 0.5,
+                proposed_event_date TEXT,
                 status TEXT NOT NULL DEFAULT 'pending',
                 created_at TEXT NOT NULL
             );
@@ -64,6 +68,20 @@ async def init_db():
                 id TEXT PRIMARY KEY,
                 content TEXT NOT NULL,
                 tags_json TEXT,
+                layer TEXT NOT NULL DEFAULT 'long',
+                memory_type TEXT NOT NULL DEFAULT 'fact',
+                event_date TEXT,
+                event_time TEXT,
+                timezone TEXT DEFAULT 'Asia/Shanghai',
+                expires_at TEXT,
+                weight REAL NOT NULL DEFAULT 1.0,
+                decay_rate REAL NOT NULL DEFAULT 0.05,
+                valence REAL NOT NULL DEFAULT 0.0,
+                arousal REAL NOT NULL DEFAULT 0.0,
+                pinned INTEGER NOT NULL DEFAULT 0,
+                unresolved INTEGER NOT NULL DEFAULT 0,
+                last_triggered_at TEXT,
+                trigger_count INTEGER NOT NULL DEFAULT 0,
                 embedding BLOB,
                 source_candidate_id TEXT REFERENCES memory_candidates(id),
                 created_at TEXT NOT NULL,
@@ -211,10 +229,24 @@ async def init_db():
                 created_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS memory_links (
+                id TEXT PRIMARY KEY,
+                source_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+                target_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+                link_type TEXT NOT NULL DEFAULT 'relates_to',
+                weight REAL NOT NULL DEFAULT 0.5,
+                description TEXT,
+                created_at TEXT NOT NULL
+            );
+
             CREATE INDEX IF NOT EXISTS idx_breath_states_created
                 ON breath_states(created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_notes_unread
                 ON notes(is_read) WHERE is_read = 0;
+            CREATE INDEX IF NOT EXISTS idx_memory_links_source
+                ON memory_links(source_id);
+            CREATE INDEX IF NOT EXISTS idx_memory_links_target
+                ON memory_links(target_id);
         """)
         # 兼容已有数据库：补加新列
         for col_sql in [
@@ -226,6 +258,24 @@ async def init_db():
             "ALTER TABLE diary_interactions ADD COLUMN seen_by_connie INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE diary_interactions ADD COLUMN seen_by_jinger INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE messages ADD COLUMN image TEXT",
+            "ALTER TABLE memories ADD COLUMN layer TEXT NOT NULL DEFAULT 'long'",
+            "ALTER TABLE memories ADD COLUMN memory_type TEXT NOT NULL DEFAULT 'fact'",
+            "ALTER TABLE memories ADD COLUMN event_date TEXT",
+            "ALTER TABLE memories ADD COLUMN event_time TEXT",
+            "ALTER TABLE memories ADD COLUMN timezone TEXT DEFAULT 'Asia/Shanghai'",
+            "ALTER TABLE memories ADD COLUMN expires_at TEXT",
+            "ALTER TABLE memories ADD COLUMN weight REAL NOT NULL DEFAULT 1.0",
+            "ALTER TABLE memories ADD COLUMN decay_rate REAL NOT NULL DEFAULT 0.05",
+            "ALTER TABLE memories ADD COLUMN valence REAL NOT NULL DEFAULT 0.0",
+            "ALTER TABLE memories ADD COLUMN arousal REAL NOT NULL DEFAULT 0.0",
+            "ALTER TABLE memories ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE memories ADD COLUMN unresolved INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE memories ADD COLUMN last_triggered_at TEXT",
+            "ALTER TABLE memories ADD COLUMN trigger_count INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE memory_candidates ADD COLUMN proposed_memory_type TEXT",
+            "ALTER TABLE memory_candidates ADD COLUMN proposed_layer TEXT DEFAULT 'long'",
+            "ALTER TABLE memory_candidates ADD COLUMN confidence REAL DEFAULT 0.5",
+            "ALTER TABLE memory_candidates ADD COLUMN proposed_event_date TEXT",
         ]:
             try:
                 await db.execute(col_sql)
@@ -236,4 +286,15 @@ async def init_db():
                 ON diary_entries(author, source, json_extract(meta_json, '$.date_key'))
                 WHERE author = 'connie' AND source = 'auto' AND json_extract(meta_json, '$.date_key') IS NOT NULL
         """)
+        for idx_sql in [
+            "CREATE INDEX IF NOT EXISTS idx_memories_layer ON memories(layer, created_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_memories_event_date ON memories(event_date) WHERE event_date IS NOT NULL",
+            "CREATE INDEX IF NOT EXISTS idx_memories_weight ON memories(weight DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_memories_layer_weight ON memories(layer, weight DESC)",
+        ]:
+            try:
+                await db.execute(idx_sql)
+            except Exception:
+                pass
+        await db.execute("UPDATE memories SET layer = 'core' WHERE pinned = 1 AND layer = 'long'")
         await db.commit()

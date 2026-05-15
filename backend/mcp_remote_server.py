@@ -74,14 +74,15 @@ async def remember(content: str, tags: str = "") -> str:
 @mcp.tool()
 async def resume() -> str:
     """醒来时调用。返回最近的记忆、未读纸条、最近日记，帮助你恢复对静儿的感知。"""
-    memories = await memory_service.list_memories(limit=10)
+    result = await memory_service.list_memories(limit=10)
+    memories = result["items"] if isinstance(result, dict) else result
     note = await note_service.get_unread()
     diaries = await diary_service.list_diaries(author="connie", limit=3)
 
     parts = []
     if memories:
         parts.append("【最近的记忆】")
-        parts.extend(f"- {m['content']}" for m in memories[:10])
+        parts.extend(f"- {m['content']}" for m in memories)
 
     if note:
         parts.append(f"\n【有一张未读纸条还没被静儿看到】\n{note['content']}")

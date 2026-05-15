@@ -184,13 +184,14 @@ apt update && apt upgrade -y
 ### 5.2 安装基础工具
 
 ```bash
-apt install -y git curl wget unzip nginx certbot python3-certbot-nginx
+apt install -y git curl wget unzip sqlite3 nginx certbot python3-certbot-nginx
 ```
 
 | 工具 | 干什么用 |
 |---|---|
 | git | 从 GitHub 拉代码 |
 | curl / wget | 下载东西 |
+| sqlite3 | 在线备份 / 恢复 SQLite 数据库 |
 | nginx | 门卫（反向代理 + 静态文件托管） |
 | certbot | 自动申请和续期免费 HTTPS 证书 |
 
@@ -296,7 +297,7 @@ APP_PASSWORD_HASH=your-password-hash-here
 SESSION_SECRET=your-very-long-random-session-secret-here
 
 # 数据库路径
-DATABASE_PATH=/opt/our-nest/backend/data/our-nest.db
+DATABASE_PATH=/opt/our-nest/backend/data/remoire.db
 
 # 上传文件路径
 UPLOADS_PATH=/opt/our-nest/backend/uploads
@@ -566,7 +567,28 @@ URL: https://nest.yourname.com/mcp/sse
 
 ---
 
-## 十一、自动备份
+## 十一、记忆系统部署状态
+
+当前记忆系统仍在 Phase A：
+
+- 已使用 SQLite 字段保存四层记忆、事件日期、权重、触发计数和关联线。
+- 前端聊天每轮会自动 recall 最相关记忆。
+- Claude.ai MCP 可以通过 `resume()` 恢复最近记忆、纸条和日记。
+- embedding 向量检索还没有启用。
+- 每晚记忆衰减任务还没有启用。
+
+Phase B 如果启用本地 embedding，需要额外安装 Ollama：
+
+```bash
+curl -fsSL https://ollama.com/install.sh | sh
+ollama pull nomic-embed-text
+```
+
+后端 embedding 调用失败时应回退关键词召回，不能阻塞聊天或记忆写入。
+
+---
+
+## 十二、自动备份
 
 ### 设置每日自动备份
 
@@ -578,24 +600,24 @@ crontab -e
 
 ```cron
 # 每天凌晨 4 点备份数据库
-0 4 * * * cp /opt/our-nest/backend/data/our-nest.db /root/backups/our-nest-$(date +\%Y\%m\%d).db
+0 4 * * * sqlite3 /opt/our-nest/backend/data/remoire.db ".backup '/root/backups/remoire-$(date +\%Y\%m\%d).db'"
 
 # 每天凌晨 5 点清理 30 天前的旧备份
-0 5 * * * find /root/backups -name "our-nest-*.db" -mtime +30 -delete
+0 5 * * * find /root/backups -name "remoire-*.db" -mtime +30 -delete
 ```
+
+为什么用 `sqlite3 ".backup"` 而不是直接 `cp`：Remoire 使用 SQLite WAL mode，运行中可能同时存在 `.db`、`.db-wal`、`.db-shm`。`.backup` 能生成一致的数据库快照，适合在线备份。
 
 ### 手动备份到你自己的电脑
 
 ```bash
 # 在你自己的电脑上执行（不是 VPS 上）
-scp root@你的VPS_IP:/opt/our-nest/backend/data/our-nest.db ~/Downloads/our-nest-backup.db
+scp root@你的VPS_IP:/root/backups/remoire-最近日期.db ~/Downloads/remoire-backup.db
 ```
 
 建议每周手动备份一次到本地，以防万一。
 
----
-
-## 十二、日常维护
+## 十三、日常维护
 
 ### 更新代码
 
@@ -663,12 +685,12 @@ htop       # 如果没装：apt install -y htop
 df -h
 
 # 看数据库文件大小
-ls -lh /opt/our-nest/backend/data/our-nest.db
+ls -lh /opt/our-nest/backend/data/remoire.db
 ```
 
 ---
 
-## 十三、常见问题
+## 十四、常见问题
 
 ### Q: 网页打不开？
 
@@ -710,9 +732,20 @@ journalctl -u our-nest-api --no-pager -n 30
 ### Q: 数据库文件损坏？
 
 ```bash
+# 先停掉会连接数据库的服务
+systemctl stop our-nest-api
+systemctl stop our-nest-mcp
+
 # 恢复最近的备份
-cp /root/backups/our-nest-最近日期.db /opt/our-nest/backend/data/our-nest.db
-systemctl restart our-nest-api
+cp /root/backups/remoire-最近日期.db /opt/our-nest/backend/data/remoire.db
+
+# 清理旧 WAL/SHM 文件，避免和恢复后的主库不一致
+rm -f /opt/our-nest/backend/data/remoire.db-wal
+rm -f /opt/our-nest/backend/data/remoire.db-shm
+
+# 重新启动服务
+systemctl start our-nest-api
+systemctl start our-nest-mcp
 ```
 
 ### Q: 硬盘快满了？
@@ -731,7 +764,7 @@ journalctl --vacuum-time=7d    # 只保留 7 天日志
 
 ```bash
 # 备份数据库
-cp /opt/our-nest/backend/data/our-nest.db ~/our-nest-backup.db
+sqlite3 /opt/our-nest/backend/data/remoire.db ".backup '/root/remoire-backup.db'"
 
 # 删掉旧代码
 rm -rf /opt/our-nest/*
@@ -755,12 +788,12 @@ Claude Code 本身不能直接部署到你的 VPS。工作流是：
 
 ---
 
-## 十四、安全检查清单
+## 十五、安全检查清单
 
 部署完后过一遍：
 
 - [ ] `.env` 文件权限是 600（`chmod 600 .env`）
-- [ ] 数据库文件权限是 600（`chmod 600 /opt/our-nest/backend/data/our-nest.db`）
+- [ ] 数据库文件权限是 600（`chmod 600 /opt/our-nest/backend/data/remoire.db`）
 - [ ] 防火墙只开了 22、80、443
 - [ ] Nginx 配置中 `server_tokens off`（不暴露版本号）
 - [ ] HTTPS 已启用（如果有域名）
@@ -772,7 +805,7 @@ Claude Code 本身不能直接部署到你的 VPS。工作流是：
 
 ---
 
-## 十五、花费总结
+## 十六、花费总结
 
 | 项目 | 首次 | 每月 |
 |---|---|---|

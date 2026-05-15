@@ -498,7 +498,7 @@ function BlueCover({ onClick, customCover }) {
         display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
         padding: '8px 12px'
       }}>
-        <div style={{ color: 'rgba(255,255,255,0.8)', letterSpacing: 1, fontSize: "13px", textAlign: "center", fontFamily: "JustAnotherHand" }}>Connie's Dairy</div>
+        <div style={{ color: 'rgba(255,255,255,0.8)', letterSpacing: 1, fontSize: "13px", textAlign: "center", fontFamily: "JustAnotherHand" }}>Connie's Diary</div>
         <div style={{ width: '70%', height: 1, background: 'rgba(255,255,255,0.2)', margin: '4px 0' }} />
         <div style={{ width: '50%', height: 1, background: 'rgba(255,255,255,0.15)' }} />
       </div>

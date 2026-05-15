@@ -174,13 +174,15 @@ data: {"type": "done", "message_id": "msg_abc123", "candidates": [
 **流程**：
 1. 接收用户消息
 2. 存入 conversations 表
-3. 调用 resume() 浮现相关记忆
+3. 调用 `recall(user_message, limit=5)` 召回与当前消息相关的记忆
 4. 获取今日提醒
 5. 组装 prompt（身份 + 记忆 + 提醒 + 近期历史 + 用户消息）
 6. 调用 LLM 流式生成
 7. 逐 token 通过 SSE 推给前端
 8. 完成后存入 AI 回复
 9. 异步提取记忆候选 / 提醒候选
+
+说明：`resume()` 当前主要用于 Claude.ai MCP 和后续“新会话 / 长间隔后恢复上下文”策略，不是前端每轮聊天的默认步骤。
 
 ### POST `/api/chat/upload-image`
 
@@ -270,7 +272,19 @@ data: {"type": "done", "message_id": "msg_abc123", "candidates": [
 
 **参数**：
 - `status` — `pending` / `accepted` / `rejected`，默认 `pending`
-- `page` / `limit`
+- `limit` — 默认 `20`
+- `offset` — 默认 `0`
+
+**响应字段**：
+- `id`
+- `content`
+- `tags`
+- `memory_type` — AI 建议类型，默认 `fact`
+- `layer` — AI 建议层级，默认 `long`
+- `confidence`
+- `event_date`
+- `status`
+- `created_at`
 
 ### POST `/api/memory/candidates/{id}/accept`
 
@@ -285,6 +299,8 @@ data: {"type": "done", "message_id": "msg_abc123", "candidates": [
 {
   "content": "静儿最近在准备 TCF Canada 法语考试",
   "memory_type": "unresolved",
+  "layer": "short",
+  "event_date": "2026-05-15",
   "tags": ["法语", "考试"]
 }
 ```
@@ -298,6 +314,8 @@ data: {"type": "done", "message_id": "msg_abc123", "candidates": [
       "id": "mem_042",
       "content": "静儿最近在准备 TCF Canada 法语考试",
       "memory_type": "unresolved",
+      "layer": "short",
+      "event_date": "2026-05-15",
       "weight": 1.0
     },
     "associated": [
@@ -327,8 +345,7 @@ data: {"type": "done", "message_id": "msg_abc123", "candidates": [
 }
 ```
 
-`associated` 中高 arousal 的旧记忆会获得额外权重提升，更容易浮上来。
-每次被关联浮现的旧记忆，其 `weight` 会被增回一部分，防止自然遗忘。
+每次被关联浮现的旧记忆，会更新 `last_triggered_at` 并让 `trigger_count + 1`。当前不会直接增加 `weight`；后续衰减引擎会用 `trigger_count` 做续命加成。
 
 ### POST `/api/memory/candidates/{id}/reject`
 
@@ -339,11 +356,42 @@ data: {"type": "done", "message_id": "msg_abc123", "candidates": [
 获取正式记忆列表。
 
 **参数**：
-- `type` — `fact` / `event` / `unresolved` / `reminder` / `date`，可选
+- `layer` — `core` / `long` / `short` / `consciousness`，可选
+- `memory_type` — `fact` / `event` / `unresolved` / `date`，可选
 - `search` — 关键词搜索
-- `unresolved_only` — `true` 时只返回未解决的
-- `pinned_only` — `true` 时只返回手动固定的
-- `page` / `limit`
+- `date_from` — 起始日期，按 `event_date` 优先，否则按 `created_at`
+- `date_to` — 结束日期，按 `event_date` 优先，否则按 `created_at`
+- `sort_by` — `created_at` / `weight`
+- `limit` / `offset`
+
+**响应**：
+```json
+{
+  "ok": true,
+  "data": {
+    "items": [
+      {
+        "id": "mem_042",
+        "content": "静儿最近在准备 TCF Canada 法语考试",
+        "tags": ["法语", "考试"],
+        "layer": "short",
+        "memory_type": "unresolved",
+        "event_date": "2026-05-15",
+        "event_time": null,
+        "weight": 1.0,
+        "valence": 0.0,
+        "arousal": 0.0,
+        "pinned": false,
+        "unresolved": true,
+        "trigger_count": 0,
+        "created_at": "2026-05-15T12:00:00",
+        "updated_at": "2026-05-15T12:00:00"
+      }
+    ],
+    "total": 1
+  }
+}
+```
 
 ### GET `/api/memory/{id}`
 
@@ -358,8 +406,27 @@ data: {"type": "done", "message_id": "msg_abc123", "candidates": [
 {
   "content": "更新后的内容",
   "memory_type": "fact",
+  "layer": "long",
+  "event_date": "2026-05-15",
+  "event_time": "14:30",
   "tags": ["更新", "标签"],
+  "valence": 0.2,
+  "arousal": 0.4,
+  "unresolved": false,
   "pinned": true
+}
+```
+
+说明：`pinned: true` 会把记忆同步移动到 `core` 层；`pinned: false` 如果当前是 `core`，会回到 `long` 层。
+
+### POST `/api/memory/{id}/move`
+
+移动记忆层级。
+
+**请求体**：
+```json
+{
+  "target_layer": "core"
 }
 ```
 
@@ -367,13 +434,9 @@ data: {"type": "done", "message_id": "msg_abc123", "candidates": [
 
 删除一条记忆。
 
-### POST `/api/memory/{id}/resolve`
-
-标记一条 unresolved 记忆为已解决。
-
 ### POST `/api/memory/recall`
 
-语义/关键词检索记忆。主要给 MCP 和内部 resume() 用。
+关键词检索记忆。Remoire 前端每轮聊天会自动用当前用户消息调用一次；MCP 和工具搜索也会调用。
 
 **请求体**：
 ```json
@@ -385,21 +448,39 @@ data: {"type": "done", "message_id": "msg_abc123", "candidates": [
 
 **响应**：按相关度排序的记忆列表。
 
-### GET `/api/memory/resume`
+### GET `/api/memory/stats`
 
-获取当前 resume bundle（每次对话开始时浮现的内容集合）。
+获取四层数量统计。
 
 **响应**：
 ```json
 {
   "ok": true,
   "data": {
-    "unresolved": [ ... ],
-    "today_special_dates": [ ... ],
-    "due_reminders": [ ... ],
-    "recent_high_arousal": [ ... ],
-    "long_term_anchors": [ ... ]
+    "core": 3,
+    "long": 42,
+    "short": 8,
+    "consciousness": 2,
+    "total": 55
   }
+}
+```
+
+### GET `/api/memory/heatmap`
+
+获取某个月每天的记忆数量。优先按 `event_date` 统计；没有 `event_date` 时按 `created_at` 的日期统计。
+
+**参数**：
+- `year` — 例如 `2026`
+- `month` — `1` 到 `12`
+
+**响应**：
+```json
+{
+  "ok": true,
+  "data": [
+    { "date": "2026-05-15", "count": 4 }
+  ]
 }
 ```
 
