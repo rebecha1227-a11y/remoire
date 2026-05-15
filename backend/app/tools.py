@@ -44,6 +44,24 @@ ALL_TOOLS = [
                         "type": "string",
                         "description": "标签，逗号分隔，2-4个关键词",
                     },
+                    "memory_type": {
+                        "type": "string",
+                        "enum": ["fact", "event", "unresolved", "date"],
+                        "description": "记忆类型：fact=事实/偏好，event=重要事件，unresolved=未完成的事，date=特殊日期",
+                    },
+                    "layer": {
+                        "type": "string",
+                        "enum": ["core", "long", "short"],
+                        "description": "记忆层级：core=关系基石（极少用），long=重要长期记忆（默认），short=临时/短期事项",
+                    },
+                    "event_date": {
+                        "type": "string",
+                        "description": "事件发生日期，格式 YYYY-MM-DD。只在对话中有明确日期时填写，不确定就不填。",
+                    },
+                    "unresolved": {
+                        "type": "boolean",
+                        "description": "是否是未完成/待解决的事。memory_type 为 unresolved 时设为 true。",
+                    },
                 },
                 "required": ["content"],
             },
@@ -233,7 +251,15 @@ async def execute_tool(name: str, arguments: dict) -> str:
             return "记忆内容不能为空。"
         tags_str = arguments.get("tags", "")
         tag_list = [t.strip() for t in tags_str.split(",") if t.strip()] if tags_str else []
-        result = await memory_service.create_memory(content, tags=tag_list)
+        mem_type = arguments.get("memory_type", "fact")
+        layer = arguments.get("layer", "long")
+        event_date = arguments.get("event_date")
+        unresolved = bool(arguments.get("unresolved", mem_type == "unresolved"))
+        result = await memory_service.create_memory(
+            content, tags=tag_list, layer=layer,
+            memory_type=mem_type, event_date=event_date,
+            unresolved=unresolved,
+        )
         if result["memory"].get("duplicate"):
             return f"这条记忆已经存在了，不重复记录。"
         text = f"已记住：{content}"
