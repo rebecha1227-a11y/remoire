@@ -291,11 +291,17 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
           for (const m of data.data.messages) {
             const time = formatBJTime(m.created_at);
             if (m.role === 'assistant') {
-              const segments = m.content.split('\n\n').map(s => s.trim()).filter(s => s.length > 0);
-              for (let si = 0; si < segments.length; si++) {
-                const msgObj = { id: ++msgIdRef.current, role: 'ai', text: segments[si], time, type: 'normal' };
-                if (si === 0 && m.thinking) msgObj.thinking = m.thinking;
+              if (replyStyle === 'whole') {
+                const msgObj = { id: ++msgIdRef.current, role: 'ai', text: m.content.trim(), time, type: 'normal', formatted: true };
+                if (m.thinking) msgObj.thinking = m.thinking;
                 loaded.push(msgObj);
+              } else {
+                const segments = m.content.split('\n\n').map(s => s.trim()).filter(s => s.length > 0);
+                for (let si = 0; si < segments.length; si++) {
+                  const msgObj = { id: ++msgIdRef.current, role: 'ai', text: segments[si], time, type: 'normal' };
+                  if (si === 0 && m.thinking) msgObj.thinking = m.thinking;
+                  loaded.push(msgObj);
+                }
               }
             } else if (m.content.startsWith('静儿修改')) {
               loaded.push({ id: ++msgIdRef.current, role: 'system', text: m.content, time });
