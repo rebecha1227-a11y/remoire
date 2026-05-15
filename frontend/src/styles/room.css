@@ -489,18 +489,24 @@
 .r-mode-pop {
   position: absolute; left: 0; bottom: 44px;
   width: 240px; padding: 8px;
-  border-radius: 18px;
+  border-radius: var(--radius-md);
   background: var(--pop-bg);
   border: 1px solid var(--nav-border);
   color: var(--ink-on-sheet);
-  backdrop-filter: blur(16px) saturate(1.4);
-  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  backdrop-filter: blur(44px) saturate(1.6);
+  -webkit-backdrop-filter: blur(44px) saturate(1.6);
   box-shadow:
-    0 14px 36px -10px rgba(40,20,8,0.30),
-    0 3px 10px -4px rgba(40,20,8,0.16),
-    inset 0 1px 0 var(--ai-edge);
+    0 8px 24px -8px rgba(40,20,8,0.20),
+    inset 0 1px 0 rgba(255,255,255,0.35);
   z-index: 30;
   animation: r-pop-in 380ms cubic-bezier(0.16,1,0.3,1);
+}
+.r-mode-pop::before {
+  content: '';
+  position: absolute; inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(168deg, rgba(255,255,255,0.35) 0%, rgba(255,255,255,0.10) 18%, transparent 45%);
 }
 @keyframes r-pop-in {
   from { opacity: 0; transform: translateY(6px) scale(0.96); filter: blur(2px); }

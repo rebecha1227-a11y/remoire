@@ -97,9 +97,6 @@ export default function SettingsPage({ tweaks, nav }) {
 
       <div className="r-glass" style={{ position: 'relative' }}>
         <SettingsSectionTitle title="外观" />
-        <SettingRow label="深色模式" sub={tweaks?.darkMode ? '当前：深色' : '当前：浅色'}>
-          <SettingsToggle on={!!(tweaks?.darkMode)} onChange={(v) => setTweakVal('darkMode', v)} />
-        </SettingRow>
         <SettingRow label="主题色">
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             <div style={{ width: 20, height: 20, borderRadius: '50%', background: tweaks?.accentColor || 'var(--accent)', border: '1.5px solid var(--border)' }} />

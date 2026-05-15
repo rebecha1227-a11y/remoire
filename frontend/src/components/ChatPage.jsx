@@ -11,6 +11,27 @@ function formatBJTime(utcStr) {
   return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Shanghai' });
 }
 
+function FormattedText({ text }) {
+  const lines = text.split('\n');
+  return lines.map((line, i) => {
+    const parts = [];
+    let remaining = line;
+    let key = 0;
+    const regex = /(\*\*(.+?)\*\*|\*(.+?)\*|_(.+?)_)/g;
+    let lastIdx = 0;
+    let match;
+    while ((match = regex.exec(remaining)) !== null) {
+      if (match.index > lastIdx) parts.push(<span key={key++}>{remaining.slice(lastIdx, match.index)}</span>);
+      if (match[2]) parts.push(<strong key={key++} style={{ fontWeight: 600 }}>{match[2]}</strong>);
+      else if (match[3] || match[4]) parts.push(<em key={key++}>{match[3] || match[4]}</em>);
+      lastIdx = match.index + match[0].length;
+    }
+    if (lastIdx < remaining.length) parts.push(<span key={key++}>{remaining.slice(lastIdx)}</span>);
+    if (parts.length === 0 && line === '') parts.push(<br key={key++} />);
+    return <span key={i}>{parts}{i < lines.length - 1 && line !== '' && <br />}</span>;
+  });
+}
+
 const CHAT_MODES = {
   daily: { label: '日常', desc: '轻松聊天、日常陪伴' },
   deep:  { label: '深度', desc: '需要更长更深的对话' },
@@ -30,7 +51,7 @@ const MessageRow = memo(function MessageRow({ m, isKept, isThinkOpen, onToggleTh
         {m.image && <img src={m.image} alt="" className="r-bubble-img" />}
         {m.text && (
           <div className={`r-bubble ${isAi ? 'r-bubble-ai' : 'r-bubble-user'}`}>
-            {m.text}
+            {m.formatted ? <FormattedText text={m.text} /> : m.text}
           </div>
         )}
         {m.role === 'system' && (
@@ -64,7 +85,7 @@ const MessageRow = memo(function MessageRow({ m, isKept, isThinkOpen, onToggleTh
   );
 });
 
-function SettingsSheet({ band, timeOverride, setTimeOverride, weather, setWeather, deepMode, setDeepMode, connieName, setConnieName, chatBgImage, setChatBgImage, onClose }) {
+function SettingsSheet({ band, timeOverride, setTimeOverride, weather, setWeather, deepMode, setDeepMode, connieName, setConnieName, chatBgImage, setChatBgImage, replyStyle, setReplyStyle, onClose }) {
   const [nameInput, setNameInput] = useState(connieName);
   const bgFileRef = useRef(null);
   const palette = PALETTES[band];
@@ -143,6 +164,20 @@ function SettingsSheet({ band, timeOverride, setTimeOverride, weather, setWeathe
         </div>
 
         <div className="r-sheet-section">
+          <div className="r-sheet-label">回复方式</div>
+          <div className="r-sheet-hint" style={{ marginBottom: 8 }}>想让他怎么回复你？</div>
+          <div className="r-sheet-options">
+            <button className={`r-chip ${replyStyle === 'split' ? 'active' : ''}`}
+              onClick={() => setReplyStyle('split')}>分条发送</button>
+            <button className={`r-chip ${replyStyle === 'whole' ? 'active' : ''}`}
+              onClick={() => setReplyStyle('whole')}>整条发送</button>
+          </div>
+          <div className="r-sheet-hint" style={{ marginTop: 6 }}>
+            {replyStyle === 'split' ? '一段话拆成多条气泡，像聊天一样。' : '所有内容在一条气泡里，有换行有格式。'}
+          </div>
+        </div>
+
+        <div className="r-sheet-section">
           <div className="r-sheet-row">
             <div>
               <div className="r-sheet-label">走深一点</div>
@@ -190,6 +225,7 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
   const [timeOverride, setTimeOverride] = useState(() => localStorage.getItem('remoire_time_override') || 'auto');
   const [weather, setWeather] = useState(() => localStorage.getItem('remoire_weather') || 'clear');
   const [deepMode, setDeepMode] = useState(() => !!localStorage.getItem('remoire_deep_mode'));
+  const [replyStyle, setReplyStyle] = useState(() => localStorage.getItem('remoire_reply_style') || 'split');
   const [noteData, setNoteData] = useState(null);
   const [noteState, setNoteState] = useState('hidden');
   const [searchOpen, setSearchOpen] = useState(false);
@@ -217,6 +253,7 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
   useEffect(() => { localStorage.setItem('remoire_time_override', timeOverride); window.dispatchEvent(new CustomEvent('remoire-ambient', { detail: { key: 'remoire_time_override', value: timeOverride } })); }, [timeOverride]);
   useEffect(() => { localStorage.setItem('remoire_weather', weather); window.dispatchEvent(new CustomEvent('remoire-ambient', { detail: { key: 'remoire_weather', value: weather } })); }, [weather]);
   useEffect(() => { const v = deepMode ? '1' : ''; localStorage.setItem('remoire_deep_mode', v); window.dispatchEvent(new CustomEvent('remoire-ambient', { detail: { key: 'remoire_deep_mode', value: v } })); }, [deepMode]);
+  useEffect(() => { localStorage.setItem('remoire_reply_style', replyStyle); }, [replyStyle]);
 
   useEffect(() => {
     if (typing) return;
@@ -355,19 +392,24 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
 
       setTyping(false);
       setStreaming('');
-      const segments = replyText.split('\n\n').map(s => s.trim()).filter(s => s.length > 0);
-      if (segments.length === 0) {
+      if (!replyText.trim()) {
         setMessages(m => [...m, { id: ++msgIdRef.current, role: 'ai', text: '……我刚刚走神了，你再说一次好吗？', time, type: 'normal', isNew: true }]);
-      }
-      for (let i = 0; i < segments.length; i++) {
-        if (i > 0) {
-          setTyping(true);
-          await new Promise(r => setTimeout(r, 600 + Math.min(segments[i].length * 30, 1200)));
-          setTyping(false);
-        }
-        const msgObj = { id: ++msgIdRef.current, role: 'ai', text: segments[i], time, type: 'normal', isNew: true };
-        if (i === 0 && thinkingText) msgObj.thinking = thinkingText;
+      } else if (replyStyle === 'whole') {
+        const msgObj = { id: ++msgIdRef.current, role: 'ai', text: replyText.trim(), time, type: 'normal', isNew: true, formatted: true };
+        if (thinkingText) msgObj.thinking = thinkingText;
         setMessages(m => [...m, msgObj]);
+      } else {
+        const segments = replyText.split('\n\n').map(s => s.trim()).filter(s => s.length > 0);
+        for (let i = 0; i < segments.length; i++) {
+          if (i > 0) {
+            setTyping(true);
+            await new Promise(r => setTimeout(r, 600 + Math.min(segments[i].length * 30, 1200)));
+            setTyping(false);
+          }
+          const msgObj = { id: ++msgIdRef.current, role: 'ai', text: segments[i], time, type: 'normal', isNew: true };
+          if (i === 0 && thinkingText) msgObj.thinking = thinkingText;
+          setMessages(m => [...m, msgObj]);
+        }
       }
     } catch (e) {
       setTyping(false);
@@ -816,6 +858,7 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
           deepMode={deepMode} setDeepMode={setDeepMode}
           connieName={connieName} setConnieName={setConnieName}
           chatBgImage={chatBgImage} setChatBgImage={setChatBgImage}
+          replyStyle={replyStyle} setReplyStyle={setReplyStyle}
           onClose={() => setShowSheet(false)}
         />
       )}

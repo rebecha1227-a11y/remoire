@@ -7,7 +7,7 @@ const GLASS_LIGHT = {
   sheetBd: 'rgba(60,30,10,0.10)',
   navBg:   'rgba(255,250,235,0.22)',
   navBorder: 'rgba(120,80,40,0.18)',
-  popBg:   'rgba(255,250,235,0.32)',
+  popBg:   'rgba(255,250,235,0.62)',
   inkOnSheet: null,
 };
 
