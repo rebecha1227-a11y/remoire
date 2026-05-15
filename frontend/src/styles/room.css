@@ -22,6 +22,8 @@
   position: absolute; inset: 0;
   pointer-events: none; z-index: 2;
   overflow: hidden;
+  will-change: transform;
+  contain: strict;
 }
 .r-fl-star {
   position: absolute; border-radius: 50%;
@@ -259,6 +261,8 @@
   -webkit-backdrop-filter: blur(9px) saturate(1.15);
   word-wrap: break-word; overflow-wrap: anywhere;
   isolation: isolate;
+  contain: content;
+  will-change: transform;
 }
 .r-bubble::before {
   content: '';
@@ -426,6 +430,8 @@
     0 6px 18px -8px var(--warm-shadow, rgba(90,55,25,0.18)),
     inset 0 1px 0 var(--ai-edge);
   position: relative;
+  will-change: transform;
+  transform: translateZ(0);
 }
 .r-input-bar::before {
   content: '';
@@ -541,6 +547,8 @@
   box-shadow:
     0 -6px 18px -10px var(--warm-shadow, rgba(90,55,25,0.14)),
     inset 0 1px 0 var(--ai-edge);
+  will-change: transform;
+  transform: translateZ(0);
 }
 .r-nav-btn {
   flex: 1;
@@ -742,4 +750,32 @@
   font-family: 'Cormorant Garamond', 'Noto Serif SC', serif;
   font-style: italic; font-size: 13px;
   color: #F2BC80; letter-spacing: 0.12em;
+}
+
+/* ── Glass panel (matches Card + ambient system) ── */
+.r-glass {
+  position: relative;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  backdrop-filter: blur(14px) saturate(1.4);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  box-shadow:
+    var(--shadow-sm),
+    inset 0 1px 0 rgba(255,255,255,0.35);
+  padding: 16px 18px;
+  will-change: transform;
+  transform: translateZ(0);
+}
+.r-glass::before {
+  content: '';
+  position: absolute; inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(
+    168deg,
+    rgba(255,255,255,0.35) 0%,
+    rgba(255,255,255,0.10) 18%,
+    transparent 45%
+  );
 }

@@ -3,7 +3,7 @@ import { useMemo } from 'react';
 function rand(min, max) { return min + Math.random() * (max - min); }
 
 function generateItems(kind) {
-  const counts = { petals: 14, motes: 22, stars: 36, 'stars-candles': 36 };
+  const counts = { petals: 8, motes: 12, stars: 20, 'stars-candles': 20 };
   const n = counts[kind] ?? 20;
   return Array.from({ length: n }, (_, i) => ({
     x: rand(0, 100), y: rand(0, 100),

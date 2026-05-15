@@ -17,11 +17,11 @@ export function SettingsToggle({ on, onChange }) {
   );
 }
 
-export function SettingRow({ label, sub, children, danger, onClick }) {
+export function SettingRow({ label, sub, children, danger, onClick, noBorder }) {
   return (
     <div onClick={onClick} style={{
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      padding: '12px 0', borderBottom: '1px solid var(--border-light)',
+      padding: '12px 0', borderBottom: noBorder ? 'none' : '1px solid rgba(0,0,0,0.06)',
       cursor: onClick ? 'pointer' : 'default',
     }}>
       <div style={{ flex: 1 }}>

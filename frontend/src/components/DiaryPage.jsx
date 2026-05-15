@@ -792,14 +792,16 @@ function OpenBook({ author, entries, onClose, onAddInteraction, onDeleteInteract
       animation: 'page-in 300ms ease'
     }}>
       {/* Top bar */}
-      <div style={{
+      <div className="r-glass" style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '10px 16px', flexShrink: 0
+        padding: '8px 16px', margin: '8px 12px 0', flexShrink: 0,
+        borderRadius: 16, position: 'relative',
       }}>
         <button onClick={onClose} style={{
           background: 'none', border: 'none', cursor: 'pointer',
           display: 'flex', alignItems: 'center', gap: 6,
-          color: 'var(--text-tertiary)', fontSize: 12, fontFamily: "var(--font-body)"
+          color: 'var(--text-primary)', fontSize: 12, fontFamily: "var(--font-body)",
+          minWidth: 44, minHeight: 44,
         }}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M19 12H5M12 5l-7 7 7 7" /></svg>
           合上
@@ -807,7 +809,7 @@ function OpenBook({ author, entries, onClose, onAddInteraction, onDeleteInteract
         <div style={{ fontFamily: "var(--font-diary)", fontSize: 15, color: isDark ? (isConnie ? '#7AACBC' : '#D4A0B4') : (isConnie ? '#5A6878' : '#9B6B7B') }}>
           {isConnie ? 'Connie' : '静儿'}
         </div>
-        <div style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: "var(--font-body)" }}>
+        <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontFamily: "var(--font-body)" }}>
           {currentView}/{totalPages - 1}
         </div>
       </div>
@@ -859,26 +861,29 @@ function OpenBook({ author, entries, onClose, onAddInteraction, onDeleteInteract
       </div>
 
       {/* Bottom nav */}
-      <div style={{
+      <div className="r-glass" style={{
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        padding: '6px 20px 16px', flexShrink: 0
+        padding: '8px 20px', margin: '0 12px 12px', flexShrink: 0,
+        borderRadius: 16, position: 'relative',
       }}>
         <button onClick={flipPrev} disabled={currentView === 0 || animating} style={{
           background: 'none', border: 'none', cursor: currentView > 0 ? 'pointer' : 'default',
-          opacity: currentView > 0 && !animating ? 0.7 : 0.2, padding: 8,
-          color: 'var(--text-secondary)'
+          opacity: currentView > 0 && !animating ? 0.8 : 0.25, padding: 8,
+          color: 'var(--text-primary)', minWidth: 44, minHeight: 44,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M15 18l-6-6 6-6" /></svg>
         </button>
         <button onClick={() => flipToPage(0)} style={{
-          background: 'none', border: '1px solid var(--border-light)', borderRadius: 6,
-          padding: '4px 12px', fontSize: 10, color: 'var(--text-tertiary)', cursor: 'pointer',
-          fontFamily: "var(--font-body)"
+          background: 'rgba(255,255,255,0.25)', border: '1px solid rgba(255,255,255,0.35)', borderRadius: 10,
+          padding: '6px 16px', fontSize: 11, color: 'var(--text-primary)', cursor: 'pointer',
+          fontFamily: "var(--font-body)", fontWeight: 500,
         }}>目录</button>
         <button onClick={flipNext} disabled={currentView >= totalPages - 1 || animating} style={{
           background: 'none', border: 'none', cursor: currentView < totalPages - 1 ? 'pointer' : 'default',
-          opacity: currentView < totalPages - 1 && !animating ? 0.7 : 0.2, padding: 8,
-          color: 'var(--text-secondary)'
+          opacity: currentView < totalPages - 1 && !animating ? 0.8 : 0.25, padding: 8,
+          color: 'var(--text-primary)', minWidth: 44, minHeight: 44,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M9 18l6-6-6-6" /></svg>
         </button>
@@ -941,7 +946,7 @@ function DiaryFeed({ activities }) {
   }
 
   return (
-    <div style={{ marginTop: 24 }}>
+    <div>
       <SectionLabel style={{ marginBottom: 'var(--space-3)' }}>最近动态</SectionLabel>
       <div style={{ position: 'relative' }}>
         {/* Timeline line — hidden behind dots via per-segment approach */}
@@ -1107,32 +1112,37 @@ export default function DiaryPage({ tweaks, nav, active }) {
       }
 
       {/* Shelf view: two closed notebooks */}
-      <div style={{ padding: '28px 24px', height: '100%', overflowY: 'auto', paddingBottom: 100 }}>
-        <div style={{ marginBottom: 24 }}>
+      <div style={{ padding: '20px 14px', height: '100%', overflowY: 'auto', paddingBottom: 100 }}>
+        <div style={{ marginBottom: 20, padding: '0 10px' }}>
           <div style={{
             fontFamily: "var(--font-display)",
-            fontSize: 22, fontWeight: 300, color: 'var(--text-deep)', marginBottom: 4
+            fontSize: 22, fontWeight: 300, color: 'var(--text-deep)', marginBottom: 4,
+            textShadow: '0 1px 8px rgba(0,0,0,0.06)',
           }}>日记</div>
           <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', letterSpacing: 0.5 }}>两个人的书信册</div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-          <PinkCover onClick={() => setOpenBook('jinger')} customCover={coverJ} />
-          <BlueCover onClick={() => setOpenBook('connie')} customCover={coverC} />
+        <div className="r-glass" style={{ position: 'relative', padding: '18px 16px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            <PinkCover onClick={() => setOpenBook('jinger')} customCover={coverJ} />
+            <BlueCover onClick={() => setOpenBook('connie')} customCover={coverC} />
+          </div>
+
+          <button onClick={() => setWriting(true)} style={{
+            width: '100%', marginTop: 16, padding: '12px 16px',
+            background: 'rgba(255,255,255,0.12)', border: '1px dashed rgba(0,0,0,0.10)',
+            borderRadius: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 'var(--space-2)',
+            color: 'var(--text-tertiary)', fontSize: 'var(--text-sm)', fontFamily: "var(--font-body)"
+          }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" /></svg>
+            写今天的日记…
+          </button>
         </div>
 
-        <button onClick={() => setWriting(true)} style={{
-          width: '100%', marginTop: 20, padding: '12px 16px',
-          background: 'transparent', border: '1px dashed var(--border)',
-          borderRadius: 'var(--radius-sm)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 'var(--space-2)',
-          color: 'var(--text-tertiary)', fontSize: 'var(--text-sm)', fontFamily: "var(--font-body)"
-        }}>
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" /></svg>
-          写今天的日记…
-        </button>
-
         {/* Activity feed — last 14 days */}
-        <DiaryFeed activities={activities} />
+        <div className="r-glass" style={{ position: 'relative', marginTop: 14 }}>
+          <DiaryFeed activities={activities} />
+        </div>
       </div>
     </div>
     </RoomShell>

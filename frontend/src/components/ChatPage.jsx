@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, memo, useCallback } from "react";
 import { apiFetch, apiJsonFetch } from "../utils/api";
 import { PALETTES, currentBand, AMBIENT_BY_BAND, isDarkBand } from "../utils/ambient";
 import Floaters from "./Floaters";
@@ -16,12 +16,14 @@ const CHAT_MODES = {
   deep:  { label: '深度', desc: '需要更长更深的对话' },
 };
 
-function MessageRow({ m, isKept, isThinkOpen, onToggleThink, onHold, onRelease }) {
+const MessageRow = memo(function MessageRow({ m, isKept, isThinkOpen, onToggleThink, onHold, onRelease }) {
   const isAi = m.role === 'ai';
+  const handleToggle = useCallback(() => onToggleThink(m.id), [onToggleThink, m.id]);
+  const handleHold = useCallback(() => onHold(m.id), [onHold, m.id]);
   return (
     <div className={`r-row ${isAi ? 'r-row-ai' : 'r-row-user'}`}
-      onMouseDown={onHold} onMouseUp={onRelease} onMouseLeave={onRelease}
-      onTouchStart={onHold} onTouchEnd={onRelease}
+      onMouseDown={handleHold} onMouseUp={onRelease} onMouseLeave={onRelease}
+      onTouchStart={handleHold} onTouchEnd={onRelease}
       style={{ opacity: isKept ? 0.6 : 1 }}>
       {isAi && <div className="r-spark">✦</div>}
       <div className="r-bubble-stack">
@@ -43,7 +45,7 @@ function MessageRow({ m, isKept, isThinkOpen, onToggleThink, onHold, onRelease }
         <div className={`r-meta ${isAi ? 'r-meta-ai' : 'r-meta-user'}`}>
           {m.time && <span className="r-time">{m.time}</span>}
           {isAi && m.thinking && (
-            <button className="r-think-handle" onClick={onToggleThink}>
+            <button className="r-think-handle" onClick={handleToggle}>
               <span className="r-think-icon">✦</span>
               <span>{isThinkOpen ? '收起' : '偷偷看他在想什么'}</span>
               <span style={{
@@ -60,7 +62,7 @@ function MessageRow({ m, isKept, isThinkOpen, onToggleThink, onHold, onRelease }
       </div>
     </div>
   );
-}
+});
 
 function SettingsSheet({ band, timeOverride, setTimeOverride, weather, setWeather, deepMode, setDeepMode, connieName, setConnieName, chatBgImage, setChatBgImage, onClose }) {
   const [nameInput, setNameInput] = useState(connieName);
@@ -398,11 +400,11 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
   function toggleKeep(id) {
     setKept(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   }
-  function holdMessage(id) { msgTimer.current = setTimeout(() => toggleKeep(id), 480); }
-  function releaseMessage() { if (msgTimer.current) clearTimeout(msgTimer.current); }
-  function toggleThink(id) {
+  const holdMessage = useCallback((id) => { msgTimer.current = setTimeout(() => toggleKeep(id), 480); }, []);
+  const releaseMessage = useCallback(() => { if (msgTimer.current) clearTimeout(msgTimer.current); }, []);
+  const toggleThink = useCallback((id) => {
     setExpandedThink(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
-  }
+  }, []);
 
   function chooseChatMode(mode) {
     setChatMode(mode);
@@ -677,8 +679,8 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
                 key={m.id} m={m}
                 isKept={kept.has(m.id)}
                 isThinkOpen={expandedThink.has(m.id)}
-                onToggleThink={() => toggleThink(m.id)}
-                onHold={() => holdMessage(m.id)}
+                onToggleThink={toggleThink}
+                onHold={holdMessage}
                 onRelease={releaseMessage}
               />
             );

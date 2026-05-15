@@ -49,8 +49,8 @@ export default function SettingsPage({ tweaks, nav }) {
 
   return (
     <RoomShell nav={nav}>
-    <div style={{ overflowY: 'auto', flex: 1, padding: '16px 20px', paddingBottom: 16, position: 'relative', zIndex: 10 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 0 16px', borderBottom: '1px solid var(--nav-border)', marginBottom: 4 }}>
+    <div style={{ overflowY: 'auto', flex: 1, padding: '16px 14px', paddingBottom: 16, position: 'relative', zIndex: 10, display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div className="r-glass" style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 14, padding: '14px 18px' }}>
         <div style={{
           width: 52, height: 52, borderRadius: '50%',
           background: 'var(--ai-bg)',
@@ -67,46 +67,55 @@ export default function SettingsPage({ tweaks, nav }) {
         </div>
       </div>
 
-      <SettingsSectionTitle title="关系与陪伴" />
-      <SettingRow label="主动消息" sub="发送入口 · 频率 · 时段 · 类型" onClick={() => setPanel('proactive')}><ChevronRight /></SettingRow>
-      <SettingRow label="小纸条" sub="打开 app 时的静默惊喜"><SettingsToggle on={toggles.noteCard} onChange={() => toggle('noteCard')} /></SettingRow>
-      <SettingRow label="小纸条历史" sub="查看 Connie 留过的纸条" onClick={() => setPanel('noteHistory')}><ChevronRight /></SettingRow>
-      <SettingRow label="记忆候选" sub="审核低置信度记忆" onClick={() => setPanel('memoryCandidates')}><ChevronRight /></SettingRow>
-      <SettingRow label="日记解锁权限" sub="允许 Connie 申请查看上锁日记"><SettingsToggle on={toggles.diaryUnlock} onChange={() => toggle('diaryUnlock')} /></SettingRow>
+      <div className="r-glass" style={{ position: 'relative' }}>
+        <SettingsSectionTitle title="关系与陪伴" />
+        <SettingRow label="主动消息" sub="发送入口 · 频率 · 时段 · 类型" onClick={() => setPanel('proactive')}><ChevronRight /></SettingRow>
+        <SettingRow label="小纸条" sub="打开 app 时的静默惊喜"><SettingsToggle on={toggles.noteCard} onChange={() => toggle('noteCard')} /></SettingRow>
+        <SettingRow label="小纸条历史" sub="查看 Connie 留过的纸条" onClick={() => setPanel('noteHistory')}><ChevronRight /></SettingRow>
+        <SettingRow label="记忆候选" sub="审核低置信度记忆" onClick={() => setPanel('memoryCandidates')}><ChevronRight /></SettingRow>
+        <SettingRow label="日记解锁权限" sub="允许 Connie 申请查看上锁日记" noBorder><SettingsToggle on={toggles.diaryUnlock} onChange={() => toggle('diaryUnlock')} /></SettingRow>
+      </div>
 
-      <SettingsSectionTitle title="AI 与模型" />
-      <SettingRow label="关系档案" sub="告诉 Connie 你是谁、他是谁" onClick={() => setPanel('prompt')}><ChevronRight /></SettingRow>
-      <SettingRow label="模型配置" sub="daily · deep · backend 三槽位" onClick={() => setPanel('model')}><ChevronRight /></SettingRow>
-      <SettingRow label="语音配置" sub="即将推出">
-        <Pill tone="neutral">P2</Pill>
-      </SettingRow>
+      <div className="r-glass" style={{ position: 'relative' }}>
+        <SettingsSectionTitle title="AI 与模型" />
+        <SettingRow label="关系档案" sub="告诉 Connie 你是谁、他是谁" onClick={() => setPanel('prompt')}><ChevronRight /></SettingRow>
+        <SettingRow label="模型配置" sub="daily · deep · backend 三槽位" onClick={() => setPanel('model')}><ChevronRight /></SettingRow>
+        <SettingRow label="语音配置" sub="即将推出" noBorder>
+          <Pill tone="neutral">P2</Pill>
+        </SettingRow>
+      </div>
 
-      <SettingsSectionTitle title="连接与数据" />
-      <SettingRow label="微信桥接" sub="通过 iLink 连接微信" onClick={() => setPanel('wechat')}><ChevronRight /></SettingRow>
-      <SettingRow label="MCP 跨平台同步" sub="在 Claude.ai 恢复记忆" onClick={() => setPanel('mcp')}><ChevronRight /></SettingRow>
-      <SettingRow label="导入历史对话" sub="上传 Claude 导出 JSON" onClick={() => setPanel('import')}><ChevronRight /></SettingRow>
-      <SettingRow label="消息推送" sub="Web Push 通知设置" onClick={() => setPanel('push')}><ChevronRight /></SettingRow>
-      <SettingRow label="特殊日期管理" sub="生日 · 纪念日 · deadline" onClick={() => setPanel('dates')}><ChevronRight /></SettingRow>
-      <SettingRow label="导出数据" onClick={() => setPanel('export')}><ChevronRight /></SettingRow>
+      <div className="r-glass" style={{ position: 'relative' }}>
+        <SettingsSectionTitle title="连接与数据" />
+        <SettingRow label="微信桥接" sub="通过 iLink 连接微信" onClick={() => setPanel('wechat')}><ChevronRight /></SettingRow>
+        <SettingRow label="MCP 跨平台同步" sub="在 Claude.ai 恢复记忆" onClick={() => setPanel('mcp')}><ChevronRight /></SettingRow>
+        <SettingRow label="导入历史对话" sub="上传 Claude 导出 JSON" onClick={() => setPanel('import')}><ChevronRight /></SettingRow>
+        <SettingRow label="消息推送" sub="Web Push 通知设置" onClick={() => setPanel('push')}><ChevronRight /></SettingRow>
+        <SettingRow label="特殊日期管理" sub="生日 · 纪念日 · deadline" onClick={() => setPanel('dates')}><ChevronRight /></SettingRow>
+        <SettingRow label="导出数据" onClick={() => setPanel('export')} noBorder><ChevronRight /></SettingRow>
+      </div>
 
-      <SettingsSectionTitle title="外观" />
-      <SettingRow label="深色模式" sub={tweaks?.darkMode ? '当前：深色' : '当前：浅色'}>
-        <SettingsToggle on={!!(tweaks?.darkMode)} onChange={(v) => setTweakVal('darkMode', v)} />
-      </SettingRow>
-      <SettingRow label="主题色">
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <div style={{ width: 20, height: 20, borderRadius: '50%', background: tweaks?.accentColor || 'var(--accent)', border: '1.5px solid var(--border)' }} />
-          <input type="color" value={tweaks?.accentColor || '#7C6350'} onChange={e => setTweakVal('accentColor', e.target.value)}
-            style={{ width: 28, height: 28, border: 'none', background: 'transparent', cursor: 'pointer', padding: 0 }} />
-        </div>
-      </SettingRow>
-      <SettingRow label="字体" sub="为聊天、纸条、日记等分别设置" onClick={() => setPanel('font')}><ChevronRight /></SettingRow>
-      <SettingRow label="聊天气泡样式" sub={BUBBLE_NAMES[currentBubble] || '默认'} onClick={() => setPanel('bubble')}><ChevronRight /></SettingRow>
-      <SettingRow label="便签样式" sub={NOTE_NAMES[currentNote] || '经典便签'} onClick={() => setPanel('note')}><ChevronRight /></SettingRow>
-      <SettingRow label="日记本封面" sub="自定义封面图片" onClick={() => setPanel('cover')}><ChevronRight /></SettingRow>
+      <div className="r-glass" style={{ position: 'relative' }}>
+        <SettingsSectionTitle title="外观" />
+        <SettingRow label="深色模式" sub={tweaks?.darkMode ? '当前：深色' : '当前：浅色'}>
+          <SettingsToggle on={!!(tweaks?.darkMode)} onChange={(v) => setTweakVal('darkMode', v)} />
+        </SettingRow>
+        <SettingRow label="主题色">
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <div style={{ width: 20, height: 20, borderRadius: '50%', background: tweaks?.accentColor || 'var(--accent)', border: '1.5px solid var(--border)' }} />
+            <input type="color" value={tweaks?.accentColor || '#7C6350'} onChange={e => setTweakVal('accentColor', e.target.value)}
+              style={{ width: 28, height: 28, border: 'none', background: 'transparent', cursor: 'pointer', padding: 0 }} />
+          </div>
+        </SettingRow>
+        <SettingRow label="字体" sub="为聊天、纸条、日记等分别设置" onClick={() => setPanel('font')}><ChevronRight /></SettingRow>
+        <SettingRow label="聊天气泡样式" sub={BUBBLE_NAMES[currentBubble] || '默认'} onClick={() => setPanel('bubble')}><ChevronRight /></SettingRow>
+        <SettingRow label="便签样式" sub={NOTE_NAMES[currentNote] || '经典便签'} onClick={() => setPanel('note')}><ChevronRight /></SettingRow>
+        <SettingRow label="日记本封面" sub="自定义封面图片" onClick={() => setPanel('cover')} noBorder><ChevronRight /></SettingRow>
+      </div>
 
-      <SettingsSectionTitle title="" />
-      <SettingRow label="清除所有数据" danger><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" strokeWidth="1.5"><path d="M9 18l6-6-6-6"/></svg></SettingRow>
+      <div className="r-glass" style={{ position: 'relative' }}>
+        <SettingRow label="清除所有数据" danger noBorder><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" strokeWidth="1.5"><path d="M9 18l6-6-6-6"/></svg></SettingRow>
+      </div>
     </div>
     </RoomShell>
   );

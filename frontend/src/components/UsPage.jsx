@@ -142,24 +142,18 @@ export default function UsPage({ tweaks = {}, nav }) {
     setReminders((r) => r.map((x) => x.id === id ? { ...x, done: !x.done } : x));
   }
 
-  const sep = {
-    marginTop: 'var(--space-7)',
-    paddingTop: 'var(--space-5)',
-    borderTop: '1px solid var(--border-light)',
-  };
-
   return (
     <RoomShell nav={nav}>
     <div style={{ overflowY: 'auto', flex: 1, paddingBottom: 16, position: 'relative', zIndex: 10 }}>
       <div style={{
         textAlign: 'center',
         padding: 'var(--space-7) 0 var(--space-5)',
-        borderBottom: '1px solid var(--border-light)',
       }}>
         <div style={{
           fontFamily: "var(--font-display)",
           fontSize: 'var(--text-2xl)', fontWeight: 300,
           color: 'var(--text-deep)', letterSpacing: 0.5,
+          textShadow: '0 1px 8px rgba(0,0,0,0.06)',
         }}>{dayCount}</div>
         <div style={{
           fontSize: 'var(--text-sm)', color: 'var(--text-tertiary)',
@@ -167,8 +161,8 @@ export default function UsPage({ tweaks = {}, nav }) {
         }}>在一起的第 {dayCount} 天</div>
       </div>
 
-      <div style={{ padding: '0 var(--space-5)' }}>
-        <div style={{ paddingTop: 'var(--space-7)', animation: 'card-in 180ms 40ms ease both' }}>
+      <div style={{ padding: '0 14px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div className="r-glass" style={{ position: 'relative', animation: 'card-in 180ms 40ms ease both' }}>
           <SectionLabel style={{ marginBottom: 'var(--space-4)' }}>今日概览</SectionLabel>
           <Stack gap="md">
             <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'flex-start' }}>
@@ -198,7 +192,7 @@ export default function UsPage({ tweaks = {}, nav }) {
           </Stack>
         </div>
 
-        <div style={{ ...sep, animation: 'card-in 180ms 80ms ease both' }}>
+        <div className="r-glass" style={{ position: 'relative', animation: 'card-in 180ms 80ms ease both' }}>
           <SectionLabel>提醒与待办</SectionLabel>
           <div>
             {reminders.map((r, idx) => (
@@ -210,7 +204,7 @@ export default function UsPage({ tweaks = {}, nav }) {
                   alignItems: 'center',
                   gap: 'var(--space-3)',
                   padding: 'var(--space-3) 0',
-                  borderBottom: idx < reminders.length - 1 ? '1px solid var(--border-light)' : 'none',
+                  borderBottom: idx < reminders.length - 1 ? '1px solid rgba(0,0,0,0.06)' : 'none',
                   cursor: 'pointer',
                   opacity: r.done ? 0.45 : 1,
                   transition: 'opacity 0.2s',
@@ -241,12 +235,12 @@ export default function UsPage({ tweaks = {}, nav }) {
           </div>
         </div>
 
-        <div style={{ ...sep, animation: 'card-in 180ms 120ms ease both' }}>
+        <div className="r-glass" style={{ position: 'relative', animation: 'card-in 180ms 120ms ease both' }}>
           <SectionLabel>共同日历</SectionLabel>
           <MiniCalendar />
         </div>
 
-        <div style={{ ...sep, marginBottom: 'var(--space-6)', animation: 'card-in 180ms 160ms ease both' }}>
+        <div className="r-glass" style={{ position: 'relative', animation: 'card-in 180ms 160ms ease both', marginBottom: 'var(--space-6)' }}>
           <SectionLabel>记忆摘要</SectionLabel>
           <div>
             {MEMORIES.map((m, idx) => (
@@ -258,7 +252,7 @@ export default function UsPage({ tweaks = {}, nav }) {
                   justifyContent: 'space-between',
                   gap: 'var(--space-3)',
                   padding: 'var(--space-3) 0',
-                  borderBottom: idx < MEMORIES.length - 1 ? '1px solid var(--border-light)' : 'none',
+                  borderBottom: idx < MEMORIES.length - 1 ? '1px solid rgba(0,0,0,0.06)' : 'none',
                 }}
               >
                 <span style={{
