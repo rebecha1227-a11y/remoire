@@ -4,8 +4,9 @@ from contextlib import asynccontextmanager
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from app.database import init_db
-from app.routers import chat, memory, diary, note, settings
+from app.routers import chat, memory, diary, note, settings, reminder
 from app.scheduler.jobs import connie_auto_diary, catchup_missed_diary, generate_breath_state
+from app.services.weather_service import fetch_and_cache as fetch_weather
 
 scheduler = AsyncIOScheduler()
 
@@ -24,9 +25,16 @@ async def lifespan(app: FastAPI):
         id="generate_breath_state",
         replace_existing=True,
     )
+    scheduler.add_job(
+        fetch_weather,
+        CronTrigger(hour=8, minute=0, timezone="Asia/Shanghai"),
+        id="fetch_weather",
+        replace_existing=True,
+    )
     scheduler.start()
     await catchup_missed_diary()
     await generate_breath_state()
+    await fetch_weather()
     yield
     scheduler.shutdown()
 
@@ -44,10 +52,19 @@ app.include_router(memory.router)
 app.include_router(diary.router)
 app.include_router(note.router)
 app.include_router(settings.router)
+app.include_router(reminder.router)
 
 @app.get("/")
 async def root():
     return {"ok": True, "message": "Remoire 后端运行中 🌸"}
+
+@app.get("/api/weather")
+async def get_weather():
+    from app.services.weather_service import get_latest
+    w = await get_latest()
+    if not w:
+        return {"ok": True, "data": None}
+    return {"ok": True, "data": w}
 
 @app.get("/api/chat/status")
 async def get_chat_status():

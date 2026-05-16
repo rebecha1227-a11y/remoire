@@ -7,6 +7,7 @@ from pathlib import Path
 from app.database import get_db
 from app.llm import call_llm, call_llm_with_tools
 from app.services import memory_service, diary_interaction_service, model_settings_service
+from app.services import weather_service
 from app.tools import select_tools, execute_tool
 
 logger = logging.getLogger(__name__)
@@ -28,6 +29,14 @@ async def _build_system_prompt(recalled_memories: list[dict] | None = None) -> s
 
     weekdays = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
     time_block = f"【当前时间】{now.strftime('%Y年%m月%d日')} {weekdays[now.weekday()]} {now.strftime('%H:%M')}"
+
+    weather_block = ""
+    try:
+        w = await weather_service.get_latest()
+        if w:
+            weather_block = f"【广州南沙天气】{weather_service.format_for_prompt(w)}\n（自然融入对话即可，不用每次都主动提天气。）"
+    except Exception:
+        pass
 
     memory_block = ""
     if recalled_memories:
@@ -71,7 +80,7 @@ async def _build_system_prompt(recalled_memories: list[dict] | None = None) -> s
         "不要用英文写思考摘要。不要写 task analysis。thinking 是 Connie 的中文内心独白。"
     )
 
-    parts = [p for p in [identity, voice, thinking, time_block, memory_block, diary_block, tool_intention_block, context, thinking_language_block] if p]
+    parts = [p for p in [identity, voice, thinking, time_block, weather_block, memory_block, diary_block, tool_intention_block, context, thinking_language_block] if p]
     return "\n\n---\n\n".join(parts)
 
 async def get_or_create_conversation(conversation_id: str | None = None) -> str:
@@ -363,6 +372,7 @@ async def stream_chat(conversation_id: str, user_message: str, image: str | None
 
     recent = history[-6:] + [{"role": "assistant", "content": full_reply}]
     asyncio.create_task(_extract_memories_bg(conversation_id, recent))
+    asyncio.create_task(_extract_reminders_bg(conversation_id, recent))
 
 
 async def _extract_memories_bg(conversation_id: str, messages: list[dict]):
@@ -370,3 +380,13 @@ async def _extract_memories_bg(conversation_id: str, messages: list[dict]):
         await memory_service.extract_candidates(conversation_id, messages)
     except Exception as e:
         logger.warning("记忆提取失败: %s", e)
+
+
+async def _extract_reminders_bg(conversation_id: str, messages: list[dict]):
+    try:
+        from app.services import reminder_service
+        logger.info("开始待办提取...")
+        result = await reminder_service.extract_reminders(conversation_id, messages)
+        logger.info("待办提取完成: %d 条新待办", len(result))
+    except Exception as e:
+        logger.warning("待办提取失败: %s", e, exc_info=True)

@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 load_dotenv(os.path.join(_backend_dir, ".env"))
 
 from mcp.server.fastmcp import FastMCP
-from app.services import memory_service, diary_service, note_service
+from app.services import memory_service, diary_service, note_service, weather_service
 from app.database import init_db
 
 mcp = FastMCP(
@@ -93,6 +93,18 @@ async def leave_note(content: str) -> str:
     """给静儿留一张小纸条。她下次打开 app 时会看到。内容要简短温暖，1-3句话。"""
     await note_service.create_note(content)
     return "纸条已经悄悄放好了，静儿下次打开 app 就会看到。"
+
+
+@mcp.tool()
+async def get_weather() -> str:
+    """查看广州南沙现在的天气。想知道外面冷不冷、有没有下雨时用。"""
+    w = await weather_service.get_latest()
+    if not w:
+        result = await weather_service.fetch_and_cache()
+        if not result:
+            return "暂时查不到天气，可能是网络问题。"
+        w = result
+    return weather_service.format_for_prompt(w)
 
 
 @mcp.tool()
