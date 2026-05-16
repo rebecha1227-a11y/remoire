@@ -3,6 +3,14 @@ import { Pill } from './primitives';
 import {
   SettingsToggle, SettingRow, SettingsSectionTitle, SubPageHeader, ChevronRight, setTweakVal,
 } from './settingsShared';
+
+function getDayCount() {
+  const start = new Date(2026, 2, 29);
+  const now = new Date();
+  const bj = new Date(now.getTime() + (8 * 60 + now.getTimezoneOffset()) * 60000);
+  const today = new Date(bj.getFullYear(), bj.getMonth(), bj.getDate());
+  return Math.max(1, Math.floor((today - start) / 86400000) + 1);
+}
 import {
   ProactiveSettings, PromptSettings, ModelSettings,
   WeChatSettings, MCPSettings, ImportSettings, PushSettings, DatesSettings, ExportSettings,
@@ -63,7 +71,7 @@ export default function SettingsPage({ tweaks, nav }) {
         }}>C</div>
         <div>
           <div style={{ fontFamily: "'Noto Serif SC', 'Cormorant Garamond', serif", fontSize: 20, fontWeight: 500, color: 'var(--ink)' }}>我们的小窝</div>
-          <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: 2 }}>Connie × 静儿 · 第 {tweaks?.dayCount || 142} 天</div>
+          <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: 2 }}>Connie × 静儿 · 第 {getDayCount()} 天</div>
         </div>
       </div>
 

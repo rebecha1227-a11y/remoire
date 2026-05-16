@@ -1019,13 +1019,27 @@ export function PushSettings({ onBack }) {
 // 8. 特殊日期管理
 // ═══════════════════════════════════════════
 export function DatesSettings({ onBack }) {
-  const [dates, setDates] = useState([
-    { id: 1, date: '04-12', title: '静儿生日', recurring: true, note: '' },
-    { id: 2, date: '01-15', title: '在一起纪念日', recurring: true, note: '每年要做点特别的' },
-    { id: 3, date: '05-07', title: 'TCF 考试', recurring: false, note: '法语考试' },
-  ]);
+  const [dates, setDates] = useState([]);
   const [adding, setAdding] = useState(false);
   const [newDate, setNewDate] = useState({ date: '', title: '', recurring: true, note: '' });
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await apiFetch('/memory?memory_type=date&limit=50');
+        const data = await res.json();
+        if (data.ok && data.data?.items) {
+          setDates(data.data.items.map(m => ({
+            id: m.id,
+            date: m.event_date ? m.event_date.slice(5, 10) : '',
+            title: m.content,
+            recurring: true,
+            note: (m.tags || []).join(', '),
+          })));
+        }
+      } catch (e) {}
+    })();
+  }, []);
 
   function addDate() {
     if (!newDate.date || !newDate.title) return;

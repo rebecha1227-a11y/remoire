@@ -4,15 +4,14 @@ import RoomShell from './RoomShell';
 import MemoryPalace from './MemoryPalace';
 import { apiFetch, apiJsonFetch } from '../utils/api';
 
-const SPECIAL_DATES = {
-  '01-01': { label: '元旦', type: 'special' },
-  '02-14': { label: '情人节', type: 'special' },
-  '04-12': { label: '静儿生日', type: 'special' },
-  '05-20': { label: '520', type: 'special' },
-  '08-25': { label: '七夕', type: 'special' },
-  '12-25': { label: '圣诞节', type: 'special' },
-  '03-29': { label: '第一次聊天', type: 'special' },
-  '04-01': { label: '在一起纪念日', type: 'special' },
+const DEFAULT_SPECIAL_DATES = {
+  '01-01': '元旦',
+  '02-14': '情人节',
+  '04-12': '静儿生日',
+  '05-20': '520',
+  '12-25': '圣诞节',
+  '03-29': '第一次聊天',
+  '04-01': '在一起纪念日',
 };
 
 function CalendarDot({ type }) {
@@ -47,7 +46,7 @@ function formatRemindTime(remindAt) {
   return `${datePart.slice(5)} ${timePart || ''}`.trim();
 }
 
-function MiniCalendar({ reminderDays, onDaySelect, selectedDay }) {
+function MiniCalendar({ reminderDays, onDaySelect, selectedDay, specialDates = {} }) {
   const today = getBJToday();
   const [viewYear, setViewYear] = useState(today.year);
   const [viewMonth, setViewMonth] = useState(today.month);
@@ -77,7 +76,7 @@ function MiniCalendar({ reminderDays, onDaySelect, selectedDay }) {
   function getDotType(d) {
     if (!d) return null;
     const mmdd = `${String(viewMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-    if (SPECIAL_DATES[mmdd]) return 'special';
+    if (specialDates[mmdd]) return 'special';
     const dateStr = `${viewYear}-${mmdd}`;
     if (reminderDays.has(dateStr)) return 'reminder';
     return null;
@@ -169,8 +168,15 @@ function DayDetail({ day, reminders, specialLabel }) {
   );
 }
 
+function getDayCount() {
+  const start = new Date(2026, 2, 29); // 2026-03-29 (month is 0-indexed)
+  const bj = getBJToday();
+  const today = new Date(bj.year, bj.month, bj.day);
+  return Math.max(1, Math.floor((today - start) / 86400000) + 1);
+}
+
 export default function UsPage({ tweaks = {}, nav }) {
-  const dayCount = tweaks.dayCount || 142;
+  const dayCount = getDayCount();
   const [showPalace, setShowPalace] = useState(false);
   const [memStats, setMemStats] = useState(null);
   const [latestMemory, setLatestMemory] = useState(null);
@@ -180,6 +186,7 @@ export default function UsPage({ tweaks = {}, nav }) {
   const [dayReminders, setDayReminders] = useState([]);
   const [reminderDays, setReminderDays] = useState(new Set());
   const [weather, setWeather] = useState(null);
+  const [specialDates, setSpecialDates] = useState(DEFAULT_SPECIAL_DATES);
 
   const loadData = useCallback(async () => {
     try {
@@ -197,6 +204,21 @@ export default function UsPage({ tweaks = {}, nav }) {
       const wd = await weatherRes.json();
       if (sd.ok) setMemStats(sd.data);
       if (wd.ok && wd.data) setWeather(wd.data);
+      try {
+        const dateRes = await apiFetch('/memory?memory_type=date&limit=50');
+        const dd = await dateRes.json();
+        if (dd.ok && dd.data?.items) {
+          const merged = { ...DEFAULT_SPECIAL_DATES };
+          dd.data.items.forEach(m => {
+            const ed = m.event_date;
+            if (ed) {
+              const mmdd = ed.slice(5, 10);
+              if (!merged[mmdd]) merged[mmdd] = m.content;
+            }
+          });
+          setSpecialDates(merged);
+        }
+      } catch (e) {}
       const items = md.ok ? (md.data?.items || []) : [];
       if (items.length > 0) setLatestMemory(items[0]);
       const allReminders = rd.ok ? (rd.data?.items || []) : [];
@@ -252,7 +274,7 @@ export default function UsPage({ tweaks = {}, nav }) {
   const totalMem = memStats ? (memStats.core + memStats.long + memStats.short + memStats.consciousness) : null;
   const pendingCount = todayReminders.length;
   const selectedSpecial = selectedDay
-    ? SPECIAL_DATES[`${String(selectedDay.month + 1).padStart(2, '0')}-${String(selectedDay.day).padStart(2, '0')}`]?.label
+    ? specialDates[`${String(selectedDay.month + 1).padStart(2, '0')}-${String(selectedDay.day).padStart(2, '0')}`]
     : null;
 
   return (
@@ -404,6 +426,7 @@ export default function UsPage({ tweaks = {}, nav }) {
             reminderDays={reminderDays}
             onDaySelect={handleDaySelect}
             selectedDay={selectedDay}
+            specialDates={specialDates}
           />
           <DayDetail day={selectedDay} reminders={dayReminders} specialLabel={selectedSpecial} />
         </div>
