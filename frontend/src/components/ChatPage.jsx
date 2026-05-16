@@ -296,7 +296,18 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
 
   useEffect(() => {
     async function loadHistory() {
-      const convId = conversationIdRef.current;
+      let convId = conversationIdRef.current;
+      if (!convId) {
+        try {
+          const latestRes = await apiFetch('/chat/latest');
+          const latestData = await latestRes.json();
+          if (latestData.ok && latestData.data?.conversation_id) {
+            convId = latestData.data.conversation_id;
+            conversationIdRef.current = convId;
+            localStorage.setItem('remoire_conv_id', convId);
+          }
+        } catch (e) {}
+      }
       if (!convId) return;
       try {
         const res = await apiFetch(`/chat/history?conversation_id=${convId}&limit=9999`);

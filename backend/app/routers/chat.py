@@ -40,6 +40,16 @@ async def debug_system_prompt(req: SendRequest, _=Depends(verify_token)):
     result = await debug_prompt(conversation_id, req.message)
     return {"ok": True, "data": result}
 
+@router.get("/latest")
+async def latest_conversation(_=Depends(verify_token)):
+    from app.database import get_db
+    async with get_db() as db:
+        async with db.execute("SELECT id FROM conversations ORDER BY updated_at DESC LIMIT 1") as cur:
+            row = await cur.fetchone()
+    if not row:
+        return {"ok": True, "data": None}
+    return {"ok": True, "data": {"conversation_id": row["id"]}}
+
 @router.get("/history")
 async def chat_history(conversation_id: str, limit: int = 50, _=Depends(verify_token)):
     messages = await get_history(conversation_id, limit=limit)
