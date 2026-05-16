@@ -217,7 +217,8 @@ const NAV_TABS = [
 
 export default function ChatPage({ tweaks, activeTab, onNavigate }) {
   const [messages, setMessages] = useState([]);
-  const [input, setInput] = useState('');
+  const [hasInput, setHasInput] = useState(false);
+  const inputValRef = useRef('');
   const [typing, setTyping] = useState(false);
   const [streaming, setStreaming] = useState('');
   const [showActions, setShowActions] = useState(false);
@@ -278,12 +279,14 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
   }, [messages, streaming, typing]);
 
-  useEffect(() => {
-    const el = inputRef.current;
-    if (!el) return;
+  function handleInput(e) {
+    const val = e.target.value;
+    inputValRef.current = val;
+    setHasInput(val.trim().length > 0);
+    const el = e.target;
     el.style.height = 'auto';
     el.style.height = Math.min(el.scrollHeight, 110) + 'px';
-  }, [input]);
+  }
 
   useEffect(() => {
     apiFetch('/chat/status').then(r => r.json()).then(res => {
@@ -445,10 +448,12 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
   }
 
   async function sendMessage() {
-    if (!input.trim() && !pendingImage) return;
-    const txt = input;
+    if (!inputValRef.current.trim() && !pendingImage) return;
+    const txt = inputValRef.current;
     const img = pendingImage;
-    setInput('');
+    inputValRef.current = '';
+    if (inputRef.current) { inputRef.current.value = ''; inputRef.current.style.height = 'auto'; }
+    setHasInput(false);
     setPendingImage(null);
     setShowActions(false);
     const time = formatBJTime(new Date().toISOString());
@@ -830,8 +835,8 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
 
           <textarea
             ref={inputRef}
-            value={input}
-            onChange={e => setInput(e.target.value)}
+            defaultValue=""
+            onChange={handleInput}
             onKeyDown={e => {
               if (e.nativeEvent.isComposing) return;
               if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
@@ -852,7 +857,7 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
             className="r-input"
           />
 
-          {(input.trim() || pendingImage) ? (
+          {(hasInput || pendingImage) ? (
             <button className="r-ibtn r-ibtn-send" onClick={sendMessage}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
                 <path d="M12 19V5M5 12l7-7 7 7" strokeLinecap="round" strokeLinejoin="round" />
