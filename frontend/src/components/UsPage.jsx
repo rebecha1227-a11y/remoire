@@ -193,7 +193,7 @@ export default function UsPage({ tweaks = {}, nav }) {
       const [statsRes, memRes, remRes, todayRes, weatherRes] = await Promise.all([
         apiFetch('/memory/stats'),
         apiFetch('/memory?limit=1&sort_by=created_at'),
-        apiFetch('/reminder?status=pending&limit=50'),
+        apiFetch('/reminder?status=&limit=50'),
         apiFetch('/reminder/today'),
         apiFetch('/weather'),
       ]);
@@ -221,7 +221,7 @@ export default function UsPage({ tweaks = {}, nav }) {
       } catch (e) {}
       const items = md.ok ? (md.data?.items || []) : [];
       if (items.length > 0) setLatestMemory(items[0]);
-      const allReminders = rd.ok ? (rd.data?.items || []) : [];
+      const allReminders = (rd.ok ? (rd.data?.items || []) : []).filter(r => r.status !== 'dismissed');
       setReminders(allReminders);
       if (td.ok) setTodayReminders(td.data || []);
       const daySet = new Set();
@@ -246,8 +246,8 @@ export default function UsPage({ tweaks = {}, nav }) {
   async function toggleDone(id) {
     try {
       await apiJsonFetch(`/reminder/${id}/done`, { method: 'POST', body: '{}' });
-      setReminders(r => r.filter(x => x.id !== id));
-      setTodayReminders(r => r.filter(x => x.id !== id));
+      setReminders(r => r.map(x => x.id === id ? { ...x, status: 'done' } : x));
+      setTodayReminders(r => r.map(x => x.id === id ? { ...x, status: 'done' } : x));
       if (selectedDay) handleDaySelect(selectedDay);
     } catch (e) {}
   }
@@ -272,7 +272,7 @@ export default function UsPage({ tweaks = {}, nav }) {
   }
 
   const totalMem = memStats ? (memStats.core + memStats.long + memStats.short + memStats.consciousness) : null;
-  const pendingCount = todayReminders.length;
+  const pendingCount = todayReminders.filter(r => r.status !== 'done').length;
   const selectedSpecial = selectedDay
     ? specialDates[`${String(selectedDay.month + 1).padStart(2, '0')}-${String(selectedDay.day).padStart(2, '0')}`]
     : null;
@@ -386,7 +386,9 @@ export default function UsPage({ tweaks = {}, nav }) {
             </div>
           ) : (
             <div>
-              {reminders.map((r, idx) => (
+              {[...reminders].sort((a, b) => (a.status === 'done') - (b.status === 'done')).map((r, idx) => {
+                const isDone = r.status === 'done';
+                return (
                 <div
                   key={r.id}
                   style={{
@@ -395,27 +397,32 @@ export default function UsPage({ tweaks = {}, nav }) {
                     gap: 10,
                     padding: '10px 0',
                     borderBottom: idx < reminders.length - 1 ? '1px solid rgba(0,0,0,0.06)' : 'none',
+                    opacity: isDone ? 0.45 : 1,
+                    transition: 'opacity 0.3s ease',
                   }}
                 >
-                  <div onClick={() => toggleDone(r.id)} style={{
+                  <div onClick={() => !isDone && toggleDone(r.id)} style={{
                     width: 20, height: 20, borderRadius: '50%',
-                    border: `1.5px solid var(--warning)`,
-                    background: 'transparent',
+                    border: `1.5px solid ${isDone ? 'var(--ink-faint, #aaa)' : 'var(--warning)'}`,
+                    background: isDone ? 'var(--ink-faint, #aaa)' : 'transparent',
                     flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    cursor: 'pointer',
-                  }} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 14, color: 'var(--ink, var(--text-primary))' }}>{r.content}</div>
-                    <div style={{ fontSize: 11, color: 'var(--warning)', marginTop: 2 }}>
-                      {formatRemindTime(r.remind_at)}
-                    </div>
+                    cursor: isDone ? 'default' : 'pointer',
+                  }}>
+                    {isDone && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3"><path d="M5 12l5 5L19 7"/></svg>}
                   </div>
-                  <button onClick={() => dismissReminder(r.id)} style={{
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14, color: 'var(--ink, var(--text-primary))', textDecoration: isDone ? 'line-through' : 'none' }}>{r.content}</div>
+                    {!isDone && <div style={{ fontSize: 11, color: 'var(--warning)', marginTop: 2 }}>
+                      {formatRemindTime(r.remind_at)}
+                    </div>}
+                  </div>
+                  {!isDone && <button onClick={() => dismissReminder(r.id)} style={{
                     background: 'none', border: 'none', cursor: 'pointer',
                     fontSize: 11, color: 'var(--ink-faint, var(--text-tertiary))', padding: '4px 8px',
-                  }}>忽略</button>
+                  }}>忽略</button>}
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

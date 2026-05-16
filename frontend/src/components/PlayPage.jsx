@@ -32,7 +32,7 @@ export default function PlayPage({ nav }) {
 
   return (
     <RoomShell nav={nav}>
-    <div style={{ overflowY: 'auto', flex: 1, padding: '20px 16px', paddingBottom: 16, position: 'relative', zIndex: 10 }}>
+    <div style={{ overflowY: 'auto', flex: 1, padding: '20px 16px 16px', position: 'relative', zIndex: 10 }}>
       <div style={{ marginBottom: 'var(--space-6)' }}>
         <SectionLabel>共读</SectionLabel>
         <Card padding="lg" style={{ animation: 'card-in 180ms ease' }}>

@@ -33,13 +33,38 @@ async def recall(query: str, limit: int = 5) -> str:
 
 
 @mcp.tool()
-async def remember(content: str, tags: str = "") -> str:
-    """记住一件关于静儿的新事实。比如她的喜好、经历、重要日期等。tags 用逗号分隔。"""
+async def remember(
+    content: str,
+    tags: str = "",
+    layer: str = "long",
+    memory_type: str = "fact",
+    event_date: str = "",
+    unresolved: bool = False,
+) -> str:
+    """记住一件关于静儿的新事实、经历、重要日期等。
+
+    参数说明：
+    - content: 记忆内容
+    - tags: 标签，逗号分隔（如 "生日,重要"）
+    - layer: 记忆层级。core=关系根基（名字、生日、我们是谁）；long=长期记忆（大部分）；short=临时的、几天就过期的
+    - memory_type: 类型。fact=事实；event=事件；date=重要日期（生日/纪念日/考试）；unresolved=还没解决的事
+    - event_date: 事件日期，格式 YYYY-MM-DD（只在明确知道日期时填）
+    - unresolved: 是否未解决（比如静儿提到想做但还没做的事）
+    """
     tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
-    result = await memory_service.create_memory(content, tags=tag_list)
+    result = await memory_service.create_memory(
+        content,
+        tags=tag_list,
+        layer=layer,
+        memory_type=memory_type,
+        event_date=event_date or None,
+        unresolved=unresolved,
+    )
     if result["memory"].get("duplicate"):
         return f"这条记忆已经存在了，不重复记录：{content}"
-    text = f"已记住：{content}"
+    layer_names = {"core": "核心", "long": "长期", "short": "短期"}
+    type_names = {"fact": "事实", "event": "事件", "date": "日期", "unresolved": "待解决"}
+    text = f"已记住（{layer_names.get(layer, layer)}/{type_names.get(memory_type, memory_type)}）：{content}"
     if result["associated"]:
         text += "\n\n关联记忆："
         for a in result["associated"]:

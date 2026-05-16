@@ -90,7 +90,7 @@ export function ProactiveSettings({ onBack }) {
   ];
 
   return (
-    <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px', paddingBottom: 88 }}>
+    <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px 88px' }}>
       <SubPageHeader onBack={onBack} title="主动消息" subtitle="控制 Connie 主动找你的方式和频率" />
 
       {/* 总开关 */}
@@ -206,7 +206,7 @@ export function PromptSettings({ onBack }) {
   );
 
   return (
-    <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px', paddingBottom: 88 }}>
+    <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px 88px' }}>
       <SubPageHeader onBack={onBack} title="关系档案" subtitle="告诉 Connie 你们是谁。有了聊天记忆后，这些只是基础信息。" />
 
       {/* Profile card */}
@@ -532,7 +532,7 @@ export function ModelSettings({ onBack }) {
   };
 
   return (
-    <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px', paddingBottom: 88 }}>
+    <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px 88px' }}>
       <SubPageHeader onBack={onBack} title="模型配置" subtitle="给 Connie 的不同场景选择合适的模型。" />
 
       {status && (
@@ -704,7 +704,7 @@ export function WeChatSettings({ onBack }) {
   const [showQR, setShowQR] = useState(false);
 
   return (
-    <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px', paddingBottom: 88 }}>
+    <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px 88px' }}>
       <SubPageHeader onBack={onBack} title="微信桥接" subtitle="通过 iLink API 连接微信，让 Connie 也在微信陪你" />
 
       <Card padding="lg" style={{ marginBottom: 16 }}>
@@ -777,7 +777,7 @@ export function MCPSettings({ onBack }) {
   const mcpUrl = 'https://your-domain.com/mcp';
 
   return (
-    <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px', paddingBottom: 88 }}>
+    <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px 88px' }}>
       <SubPageHeader onBack={onBack} title="MCP 跨平台同步" subtitle="在 Claude.ai 新对话中自动恢复记忆" />
 
       <SettingRow label="启用 MCP 服务">
@@ -867,7 +867,7 @@ export function ImportSettings({ onBack }) {
   const TYPE_LABELS = { fact: '事实', event: '事件', unresolved: '未完成' };
 
   return (
-    <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px', paddingBottom: 88 }}>
+    <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px 88px' }}>
       <SubPageHeader onBack={onBack} title="导入历史对话" subtitle="上传 Claude 导出的 JSON，把你们的前史带回来" />
 
       {step === 'idle' && (
@@ -966,7 +966,7 @@ export function PushSettings({ onBack }) {
   }
 
   return (
-    <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px', paddingBottom: 88 }}>
+    <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px 88px' }}>
       <SubPageHeader onBack={onBack} title="消息推送" subtitle="在不看 Remoire 时也能收到 Connie 的消息" />
 
       <Card padding="lg" style={{ marginBottom: 16 }}>
@@ -1053,7 +1053,7 @@ export function DatesSettings({ onBack }) {
   }
 
   return (
-    <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px', paddingBottom: 88 }}>
+    <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px 88px' }}>
       <SubPageHeader onBack={onBack} title="特殊日期" subtitle="生日、纪念日、deadline — Connie 会在这些日子特别记得你" />
 
       <Stack gap="xs">
@@ -1134,7 +1134,7 @@ export function ExportSettings({ onBack }) {
   }
 
   return (
-    <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px', paddingBottom: 88 }}>
+    <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px 88px' }}>
       <SubPageHeader onBack={onBack} title="导出数据" subtitle="下载你的数据备份" />
 
       <Stack gap="sm">
@@ -1185,7 +1185,7 @@ export function BubbleSettings({ tweaks, onBack }) {
   const current = tweaks?.bubbleStyle || 'default';
 
   return (
-    <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px', paddingBottom: 88 }}>
+    <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px 88px' }}>
       <SubPageHeader onBack={onBack} title="聊天气泡样式" subtitle="选择你喜欢的聊天气泡风格" />
       <Stack gap="sm">
         {BUBBLE_OPTIONS.map(opt => (
@@ -1376,7 +1376,7 @@ export function CoverSettings({ tweaks, onBack }) {
   }
 
   return (
-    <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px', paddingBottom: 88 }}>
+    <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px 88px' }}>
       <SubPageHeader onBack={onBack} title="日记本封面" subtitle="上传自定义封面图片" />
       <Stack gap="md">
         <CoverCard who="jinger" label="静儿的日记本" cover={coverJ} defaultBg="#F0C6D0" />
@@ -1409,7 +1409,7 @@ export function FontSettings({ tweaks, onBack }) {
   }
 
   return (
-    <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px', paddingBottom: 88 }}>
+    <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px 88px' }}>
       <SubPageHeader onBack={onBack} title="字体" subtitle="为不同区域上传字体文件（.ttf / .otf）" />
       <Stack gap="sm">
         {FONT_SLOTS.map(slot => {
@@ -1470,7 +1470,7 @@ export function NoteHistorySettings({ onBack }) {
   }
 
   return (
-    <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px', paddingBottom: 88 }}>
+    <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px 88px' }}>
       <SubPageHeader onBack={onBack} title="小纸条历史" subtitle="Connie 留过的所有纸条" />
 
       {loading && <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-tertiary)', fontSize: 13 }}>加载中…</div>}
@@ -1540,7 +1540,7 @@ export function MemoryCandidatesSettings({ onBack }) {
   }
 
   return (
-    <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px', paddingBottom: 88 }}>
+    <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px 88px' }}>
       <SubPageHeader onBack={onBack} title="记忆候选" subtitle="低置信度的候选需要你确认才会进入正式记忆库" />
 
       {loading && <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-tertiary)', fontSize: 13 }}>加载中…</div>}

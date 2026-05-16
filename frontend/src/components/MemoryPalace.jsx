@@ -609,7 +609,7 @@ export default function MemoryPalace({ onBack }) {
 
   if (view === 'layer' && selectedLayer) {
     return (
-      <div style={{ padding: '16px 14px', paddingBottom: 16 }}>
+      <div style={{ padding: '16px 14px 16px' }}>
         <LayerDetail layer={selectedLayer} onBack={() => { setView('home'); setSelectedLayer(null); }} />
       </div>
     );
@@ -617,7 +617,7 @@ export default function MemoryPalace({ onBack }) {
 
   if (view === 'day' && selectedDay) {
     return (
-      <div style={{ padding: '16px 14px', paddingBottom: 16 }}>
+      <div style={{ padding: '16px 14px 16px' }}>
         <DayMemories year={calYear} month={calMonth} day={selectedDay} onBack={() => { setView('home'); setSelectedDay(null); }} />
       </div>
     );
@@ -626,7 +626,7 @@ export default function MemoryPalace({ onBack }) {
   const totalMemories = stats.core + stats.long + stats.short + stats.consciousness;
 
   return (
-    <div style={{ padding: '16px 14px', paddingBottom: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
+    <div style={{ padding: '16px 14px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
       <BackButton onClick={onBack} />
 
       <div style={{ textAlign: 'center', marginBottom: 4 }}>

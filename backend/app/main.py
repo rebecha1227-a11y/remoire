@@ -5,7 +5,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from app.database import init_db
 from app.routers import chat, memory, diary, note, settings, reminder
-from app.scheduler.jobs import connie_auto_diary, catchup_missed_diary, generate_breath_state
+from app.scheduler.jobs import connie_auto_diary, catchup_missed_diary, generate_breath_state, decay_memories
 from app.services.weather_service import fetch_and_cache as fetch_weather
 
 scheduler = AsyncIOScheduler()
@@ -29,6 +29,12 @@ async def lifespan(app: FastAPI):
         fetch_weather,
         CronTrigger(hour=8, minute=0, timezone="Asia/Shanghai"),
         id="fetch_weather",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        decay_memories,
+        CronTrigger(hour=3, minute=0, timezone="Asia/Shanghai"),
+        id="decay_memories",
         replace_existing=True,
     )
     scheduler.start()

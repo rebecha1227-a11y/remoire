@@ -46,7 +46,7 @@ export default function SettingsPage({ tweaks, nav }) {
       memoryCandidates: MemoryCandidatesSettings,
     };
     const Page = subPages[panel];
-    if (Page) return <RoomShell nav={nav}><div style={{ overflowY: 'auto', flex: 1, padding: '16px 20px', paddingBottom: 16, position: 'relative', zIndex: 10 }}><Page tweaks={tweaks} onBack={() => setPanel(null)} /></div></RoomShell>;
+    if (Page) return <RoomShell nav={nav}><div style={{ overflowY: 'auto', flex: 1, padding: '16px 20px 16px', position: 'relative', zIndex: 10 }}><Page tweaks={tweaks} onBack={() => setPanel(null)} /></div></RoomShell>;
   }
   function toggle(k) { setToggles(t => ({ ...t, [k]: !t[k] })); }
 
@@ -57,7 +57,7 @@ export default function SettingsPage({ tweaks, nav }) {
 
   return (
     <RoomShell nav={nav}>
-    <div style={{ overflowY: 'auto', flex: 1, padding: '16px 14px', paddingBottom: 16, position: 'relative', zIndex: 10, display: 'flex', flexDirection: 'column', gap: 14 }}>
+    <div style={{ overflowY: 'auto', flex: 1, padding: '16px 14px 16px', position: 'relative', zIndex: 10, display: 'flex', flexDirection: 'column', gap: 14 }}>
       <div className="r-glass" style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 14, padding: '14px 18px' }}>
         <div style={{
           width: 52, height: 52, borderRadius: '50%',

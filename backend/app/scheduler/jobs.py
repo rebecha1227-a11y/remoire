@@ -260,6 +260,25 @@ async def catchup_missed_diary():
     await connie_auto_diary(target_date_bj=yesterday_bj)
 
 
+async def decay_memories():
+    """每晚执行：所有记忆 weight *= decay_rate，短期层过期清理。"""
+    try:
+        async with get_db() as db:
+            await db.execute(
+                """UPDATE memories
+                   SET weight = weight * decay_rate, updated_at = ?
+                   WHERE layer != 'core' AND decay_rate > 0""",
+                (datetime.now(BJ_TZ).isoformat(),),
+            )
+            deleted = await db.execute(
+                "DELETE FROM memories WHERE layer IN ('short', 'consciousness') AND weight < 0.01"
+            )
+            await db.commit()
+        logger.info("记忆衰减完成，清理了 %d 条过期短期记忆", deleted.rowcount)
+    except Exception as e:
+        logger.error("记忆衰减异常: %s", e)
+
+
 async def generate_breath_state():
     """每隔几天生成一条气息状态——Connie 的心情短语，显示在聊天页顶部。"""
     try:

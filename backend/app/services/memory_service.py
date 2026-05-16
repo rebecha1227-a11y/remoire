@@ -369,7 +369,10 @@ async def recall(query: str, limit: int = 5) -> list[dict]:
                 if item["score"] > 0.05:
                     await db.execute(
                         """UPDATE memories
-                           SET last_triggered_at = ?, trigger_count = trigger_count + 1, updated_at = ?
+                           SET last_triggered_at = ?,
+                               trigger_count = trigger_count + 1,
+                               weight = MIN(1.0, weight + 0.1),
+                               updated_at = ?
                            WHERE id = ?""",
                         (now, now, item["memory"]["id"]),
                     )

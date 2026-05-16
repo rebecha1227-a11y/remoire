@@ -1112,7 +1112,7 @@ export default function DiaryPage({ tweaks, nav, active }) {
       }
 
       {/* Shelf view: two closed notebooks */}
-      <div style={{ padding: '20px 14px', height: '100%', overflowY: 'auto', paddingBottom: 100 }}>
+      <div style={{ padding: '20px 14px 100px', height: '100%', overflowY: 'auto' }}>
         <div style={{ marginBottom: 20, padding: '0 10px' }}>
           <div style={{
             fontFamily: "var(--font-display)",
