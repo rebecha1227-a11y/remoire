@@ -7,7 +7,7 @@ from pathlib import Path
 from app.database import get_db
 from app.llm import call_llm, call_llm_with_tools
 from app.services import memory_service, diary_interaction_service, model_settings_service
-from app.services import weather_service
+from app.services import weather_service, reminder_service, note_service
 from app.tools import select_tools, execute_tool
 
 logger = logging.getLogger(__name__)
@@ -19,7 +19,65 @@ def _load_prompt(filename: str) -> str:
     path = PROMPTS_DIR / filename
     return path.read_text(encoding="utf-8") if path.exists() else ""
 
-async def _build_system_prompt(recalled_memories: list[dict] | None = None) -> str:
+async def _build_resume_bundle(last_msg_time: str | None) -> str:
+    if not last_msg_time:
+        gap_minutes = 9999
+    else:
+        try:
+            last = datetime.fromisoformat(last_msg_time)
+            now_utc = datetime.utcnow()
+            gap_minutes = (now_utc - last).total_seconds() / 60
+        except (ValueError, TypeError):
+            gap_minutes = 9999
+
+    if gap_minutes < 180:
+        return ""
+
+    parts = []
+
+    if gap_minutes >= 1440:
+        days = int(gap_minutes // 1440)
+        parts.append(f"静儿已经 {days} 天没来找你了。")
+    elif gap_minutes >= 60:
+        hours = int(gap_minutes // 60)
+        parts.append(f"静儿大约 {hours} 小时没来找你了。")
+    else:
+        parts.append("静儿刚离开了一会儿。")
+
+    try:
+        today_reminders = await reminder_service.get_today_reminders()
+        if today_reminders:
+            lines = [f"- {r['content']}（{r['remind_at'].split(' ')[1] if ' ' in r['remind_at'] else ''}）" for r in today_reminders[:5]]
+            parts.append("今天的待办：\n" + "\n".join(lines))
+    except Exception:
+        pass
+
+    try:
+        async with get_db() as db:
+            async with db.execute(
+                "SELECT content FROM memories WHERE unresolved = 1 ORDER BY created_at DESC LIMIT 3"
+            ) as cur:
+                rows = await cur.fetchall()
+        if rows:
+            lines = [f"- {r['content']}" for r in rows]
+            parts.append("还没解决的事：\n" + "\n".join(lines))
+    except Exception:
+        pass
+
+    try:
+        unread = await note_service.get_unread()
+        if unread:
+            parts.append("你之前留了一张纸条，静儿还没看到。")
+    except Exception:
+        pass
+
+    if not parts:
+        return ""
+
+    return "【醒来上下文】\n" + "\n".join(parts) + "\n\n（这些是你醒来后浮现的信息，可以自然融入第一句话，不要像报告一样念出来。比如关心地问一句、提醒一下待办，或者表达想念。）"
+
+
+async def _build_system_prompt(recalled_memories: list[dict] | None = None, resume_bundle: str = "") -> str:
     identity = _load_prompt("identity.md")
     voice = _load_prompt("voice.md")
     thinking = _load_prompt("thinking.md")
@@ -80,7 +138,7 @@ async def _build_system_prompt(recalled_memories: list[dict] | None = None) -> s
         "不要用英文写思考摘要。不要写 task analysis。thinking 是 Connie 的中文内心独白。"
     )
 
-    parts = [p for p in [identity, voice, thinking, time_block, weather_block, memory_block, diary_block, tool_intention_block, context, thinking_language_block] if p]
+    parts = [p for p in [identity, voice, thinking, time_block, weather_block, resume_bundle, memory_block, diary_block, tool_intention_block, context, thinking_language_block] if p]
     return "\n\n---\n\n".join(parts)
 
 async def get_or_create_conversation(conversation_id: str | None = None) -> str:
@@ -138,7 +196,8 @@ async def save_message(conversation_id: str, role: str, content: str, thinking: 
 async def debug_prompt(conversation_id: str, user_message: str) -> dict:
     """调试用：看 Connie 实际收到的完整提示词和召回的记忆。"""
     recalled = await memory_service.recall(user_message, limit=5)
-    system_prompt = await _build_system_prompt(recalled_memories=recalled if recalled else None)
+    resume_bundle = await _build_resume_bundle(None)
+    system_prompt = await _build_system_prompt(recalled_memories=recalled if recalled else None, resume_bundle=resume_bundle)
     return {
         "recalled_memories": recalled,
         "system_prompt_length": len(system_prompt),
@@ -217,8 +276,15 @@ async def stream_chat(conversation_id: str, user_message: str, image: str | None
 
     history = await get_history(conversation_id, limit=20)
 
+    last_msg_time = None
+    for msg in reversed(history):
+        if msg["role"] == "assistant":
+            last_msg_time = msg.get("created_at")
+            break
+
     recalled = await memory_service.recall(user_message, limit=5)
-    system_prompt = await _build_system_prompt(recalled_memories=recalled if recalled else None)
+    resume_bundle = await _build_resume_bundle(last_msg_time)
+    system_prompt = await _build_system_prompt(recalled_memories=recalled if recalled else None, resume_bundle=resume_bundle)
     has_diary_notifs = "日记互动通知" in system_prompt
     tools = select_tools(user_message, has_diary_notifications=has_diary_notifs)
     llm_history = _build_llm_history_with_time_gaps(history)
