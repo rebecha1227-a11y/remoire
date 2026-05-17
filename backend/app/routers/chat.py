@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from app.auth import verify_token
-from app.services.chat_service import get_or_create_conversation, get_history, stream_chat, debug_prompt
+from app.services.chat_service import get_or_create_conversation, get_history, search_messages, stream_chat, debug_prompt
 import json
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
@@ -54,3 +54,32 @@ async def latest_conversation(_=Depends(verify_token)):
 async def chat_history(conversation_id: str, limit: int = 50, _=Depends(verify_token)):
     messages = await get_history(conversation_id, limit=limit)
     return {"ok": True, "data": {"messages": messages, "conversation_id": conversation_id}}
+
+@router.get("/search")
+async def chat_search(conversation_id: str, q: str, limit: int = 80, _=Depends(verify_token)):
+    messages = await search_messages(conversation_id, q, limit=limit)
+    return {"ok": True, "data": {"messages": messages, "conversation_id": conversation_id}}
+
+@router.get("/image/{message_id}")
+async def chat_image(message_id: str, token: str = ""):
+    from app.config import API_SECRET_KEY
+    from app.services.chat_service import get_message_image
+    from fastapi import HTTPException
+    from fastapi.responses import Response
+    import base64
+    if token != API_SECRET_KEY:
+        raise HTTPException(status_code=401, detail="无效的 token")
+    image = await get_message_image(message_id)
+    if not image:
+        raise HTTPException(status_code=404, detail="not found")
+    if image.startswith("data:"):
+        try:
+            header, b64 = image.split(",", 1)
+            mime = header.split(";")[0].replace("data:", "") or "image/jpeg"
+            return Response(content=base64.b64decode(b64), media_type=mime)
+        except Exception:
+            raise HTTPException(status_code=500, detail="bad image")
+    try:
+        return Response(content=base64.b64decode(image), media_type="image/jpeg")
+    except Exception:
+        raise HTTPException(status_code=500, detail="bad image")

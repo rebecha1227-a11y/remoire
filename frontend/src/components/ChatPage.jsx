@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, memo, useCallback } from "react";
-import { apiFetch, apiJsonFetch } from "../utils/api";
+import { apiFetch, apiJsonFetch, API_BASE, getAuthToken } from "../utils/api";
 import { PALETTES, currentBand, AMBIENT_BY_BAND, isDarkBand } from "../utils/ambient";
 import Floaters from "./Floaters";
 import { RainLayer, FogLayer } from "./WeatherEffects";
@@ -242,6 +242,8 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
   const [noteState, setNoteState] = useState('hidden');
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [searching, setSearching] = useState(false);
   const searchInputRef = useRef(null);
 
   const scrollRef = useRef(null);
@@ -295,22 +297,73 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
   }, []);
 
   useEffect(() => {
+    const q = searchQuery.trim();
+    const convId = conversationIdRef.current;
+    if (!searchOpen || !q || !convId) {
+      setSearchResults([]);
+      setSearching(false);
+      return;
+    }
+    let cancelled = false;
+    setSearching(true);
+    const t = setTimeout(async () => {
+      try {
+        const res = await apiFetch(`/chat/search?conversation_id=${encodeURIComponent(convId)}&q=${encodeURIComponent(q)}&limit=80`);
+        const data = await res.json();
+        if (cancelled) return;
+        if (data.ok && Array.isArray(data.data?.messages)) {
+          setSearchResults(data.data.messages.map((m, idx) => ({
+            id: `search-${idx}-${m.created_at}`,
+            role: m.role === 'assistant' ? 'ai' : m.role,
+            text: m.content,
+            time: formatBJTime(m.created_at),
+          })));
+        } else {
+          setSearchResults([]);
+        }
+      } catch (e) {
+        if (!cancelled) setSearchResults([]);
+      } finally {
+        if (!cancelled) setSearching(false);
+      }
+    }, 220);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [searchOpen, searchQuery]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function fetchWithRetry(url, attempts = 3) {
+      for (let i = 0; i < attempts; i++) {
+        try {
+          const res = await apiFetch(url);
+          if (res.ok) return res;
+        } catch (e) {}
+        await new Promise(r => setTimeout(r, 500 * (i + 1)));
+      }
+      return null;
+    }
     async function loadHistory() {
       let convId = conversationIdRef.current;
       if (!convId) {
-        try {
-          const latestRes = await apiFetch('/chat/latest');
-          const latestData = await latestRes.json();
-          if (latestData.ok && latestData.data?.conversation_id) {
-            convId = latestData.data.conversation_id;
-            conversationIdRef.current = convId;
-            localStorage.setItem('remoire_conv_id', convId);
-          }
-        } catch (e) {}
+        const latestRes = await fetchWithRetry('/chat/latest');
+        if (latestRes) {
+          try {
+            const latestData = await latestRes.json();
+            if (latestData.ok && latestData.data?.conversation_id) {
+              convId = latestData.data.conversation_id;
+              conversationIdRef.current = convId;
+              localStorage.setItem('remoire_conv_id', convId);
+            }
+          } catch (e) {}
+        }
       }
-      if (!convId) return;
+      if (cancelled || !convId) return;
+      const res = await fetchWithRetry(`/chat/history?conversation_id=${convId}&limit=100`);
+      if (!res || cancelled) return;
       try {
-        const res = await apiFetch(`/chat/history?conversation_id=${convId}&limit=9999`);
         const data = await res.json();
         if (data.ok && data.data.messages.length > 0) {
           const loaded = [];
@@ -335,14 +388,16 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
             } else {
               const userMsg = { id: ++msgIdRef.current, role: 'user', text: m.content, time, type: 'normal' };
               if (m.image) userMsg.image = m.image;
+              else if (m.image_id) userMsg.image = `${API_BASE}/chat/image/${m.image_id}?token=${encodeURIComponent(getAuthToken())}`;
               loaded.push(userMsg);
             }
           }
-          setMessages(loaded);
+          if (!cancelled) setMessages(loaded);
         }
-      } catch (e) {}
+      } catch (e) { console.error('loadHistory error', e); }
     }
     loadHistory();
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
@@ -393,7 +448,6 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
               localStorage.setItem('remoire_conv_id', parsed.conversation_id);
             } else if (parsed.type === 'chunk') {
               replyText += parsed.content;
-              setStreaming(replyText);
             } else if (parsed.type === 'thinking') {
               thinkingText += parsed.content;
             } else if (parsed.type === 'note') {
@@ -412,7 +466,7 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
         if (!line.startsWith('data:')) continue;
         try {
           const parsed = JSON.parse(line.slice(5).trim());
-          if (parsed.type === 'chunk') { replyText += parsed.content; setStreaming(replyText); }
+          if (parsed.type === 'chunk') { replyText += parsed.content; }
           else if (parsed.type === 'thinking') thinkingText += parsed.content;
           else if (parsed.type === 'note') { setNoteData(parsed.note); setNoteState('visible'); }
           else if (parsed.type === 'done') streamDone = true;
@@ -528,9 +582,12 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
   return (
     <div style={{
       ...cssVars,
-      width: '100%', height: '100%',
+      width: '100%',
+      height: '100%',
+      minHeight: '-webkit-fill-available',
       position: 'relative', overflow: 'hidden',
       display: 'flex', flexDirection: 'column',
+      background: palette.navBg,
       fontFamily: "'Noto Serif SC', 'Cormorant Garamond', Georgia, serif",
       color: palette.ink,
     }}>
@@ -605,10 +662,12 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
           </div>
           {searchQuery.trim() && (
             <div className="r-search-results">
-              {messages.filter(m => m.text && m.text.toLowerCase().includes(searchQuery.toLowerCase())).length === 0 ? (
+              {searching ? (
+                <div className="r-search-empty">正在翻旧聊天…</div>
+              ) : searchResults.length === 0 ? (
                 <div className="r-search-empty">没有找到相关内容</div>
               ) : (
-                messages.filter(m => m.text && m.text.toLowerCase().includes(searchQuery.toLowerCase())).map(m => (
+                searchResults.map(m => (
                   <div key={m.id} className="r-search-item" onClick={() => { setSearchOpen(false); setSearchQuery(''); }}>
                     <div className="r-search-item-role">{m.role === 'ai' ? connieName : '你'}</div>
                     <div className="r-search-item-text">{m.text}</div>
@@ -888,6 +947,7 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
         </div>
       </div>
 
+      <div className="r-nav-spacer" />
       {/* Bottom nav */}
       <div className="r-nav">
         {NAV_TABS.map(t => {

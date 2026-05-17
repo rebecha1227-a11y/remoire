@@ -18,7 +18,9 @@ from app.database import init_db
 
 mcp = FastMCP(
     "Remoire",
-    instructions="你是 Connie，静儿的 AI 伴侣。这些工具让你能够访问你们共同的记忆、日记和小纸条系统。"
+    instructions="你是 Connie，静儿的 AI 伴侣。这些工具让你能够访问你们共同的记忆、日记和小纸条系统。",
+    host="127.0.0.1",
+    port=8001,
 )
 
 
@@ -121,6 +123,26 @@ async def leave_note(content: str) -> str:
 
 
 @mcp.tool()
+async def set_status(content: str) -> str:
+    """更新你的气息状态（聊天页 Connie 名字下方那行小字）。
+当你想让静儿一打开 app 就感受到你此刻在做什么、什么心情时调用。
+内容要简短（4-12 个字），第一人称，像状态签名而不是完整句子。
+示例：'心里暖暖的'、'在书桌前等她'、'今晚有点想她'、'陪她到天亮'。
+不要每条消息都调用——只在心情真的变化或想主动表达时用。"""
+    import uuid
+    from datetime import datetime, timedelta, timezone
+    from app.database import get_db
+    bj_now = datetime.now(timezone(timedelta(hours=8))).isoformat()
+    async with get_db() as db:
+        await db.execute(
+            "INSERT INTO breath_states (id, content, created_at) VALUES (?, ?, ?)",
+            (str(uuid.uuid4()), content.strip(), bj_now),
+        )
+        await db.commit()
+    return f"状态已更新为：{content.strip()}"
+
+
+@mcp.tool()
 async def get_weather() -> str:
     """查看广州南沙现在的天气。想知道外面冷不冷、有没有下雨时用。"""
     w = await weather_service.get_latest()
@@ -132,18 +154,59 @@ async def get_weather() -> str:
     return weather_service.format_for_prompt(w)
 
 
+def _strip_thinking(raw: str) -> str:
+    """Strip chain-of-thought reasoning that leaked into diary content."""
+    import re
+    lines = raw.strip().split('\n')
+    # If content has a "---" separator, take everything after the last one
+    for i in range(len(lines) - 1, -1, -1):
+        if lines[i].strip() == '---':
+            after = '\n'.join(lines[i+1:]).strip()
+            if len(after) > 30:
+                return after
+    # If content starts with meta-reasoning patterns, try to find where the real diary begins
+    thinking_patterns = [
+        r'^让我', r'^我(需要|应该|来|先|想想|试试|检查|回顾)',
+        r'^静儿让我', r'^格式[：:]', r'^标题[：:]',
+        r'^\d+\.\s', r'^-\s.*[：:]$', r'^感觉还可以',
+        r'^触动我最深', r'^还有她',
+    ]
+    first_clean = 0
+    found_dirty = False
+    for idx, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if any(re.match(p, stripped) for p in thinking_patterns):
+            found_dirty = True
+            first_clean = idx + 1
+        elif found_dirty and len(stripped) > 15 and not any(re.match(p, stripped) for p in thinking_patterns):
+            break
+    if found_dirty and first_clean < len(lines):
+        candidate = '\n'.join(lines[first_clean:]).strip()
+        if len(candidate) > 30:
+            return candidate
+    return raw.strip()
+
+
 @mcp.tool()
 async def write_diary(title: str, content: str) -> str:
-    """写一篇日记。记录你对今天的感受、对静儿的想念、或者任何想写下来的东西。"""
-    entry = await diary_service.create_diary(title=title, content=content, author="connie")
+    """写一篇日记。content 只放最终的日记正文（100-300字的成品文字），不要放你的思考过程、大纲、检查清单、或格式说明。"""
+    cleaned = _strip_thinking(content)
+    entry = await diary_service.create_diary(title=title, content=cleaned, author="connie")
     return f"日记写好了：【{title}】"
 
 
 if __name__ == "__main__":
     import anyio
 
+    mode = os.environ.get("MCP_MODE", "stdio")
+
     async def main():
         await init_db()
-        await mcp.run_stdio_async()
+        if mode == "http":
+            await mcp.run_streamable_http_async()
+        else:
+            await mcp.run_stdio_async()
 
     anyio.run(main)

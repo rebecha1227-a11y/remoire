@@ -23,19 +23,31 @@ const DIARY_V3_CSS = `
   transform-style: preserve-3d;
   backface-visibility: hidden;
   transition: none;
+  pointer-events: none;
 }
 .diary-page.flipping {
   transition: transform 700ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
-  z-index: 10 !important;
 }
 .diary-page.flipped {
   transform: rotateY(-180deg);
 }
-.diary-page-front, .diary-page-back {
+.diary-page-front {
+  position: absolute;
+  inset: 0;
+  backface-visibility: hidden;
+}
+.diary-page-back {
   position: absolute;
   inset: 0;
   backface-visibility: hidden;
   overflow: hidden;
+}
+.diary-scroll {
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
 }
 .diary-page-back {
   transform: rotateY(180deg);
@@ -513,11 +525,12 @@ function TOCPage({ entries, author, onSelect }) {
   const isConnie = author === 'connie';
   const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
   const pageBg = isDark ? (isConnie ? '#272320' : '#2A2420') : (isConnie ? '#EDE9E3' : '#F8F2EE');
+  const scrollRef = useRef(null);
+  useTouchScroll(scrollRef);
   return (
-    <div style={{
+    <div ref={scrollRef} className="diary-scroll" style={{
       width: '100%', height: '100%', padding: '24px 20px',
-      background: pageBg,
-      overflowY: 'auto'
+      background: pageBg
     }}>
       <div style={{
         fontFamily: "var(--font-diary)",
@@ -547,6 +560,46 @@ function TOCPage({ entries, author, onSelect }) {
       )}
     </div>);
 
+}
+
+function useTouchScroll(ref) {
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    let lastY = 0;
+    let active = false;
+    function onTouchStart(e) {
+      if (e.touches.length !== 1) return;
+      active = true;
+      lastY = e.touches[0].clientY;
+    }
+    function onTouchMove(e) {
+      if (!active || e.touches.length !== 1) return;
+      const y = e.touches[0].clientY;
+      const dy = lastY - y;
+      if (dy === 0) return;
+      const max = el.scrollHeight - el.clientHeight;
+      const next = Math.max(0, Math.min(max, el.scrollTop + dy));
+      if (next !== el.scrollTop) {
+        el.scrollTop = next;
+        e.preventDefault();
+      }
+      lastY = y;
+    }
+    function onTouchEnd() {
+      active = false;
+    }
+    el.addEventListener('touchstart', onTouchStart, { passive: true });
+    el.addEventListener('touchmove', onTouchMove, { passive: false });
+    el.addEventListener('touchend', onTouchEnd, { passive: true });
+    el.addEventListener('touchcancel', onTouchEnd, { passive: true });
+    return () => {
+      el.removeEventListener('touchstart', onTouchStart);
+      el.removeEventListener('touchmove', onTouchMove);
+      el.removeEventListener('touchend', onTouchEnd);
+      el.removeEventListener('touchcancel', onTouchEnd);
+    };
+  }, [ref]);
 }
 
 // ── Content Page ──
@@ -646,6 +699,8 @@ function DiaryMessageBoard({ entry, author, lockedConnie, onAddInteraction, onDe
 function ContentPage({ entry, author, onAddInteraction, onDeleteInteraction }) {
   const [pinUnlocked, setPinUnlocked] = useState(false);
   const [pinErrorKey, setPinErrorKey] = useState(0);
+  const scrollRef = useRef(null);
+  useTouchScroll(scrollRef);
 
   const isConnie = author === 'connie';
   const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
@@ -693,7 +748,7 @@ function ContentPage({ entry, author, onAddInteraction, onDeleteInteraction }) {
         <div style={{ fontSize: 9, color: '#8B7E74', marginTop: 3, letterSpacing: 1, fontFamily: "var(--font-body)" }}>{entry.weekday}</div>
       </div>
 
-      <div style={{ flex: 1, padding: '22px 16px 16px 14px', overflowY: 'auto' }}>
+      <div ref={scrollRef} className="diary-scroll" style={{ flex: 1, padding: '22px 16px 16px 14px', minHeight: 0 }}>
         <div style={{
           fontFamily: "var(--font-body)", fontSize: 9, letterSpacing: 1.5,
           textTransform: 'uppercase', color: isConnie ? '#7A8A9A' : '#B08898',
@@ -729,23 +784,20 @@ function ContentPage({ entry, author, onAddInteraction, onDeleteInteraction }) {
   );
 }
 
-// ── Open Book Component ──
+// ── Open Book Component (3D flip, only renders nearby pages) ──
 function OpenBook({ author, entries, onClose, onAddInteraction, onDeleteInteraction }) {
   const isConnie = author === 'connie';
   const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-  // pages[0] = TOC, pages[1..n] = content pages
-  const totalPages = entries.length + 1; // +1 for TOC
+  const totalPages = entries.length + 1;
   const [flippedPages, setFlippedPages] = useState(new Set());
+  const [animatingPages, setAnimatingPages] = useState(new Set());
   const [animating, setAnimating] = useState(false);
-  const [currentView, setCurrentView] = useState(0); // 0 = TOC visible
+  const [currentView, setCurrentView] = useState(0);
 
   function flipToPage(targetPageIdx) {
-    // targetPageIdx: 0=TOC, 1..n=entries
-    if (animating) return;
-    const targetFlipped = new Set();
-    for (let i = 0; i < targetPageIdx; i++) targetFlipped.add(i);
+    if (animating || targetPageIdx === currentView) return;
+    if (targetPageIdx < 0 || targetPageIdx >= totalPages) return;
 
-    // Determine pages to flip
     const pagesToFlip = [];
     if (targetPageIdx > currentView) {
       for (let i = currentView; i < targetPageIdx; i++) pagesToFlip.push(i);
@@ -753,18 +805,17 @@ function OpenBook({ author, entries, onClose, onAddInteraction, onDeleteInteract
       for (let i = currentView - 1; i >= targetPageIdx; i--) pagesToFlip.push(i);
     }
 
-    if (pagesToFlip.length === 0) return;
     setAnimating(true);
+    setAnimatingPages(new Set(pagesToFlip));
 
-    // Sequential flip with stagger
-    let delay = 0;
     const stagger = Math.max(80, 400 / pagesToFlip.length);
-    pagesToFlip.forEach((pIdx, i) => {
+    let delay = 0;
+    pagesToFlip.forEach((pIdx) => {
       setTimeout(() => {
         setFlippedPages((prev) => {
           const next = new Set(prev);
-          if (targetPageIdx > currentView) next.add(pIdx);else
-          next.delete(pIdx);
+          if (targetPageIdx > currentView) next.add(pIdx);
+          else next.delete(pIdx);
           return next;
         });
       }, delay);
@@ -774,15 +825,21 @@ function OpenBook({ author, entries, onClose, onAddInteraction, onDeleteInteract
     setTimeout(() => {
       setCurrentView(targetPageIdx);
       setAnimating(false);
+      setAnimatingPages(new Set());
     }, delay + 500);
   }
 
-  function flipNext() {
-    if (currentView < totalPages - 1) flipToPage(currentView + 1);
-  }
-  function flipPrev() {
-    if (currentView > 0) flipToPage(currentView - 1);
-  }
+  const nearbyPages = useMemo(() => {
+    const visible = new Set([currentView]);
+    if (currentView > 0) visible.add(currentView - 1);
+    if (currentView + 1 < totalPages) visible.add(currentView + 1);
+    animatingPages.forEach(p => {
+      visible.add(p);
+      if (p + 1 < totalPages) visible.add(p + 1);
+      if (p > 0) visible.add(p - 1);
+    });
+    return visible;
+  }, [animatingPages, currentView, totalPages]);
 
   return (
     <div style={{
@@ -791,7 +848,6 @@ function OpenBook({ author, entries, onClose, onAddInteraction, onDeleteInteract
       display: 'flex', flexDirection: 'column',
       animation: 'page-in 300ms ease'
     }}>
-      {/* Top bar */}
       <div className="r-glass" style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         padding: '8px 16px', margin: '8px 12px 0', flexShrink: 0,
@@ -814,59 +870,55 @@ function OpenBook({ author, entries, onClose, onAddInteraction, onDeleteInteract
         </div>
       </div>
 
-      {/* Book body */}
       <div className="diary-book-wrapper" style={{
-        flex: 1, margin: '0 12px 12px', overflow: 'hidden',
+        flex: 1, minHeight: 0, margin: '0 12px 12px', overflow: 'hidden',
         borderRadius: '2px 6px 6px 2px',
         boxShadow: '2px 3px 12px rgba(40,33,28,0.15), -1px 0 0 rgba(0,0,0,0.05)'
       }}>
         <div className="diary-page-stack" style={{ width: '100%', height: '100%' }}>
-          {/* Render pages in reverse order (bottom = last page) */}
-          {Array.from({ length: totalPages }, (_, i) => totalPages - 1 - i).map((pageIdx) => {
-            const isFlipped = flippedPages.has(pageIdx);
-            return (
-              <div key={pageIdx} className={`diary-page ${isFlipped ? 'flipped' : ''} flipping`}
-              style={{ zIndex: isFlipped ? pageIdx : totalPages - pageIdx }}>
-                {/* Front face */}
-                <div className="diary-page-front" style={{
-                  background: isConnie ? '#EDE9E3' : '#F8F2EE',
-                  boxShadow: 'inset -2px 0 6px rgba(40,33,28,0.04)'
-                }}>
-                  {pageIdx === 0 ?
-                  <TOCPage entries={entries} author={author} onSelect={(i) => flipToPage(i + 1)} /> :
-                  <ContentPage entry={entries[pageIdx - 1]} author={author} onAddInteraction={onAddInteraction} onDeleteInteraction={onDeleteInteraction} />
-                  }
-                </div>
-                {/* Back face */}
-                <div className="diary-page-back" style={{
-                  background: isConnie ? '#E6E1D9' : '#F2EBE6',
-                  backgroundImage: `
-                    linear-gradient(rgba(100,90,80,0.03) 1px, transparent 1px),
-                    linear-gradient(90deg, rgba(100,90,80,0.03) 1px, transparent 1px)
-                  `,
-                  backgroundSize: '14px 14px',
-                  boxShadow: 'inset 2px 0 6px rgba(40,33,28,0.05)'
-                }}>
-                  {/* Back of page - could show next content preview or just blank */}
-                  <div style={{ padding: 20, textAlign: 'right' }}>
-                    <div style={{ fontSize: 9, color: 'var(--text-tertiary)', opacity: 0.4, fontFamily: "var(--font-body)" }}>
-                      {pageIdx + 1}
+          {Array.from({ length: totalPages }, (_, i) => totalPages - 1 - i)
+            .filter(pageIdx => nearbyPages.has(pageIdx))
+            .map((pageIdx) => {
+              const isFlipped = flippedPages.has(pageIdx);
+              const isActivePage = pageIdx === currentView && !animating;
+              const isAnimatingPage = animatingPages.has(pageIdx);
+              return (
+                <div key={pageIdx} className={`diary-page ${isFlipped ? 'flipped' : ''} ${isAnimatingPage ? 'flipping' : ''}`}
+                  style={{
+                    zIndex: isAnimatingPage ? totalPages + 5 : (isFlipped ? pageIdx : totalPages - pageIdx),
+                    pointerEvents: isActivePage ? 'auto' : 'none',
+                  }}>
+                  <div className="diary-page-front" style={{
+                    background: isConnie ? '#EDE9E3' : '#F8F2EE',
+                    boxShadow: 'inset -2px 0 6px rgba(40,33,28,0.04)'
+                  }}>
+                    {pageIdx === 0 ?
+                      <TOCPage entries={entries} author={author} onSelect={(i) => flipToPage(i + 1)} /> :
+                      <ContentPage entry={entries[pageIdx - 1]} author={author} onAddInteraction={onAddInteraction} onDeleteInteraction={onDeleteInteraction} />
+                    }
+                  </div>
+                  <div className="diary-page-back" style={{
+                    background: isConnie ? '#E6E1D9' : '#F2EBE6',
+                    boxShadow: 'inset 2px 0 6px rgba(40,33,28,0.05)'
+                  }}>
+                    <div style={{ padding: 20, textAlign: 'right' }}>
+                      <div style={{ fontSize: 9, color: 'var(--text-tertiary)', opacity: 0.4, fontFamily: "var(--font-body)" }}>
+                        {pageIdx + 1}
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>);
-
-          })}
+              );
+            })}
         </div>
       </div>
 
-      {/* Bottom nav */}
       <div className="r-glass" style={{
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         padding: '8px 20px', margin: '0 12px 12px', flexShrink: 0,
         borderRadius: 16, position: 'relative',
       }}>
-        <button onClick={flipPrev} disabled={currentView === 0 || animating} style={{
+        <button onClick={() => flipToPage(currentView - 1)} disabled={currentView === 0 || animating} style={{
           background: 'none', border: 'none', cursor: currentView > 0 ? 'pointer' : 'default',
           opacity: currentView > 0 && !animating ? 0.8 : 0.25, padding: 8,
           color: 'var(--text-primary)', minWidth: 44, minHeight: 44,
@@ -879,7 +931,7 @@ function OpenBook({ author, entries, onClose, onAddInteraction, onDeleteInteract
           padding: '6px 16px', fontSize: 11, color: 'var(--text-primary)', cursor: 'pointer',
           fontFamily: "var(--font-body)", fontWeight: 500,
         }}>目录</button>
-        <button onClick={flipNext} disabled={currentView >= totalPages - 1 || animating} style={{
+        <button onClick={() => flipToPage(currentView + 1)} disabled={currentView >= totalPages - 1 || animating} style={{
           background: 'none', border: 'none', cursor: currentView < totalPages - 1 ? 'pointer' : 'default',
           opacity: currentView < totalPages - 1 && !animating ? 0.8 : 0.25, padding: 8,
           color: 'var(--text-primary)', minWidth: 44, minHeight: 44,

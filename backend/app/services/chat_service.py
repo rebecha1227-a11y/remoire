@@ -163,20 +163,59 @@ async def get_or_create_conversation(conversation_id: str | None = None) -> str:
 async def get_history(conversation_id: str, limit: int = 20) -> list[dict]:
     async with get_db() as db:
         async with db.execute(
-            "SELECT role, content, thinking, image, display_mode, created_at FROM messages WHERE conversation_id = ? ORDER BY created_at DESC LIMIT ?",
+            "SELECT id, role, content, thinking, image, display_mode, created_at FROM messages WHERE conversation_id = ? ORDER BY created_at DESC LIMIT ?",
             (conversation_id, limit),
         ) as cur:
             rows = await cur.fetchall()
     result = []
     for r in reversed(rows):
-        item = {"role": r["role"], "content": r["content"], "created_at": r["created_at"]}
+        item = {"id": r["id"], "role": r["role"], "content": r["content"], "created_at": r["created_at"]}
         if r["thinking"]:
             item["thinking"] = r["thinking"]
         if r["image"]:
-            item["image"] = r["image"]
+            item["image_id"] = r["id"]
         item["display_mode"] = r["display_mode"] or "split"
         result.append(item)
     return result
+
+async def search_messages(conversation_id: str, query: str, limit: int = 80) -> list[dict]:
+    q = (query or "").strip()
+    if not q:
+        return []
+    like = f"%{q}%"
+    async with get_db() as db:
+        async with db.execute(
+            """
+            SELECT id, role, content, thinking, image, display_mode, created_at
+            FROM messages
+            WHERE conversation_id = ? AND content LIKE ?
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            (conversation_id, like, limit),
+        ) as cur:
+            rows = await cur.fetchall()
+    result = []
+    for r in rows:
+        item = {"id": r["id"], "role": r["role"], "content": r["content"], "created_at": r["created_at"]}
+        if r["thinking"]:
+            item["thinking"] = r["thinking"]
+        if r["image"]:
+            item["image_id"] = r["id"]
+        item["display_mode"] = r["display_mode"] or "split"
+        result.append(item)
+    return result
+
+
+async def get_message_image(message_id: str) -> str | None:
+    async with get_db() as db:
+        async with db.execute(
+            "SELECT image FROM messages WHERE id = ?", (message_id,)
+        ) as cur:
+            row = await cur.fetchone()
+    if not row or not row["image"]:
+        return None
+    return row["image"]
 
 async def save_message(conversation_id: str, role: str, content: str, thinking: str = "", image: str = "", display_mode: str = "split") -> str:
     msg_id = str(uuid.uuid4())

@@ -4,7 +4,7 @@ import UsPage from './components/UsPage.jsx';
 import DiaryPage from './components/DiaryPage.jsx';
 import PlayPage from './components/PlayPage.jsx';
 import SettingsPage from './components/SettingsPage.jsx';
-import { useRoomAmbient } from './components/RoomShell.jsx';
+import { RoomAmbientProvider, useRoomAmbient, useRoomChrome } from './components/RoomShell.jsx';
 import './styles/room.css';
 
 
@@ -63,8 +63,8 @@ const ROOM_NAV_TABS = [
   { id: 'settings', label: '设置',  icon: (s) => <svg {...s}><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.65 1.65 0 0 0-1.8-.3 1.65 1.65 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.65 1.65 0 0 0-1-1.5 1.65 1.65 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.65 1.65 0 0 0 .3-1.8 1.65 1.65 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.65 1.65 0 0 0 1.5-1 1.65 1.65 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.65 1.65 0 0 0 1.8.3h.1a1.65 1.65 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.65 1.65 0 0 0 1 1.5h.1a1.65 1.65 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.65 1.65 0 0 0-.3 1.8v.1a1.65 1.65 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.65 1.65 0 0 0-1.5 1z"/></svg> },
 ];
 
-function RoomNav({ activeTab, onNavigate }) {
-  const { palette, accentColor } = useRoomAmbient();
+function RoomNav({ activeTab, onNavigate, ambient }) {
+  const { palette, accentColor } = ambient;
   const navVars = {
     '--ink': palette.ink,
     '--ink-soft': palette.inkSoft,
@@ -91,7 +91,9 @@ function RoomNav({ activeTab, onNavigate }) {
 export default function App() {
   const [tab, setTab] = useState('chat');
   const [tweaks, setTweaks] = useState(() => loadTweaks());
-
+  const ambient = useRoomAmbient();
+  const { palette, chatBgImage } = ambient;
+  useRoomChrome(palette, chatBgImage);
   useEffect(() => {
     function onTweakUpdate(event) {
       setTweaks((current) => ({ ...current, ...(event.detail || {}) }));
@@ -105,7 +107,50 @@ export default function App() {
     applyCustomFonts(tweaks);
   }, [tweaks]);
 
-  const nav = <RoomNav activeTab={tab} onNavigate={setTab} />;
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    let lastHeight = vv.height;
+    function forceReflow() {
+      window.scrollTo(0, 0);
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+      const body = document.body;
+      const prev = body.style.height;
+      body.style.height = window.innerHeight + 'px';
+      void body.offsetHeight;
+      body.style.height = '100lvh';
+      void body.offsetHeight;
+      body.style.height = prev || '100lvh';
+    }
+    function onResize() {
+      const h = vv.height;
+      const grew = h > lastHeight + 80;
+      lastHeight = h;
+      if (grew) {
+        requestAnimationFrame(forceReflow);
+        setTimeout(forceReflow, 100);
+        setTimeout(forceReflow, 400);
+      }
+    }
+    function onBlur(e) {
+      const tag = e.target?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
+        setTimeout(forceReflow, 250);
+      }
+    }
+    vv.addEventListener('resize', onResize);
+    document.addEventListener('focusout', onBlur, true);
+    return () => {
+      vv.removeEventListener('resize', onResize);
+      document.removeEventListener('focusout', onBlur, true);
+    };
+  }, []);
+
+  const nav = useMemo(
+    () => <RoomNav activeTab={tab} onNavigate={setTab} ambient={ambient} />,
+    [tab, ambient]
+  );
 
   const pages = useMemo(() => ({
     chat:     <ChatPage tweaks={tweaks} activeTab={tab} onNavigate={setTab} />,
@@ -113,15 +158,31 @@ export default function App() {
     diary:    <DiaryPage tweaks={tweaks} nav={nav} active={tab === 'diary'} />,
     play:     <PlayPage tweaks={tweaks} nav={nav} />,
     settings: <SettingsPage tweaks={tweaks} nav={nav} />,
-  }), [tweaks, tab]);
+  }), [tweaks, tab, nav]);
 
   return (
-    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#08060A', position: 'relative' }}>
-      {Object.entries(pages).map(([id, page]) => (
-        <div key={id} style={{ flex: 1, overflow: 'hidden', position: 'relative', display: tab === id ? 'flex' : 'none', flexDirection: 'column' }}>
-          {page}
-        </div>
-      ))}
-    </div>
+    <RoomAmbientProvider value={ambient}>
+      <div style={{
+        width: '100%',
+        flex: 1,
+        minHeight: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        background: 'transparent',
+        overflow: 'hidden',
+      }}>
+        {Object.entries(pages).map(([id, page]) => (
+          <div key={id} style={{
+            flex: 1,
+            overflow: 'hidden',
+            position: 'relative',
+            display: tab === id ? 'flex' : 'none',
+            flexDirection: 'column',
+          }}>
+            {page}
+          </div>
+        ))}
+      </div>
+    </RoomAmbientProvider>
   );
 }

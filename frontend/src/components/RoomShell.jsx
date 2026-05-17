@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { createContext, useContext, useState, useEffect } from "react";
 import { PALETTES, currentBand, isDarkBand } from "../utils/ambient";
 import Floaters from "./Floaters";
 import { RainLayer, FogLayer } from "./WeatherEffects";
@@ -9,6 +9,12 @@ function readAccentColor() {
     const tweaks = JSON.parse(localStorage.getItem('remoire_tweaks') || '{}');
     return tweaks.accentColor || '';
   } catch { return ''; }
+}
+
+const RoomAmbientContext = createContext(null);
+
+export function RoomAmbientProvider({ value, children }) {
+  return <RoomAmbientContext.Provider value={value}>{children}</RoomAmbientContext.Provider>;
 }
 
 export function useRoomAmbient() {
@@ -53,8 +59,42 @@ export function useRoomAmbient() {
   return { band, palette, dark, weather, deepMode, chatBgImage, accentColor };
 }
 
+export function useRoomChrome(palette, chatBgImage) {
+  useEffect(() => {
+    const solidBg = palette.chromeBg || palette.navBg;
+    document.documentElement.style.setProperty('--app-chrome-bg', solidBg);
+    document.documentElement.style.setProperty('--nav-bg', palette.navBg);
+    if (chatBgImage) {
+      document.body.style.background = `${solidBg} url(${chatBgImage}) center / cover no-repeat fixed`;
+    } else {
+      document.body.style.background = palette.bg;
+    }
+    document.documentElement.style.background = solidBg;
+    const root = document.getElementById('root');
+    if (root) root.style.background = 'transparent';
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', solidBg);
+  }, [palette.chromeBg, palette.navBg, palette.bg, chatBgImage]);
+}
+
 export default function RoomShell({ children, nav }) {
-  const { palette, dark, weather, deepMode, chatBgImage, accentColor } = useRoomAmbient();
+  const ambient = useContext(RoomAmbientContext);
+  const fallbackBand = currentBand();
+  const {
+    palette,
+    dark,
+    weather,
+    deepMode,
+    chatBgImage,
+    accentColor,
+  } = ambient || {
+    palette: PALETTES[fallbackBand],
+    dark: isDarkBand(fallbackBand),
+    weather: 'clear',
+    deepMode: false,
+    chatBgImage: '',
+    accentColor: readAccentColor(),
+  };
 
   const cssVars = {
     '--ink': palette.ink,
@@ -123,7 +163,11 @@ export default function RoomShell({ children, nav }) {
 
       <div className="r-dim" style={{ opacity: deepMode ? 0.32 : 0 }} />
 
-      {children}
+      <div style={{ height: 'env(safe-area-inset-top, 0px)', flexShrink: 0 }} />
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+        {children}
+      </div>
+      <div className="r-nav-spacer" />
       {nav}
     </div>
   );

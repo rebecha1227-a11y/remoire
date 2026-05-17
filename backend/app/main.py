@@ -27,7 +27,7 @@ async def lifespan(app: FastAPI):
     )
     scheduler.add_job(
         fetch_weather,
-        CronTrigger(hour=8, minute=0, timezone="Asia/Shanghai"),
+        CronTrigger(hour="8,20", minute=0, timezone="Asia/Shanghai"),
         id="fetch_weather",
         replace_existing=True,
     )
@@ -66,8 +66,22 @@ async def root():
 
 @app.get("/api/weather")
 async def get_weather():
-    from app.services.weather_service import get_latest
+    from datetime import datetime, timedelta, timezone
+    from app.services.weather_service import get_latest, fetch_and_cache
     w = await get_latest()
+    if w and w.get("fetched_at"):
+        bj_tz = timezone(timedelta(hours=8))
+        try:
+            fetched = datetime.fromisoformat(w["fetched_at"])
+            if datetime.now(bj_tz) - fetched > timedelta(hours=3):
+                fresh = await fetch_and_cache()
+                if fresh:
+                    w = await get_latest()
+        except Exception:
+            pass
+    elif not w:
+        await fetch_and_cache()
+        w = await get_latest()
     if not w:
         return {"ok": True, "data": None}
     return {"ok": True, "data": w}
