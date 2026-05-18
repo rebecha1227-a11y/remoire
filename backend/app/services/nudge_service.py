@@ -218,13 +218,19 @@ async def generate_nudge(conversation_id: str) -> list[str]:
 
 async def send_nudge(conversation_id: str, messages: list[str]) -> int:
     from app.services.chat_service import save_message
-    now = datetime.utcnow().isoformat()
+    from app.services.push_service import send_push
     count = 0
     for msg in messages:
         if not msg.strip():
             continue
         await save_message(conversation_id, "assistant", msg.strip(), display_mode="split")
         count += 1
+    if count > 0:
+        preview = messages[0][:60] if messages else ""
+        try:
+            await send_push(body=preview, tag="nudge")
+        except Exception as e:
+            logger.warning("nudge push 失败: %s", e)
     return count
 
 

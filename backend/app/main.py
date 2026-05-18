@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from app.database import init_db
-from app.routers import chat, memory, diary, note, settings, reminder
+from app.routers import chat, memory, diary, note, settings, reminder, push
 from app.scheduler.jobs import connie_auto_diary, catchup_missed_diary, generate_breath_state, decay_memories
 from app.services.nudge_service import run_nudge_check
 from app.services.weather_service import fetch_and_cache as fetch_weather
@@ -66,6 +66,7 @@ app.include_router(diary.router)
 app.include_router(note.router)
 app.include_router(settings.router)
 app.include_router(reminder.router)
+app.include_router(push.router)
 
 @app.get("/")
 async def root():

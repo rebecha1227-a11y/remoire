@@ -306,6 +306,7 @@ async def init_db():
             "ALTER TABLE memory_candidates ADD COLUMN proposed_layer TEXT DEFAULT 'long'",
             "ALTER TABLE memory_candidates ADD COLUMN confidence REAL DEFAULT 0.5",
             "ALTER TABLE memory_candidates ADD COLUMN proposed_event_date TEXT",
+            "ALTER TABLE push_subscriptions ADD COLUMN display_name TEXT DEFAULT 'Connie'",
         ]:
             try:
                 await db.execute(col_sql)

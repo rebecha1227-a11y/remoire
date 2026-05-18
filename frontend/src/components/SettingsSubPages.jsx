@@ -958,11 +958,91 @@ export function ImportSettings({ onBack }) {
 // ═══════════════════════════════════════════
 export function PushSettings({ onBack }) {
   const [enabled, setEnabled] = useState(false);
-  const [permission, setPermission] = useState('default'); // default | granted | denied
+  const [permission, setPermission] = useState('default');
+  const [status, setStatus] = useState('');
+  const [testing, setTesting] = useState(false);
 
-  function requestPermission() {
-    setPermission('granted');
-    setEnabled(true);
+  useEffect(() => {
+    if ('Notification' in window) setPermission(Notification.permission);
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistration().then(reg => {
+        if (reg) reg.pushManager.getSubscription().then(sub => { if (sub) setEnabled(true); });
+      });
+    }
+  }, []);
+
+  async function subscribePush() {
+    try {
+      setStatus('正在授权...');
+      const perm = await Notification.requestPermission();
+      setPermission(perm);
+      if (perm !== 'granted') { setStatus('授权被拒绝'); return; }
+
+      setStatus('注册 Service Worker...');
+      const reg = await navigator.serviceWorker.register('/sw.js');
+      await navigator.serviceWorker.ready;
+
+      setStatus('获取密钥...');
+      const keyRes = await apiFetch('/push/vapid-public-key');
+      const keyData = await keyRes.json();
+      const vapidKey = keyData.data.key;
+
+      setStatus('订阅推送...');
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(vapidKey),
+      });
+      const subJson = sub.toJSON();
+
+      const connieName = localStorage.getItem('remoire_conn_name') || 'Connie';
+      await apiJsonFetch('/push/subscribe', {
+        method: 'POST',
+        body: JSON.stringify({
+          endpoint: subJson.endpoint,
+          p256dh: subJson.keys.p256dh,
+          auth: subJson.keys.auth,
+          user_agent: navigator.userAgent,
+          display_name: connieName,
+        }),
+      });
+
+      setEnabled(true);
+      setStatus('推送已开启');
+    } catch (e) {
+      setStatus('开启失败：' + e.message);
+    }
+  }
+
+  async function unsubscribePush() {
+    try {
+      const reg = await navigator.serviceWorker.getRegistration();
+      if (reg) {
+        const sub = await reg.pushManager.getSubscription();
+        if (sub) {
+          const subJson = sub.toJSON();
+          await sub.unsubscribe();
+          await apiJsonFetch('/push/unsubscribe', {
+            method: 'POST',
+            body: JSON.stringify({ endpoint: subJson.endpoint, p256dh: subJson.keys.p256dh, auth: subJson.keys.auth }),
+          });
+        }
+      }
+      setEnabled(false);
+      setStatus('推送已关闭');
+    } catch (e) {
+      setStatus('关闭失败：' + e.message);
+    }
+  }
+
+  async function testPush() {
+    setTesting(true);
+    try {
+      await apiFetch('/push/test', { method: 'POST' });
+      setStatus('测试推送已发送');
+    } catch (e) {
+      setStatus('测试失败：' + e.message);
+    }
+    setTesting(false);
   }
 
   return (
@@ -990,13 +1070,29 @@ export function PushSettings({ onBack }) {
           </div>
         </div>
 
-        {permission !== 'granted' ? (
-          <button onClick={requestPermission}
+        {permission === 'denied' ? (
+          <div style={{ fontSize: 12, color: 'var(--text-secondary)', padding: '8px 0' }}>
+            通知权限已被拒绝，请在浏览器/系统设置中手动开启后刷新页面。
+          </div>
+        ) : !enabled ? (
+          <button onClick={subscribePush}
             style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--accent)', fontSize: 13, color: '#FAF8F4', cursor: 'pointer', fontWeight: 500 }}>
-            授权通知权限
+            开启推送通知
           </button>
         ) : (
-          <SettingRow label="启用推送"><SettingsToggle on={enabled} onChange={setEnabled} /></SettingRow>
+          <>
+            <SettingRow label="启用推送">
+              <SettingsToggle on={enabled} onChange={(v) => v ? subscribePush() : unsubscribePush()} />
+            </SettingRow>
+            <button onClick={testPush} disabled={testing}
+              style={{ width: '100%', marginTop: 8, padding: '8px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'transparent', fontSize: 12, color: 'var(--text-secondary)', cursor: 'pointer' }}>
+              {testing ? '发送中...' : '发送测试推送'}
+            </button>
+          </>
+        )}
+
+        {status && (
+          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 8 }}>{status}</div>
         )}
       </Card>
 
@@ -1013,6 +1109,15 @@ export function PushSettings({ onBack }) {
       </Card>
     </div>
   );
+}
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(base64);
+  const arr = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+  return arr;
 }
 
 // ═══════════════════════════════════════════

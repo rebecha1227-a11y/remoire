@@ -16,3 +16,7 @@ DAILY_MODEL_ID = os.getenv("DAILY_MODEL_ID", "")
 QWEATHER_API_KEY = os.getenv("QWEATHER_API_KEY", "")
 QWEATHER_API_HOST = os.getenv("QWEATHER_API_HOST", "")
 QWEATHER_LOCATION = os.getenv("QWEATHER_LOCATION", "113.53,22.80")
+
+VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY", "")
+VAPID_PUBLIC_KEY = os.getenv("VAPID_PUBLIC_KEY", "")
+VAPID_CONTACT = os.getenv("VAPID_CONTACT", "mailto:rebecha@remoire.cc")

@@ -147,6 +147,25 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    const token = localStorage.getItem('remoire_api_token') || 'remoire-rebechalovesconnie-4ever';
+    const base = import.meta.env.DEV ? 'http://localhost:8000/api' : '/api';
+    const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+    function setPresence(active) {
+      const body = JSON.stringify({ active });
+      if (!active && navigator.sendBeacon) {
+        const blob = new Blob([body], { type: 'application/json' });
+        navigator.sendBeacon(`${base}/push/presence?token=${token}`, blob);
+      } else {
+        fetch(`${base}/push/presence`, { method: 'POST', headers, body }).catch(() => {});
+      }
+    }
+    function onChange() { setPresence(!document.hidden); }
+    setPresence(true);
+    document.addEventListener('visibilitychange', onChange);
+    return () => { setPresence(false); document.removeEventListener('visibilitychange', onChange); };
+  }, []);
+
   const nav = useMemo(
     () => <RoomNav activeTab={tab} onNavigate={setTab} ambient={ambient} />,
     [tab, ambient]

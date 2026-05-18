@@ -504,6 +504,7 @@ async def stream_chat(conversation_id: str, user_message: str, image: str | None
     recent = history[-6:] + [{"role": "assistant", "content": full_reply}]
     asyncio.create_task(_extract_memories_bg(conversation_id, recent))
     asyncio.create_task(_extract_reminders_bg(conversation_id, recent))
+    asyncio.create_task(_push_reply_bg(full_reply, reply_style))
 
 
 async def _extract_memories_bg(conversation_id: str, messages: list[dict]):
@@ -521,3 +522,22 @@ async def _extract_reminders_bg(conversation_id: str, messages: list[dict]):
         logger.info("待办提取完成: %d 条新待办", len(result))
     except Exception as e:
         logger.warning("待办提取失败: %s", e, exc_info=True)
+
+
+async def _push_reply_bg(reply: str, reply_style: str = "split"):
+    try:
+        from app.services.push_service import send_push
+        import asyncio as _aio
+        if reply_style == "split":
+            parts = [p.strip() for p in reply.split("\n\n") if p.strip()]
+            if not parts:
+                parts = [reply]
+            for i, part in enumerate(parts):
+                await send_push(body=part[:120], tag=f"chat-{i}")
+                if i < len(parts) - 1:
+                    delay = max(0.8 + len(part) * 0.03, 1.0)
+                    await _aio.sleep(delay)
+        else:
+            await send_push(body=reply[:120], tag="chat")
+    except Exception as e:
+        logger.warning("聊天推送失败: %s", e)

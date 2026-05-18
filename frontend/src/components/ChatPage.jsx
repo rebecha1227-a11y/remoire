@@ -542,6 +542,7 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
     const time = formatBJTime(new Date().toISOString());
     setMessages(m => [...m, { id: ++msgIdRef.current, role: 'system', text: sysText, time, isNew: true }]);
     fetchReply(sysText);
+    apiJsonFetch('/push/update-name', { method: 'POST', body: JSON.stringify({ display_name: newName }) }).catch(() => {});
   }
 
   function chooseChatMode(mode) {
