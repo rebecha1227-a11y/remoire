@@ -253,6 +253,22 @@ async def init_db():
                 created_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS nudge_sessions (
+                id TEXT PRIMARY KEY,
+                conversation_id TEXT NOT NULL,
+                round INTEGER NOT NULL DEFAULT 1,
+                max_rounds INTEGER NOT NULL DEFAULT 3,
+                messages_sent INTEGER NOT NULL DEFAULT 0,
+                max_messages INTEGER NOT NULL DEFAULT 8,
+                status TEXT NOT NULL DEFAULT 'active',
+                created_at TEXT NOT NULL,
+                last_sent_at TEXT,
+                next_follow_up_at TEXT
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_nudge_sessions_status
+                ON nudge_sessions(status, next_follow_up_at);
+
             CREATE INDEX IF NOT EXISTS idx_breath_states_created
                 ON breath_states(created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_notes_unread

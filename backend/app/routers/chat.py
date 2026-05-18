@@ -66,20 +66,10 @@ async def chat_image(message_id: str, token: str = ""):
     from app.services.chat_service import get_message_image
     from fastapi import HTTPException
     from fastapi.responses import Response
-    import base64
     if token != API_SECRET_KEY:
         raise HTTPException(status_code=401, detail="无效的 token")
-    image = await get_message_image(message_id)
-    if not image:
+    result = await get_message_image(message_id)
+    if not result:
         raise HTTPException(status_code=404, detail="not found")
-    if image.startswith("data:"):
-        try:
-            header, b64 = image.split(",", 1)
-            mime = header.split(";")[0].replace("data:", "") or "image/jpeg"
-            return Response(content=base64.b64decode(b64), media_type=mime)
-        except Exception:
-            raise HTTPException(status_code=500, detail="bad image")
-    try:
-        return Response(content=base64.b64decode(image), media_type="image/jpeg")
-    except Exception:
-        raise HTTPException(status_code=500, detail="bad image")
+    raw_bytes, mime = result
+    return Response(content=raw_bytes, media_type=mime)

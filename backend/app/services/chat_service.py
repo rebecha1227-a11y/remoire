@@ -207,23 +207,46 @@ async def search_messages(conversation_id: str, query: str, limit: int = 80) -> 
     return result
 
 
-async def get_message_image(message_id: str) -> str | None:
+async def get_message_image(message_id: str) -> tuple[bytes, str] | None:
+    from app.services.image_storage import get_image
+    result = get_image(message_id)
+    if result:
+        return result
     async with get_db() as db:
         async with db.execute(
             "SELECT image FROM messages WHERE id = ?", (message_id,)
         ) as cur:
             row = await cur.fetchone()
-    if not row or not row["image"]:
+    if not row or not row["image"] or row["image"] == "file":
         return None
-    return row["image"]
+    import base64
+    image = row["image"]
+    if image.startswith("data:"):
+        try:
+            header, b64 = image.split(",", 1)
+            mime = header.split(";")[0].replace("data:", "") or "image/jpeg"
+            return base64.b64decode(b64), mime
+        except Exception:
+            return None
+    try:
+        return base64.b64decode(image), "image/jpeg"
+    except Exception:
+        return None
 
 async def save_message(conversation_id: str, role: str, content: str, thinking: str = "", image: str = "", display_mode: str = "split") -> str:
     msg_id = str(uuid.uuid4())
     now = datetime.utcnow().isoformat()
+    image_marker = None
+    if image:
+        from app.services.image_storage import save_image
+        if save_image(msg_id, image):
+            image_marker = "file"
+        else:
+            image_marker = image
     async with get_db() as db:
         await db.execute(
             "INSERT INTO messages (id, conversation_id, role, content, thinking, image, display_mode, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (msg_id, conversation_id, role, content, thinking or None, image or None, display_mode, now),
+            (msg_id, conversation_id, role, content, thinking or None, image_marker, display_mode, now),
         )
         await db.execute(
             "UPDATE conversations SET updated_at = ? WHERE id = ?",
@@ -312,6 +335,9 @@ async def _ensure_chinese_thinking(config, thinking: str) -> str:
 
 async def stream_chat(conversation_id: str, user_message: str, image: str | None = None, mode: str = "daily", reply_style: str = "split"):
     await save_message(conversation_id, "user", user_message, image=image or "")
+
+    from app.services.nudge_service import check_and_close_if_replied
+    asyncio.create_task(check_and_close_if_replied(conversation_id))
 
     history = await get_history(conversation_id, limit=20)
 
