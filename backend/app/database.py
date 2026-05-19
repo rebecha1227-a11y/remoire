@@ -277,6 +277,35 @@ async def init_db():
                 ON memory_links(source_id);
             CREATE INDEX IF NOT EXISTS idx_memory_links_target
                 ON memory_links(target_id);
+
+            CREATE TABLE IF NOT EXISTS autonomous_logs (
+                id TEXT PRIMARY KEY,
+                action_type TEXT NOT NULL DEFAULT 'none',
+                thinking TEXT DEFAULT '',
+                action_summary TEXT DEFAULT '',
+                detail_json TEXT DEFAULT '{}',
+                mode TEXT NOT NULL DEFAULT 'light',
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_autonomous_logs_created
+                ON autonomous_logs(created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_autonomous_logs_date
+                ON autonomous_logs(created_at);
+
+            CREATE TABLE IF NOT EXISTS browsed_content (
+                id TEXT PRIMARY KEY,
+                source TEXT NOT NULL DEFAULT 'web',
+                title TEXT NOT NULL DEFAULT '',
+                url TEXT NOT NULL DEFAULT '',
+                summary TEXT NOT NULL DEFAULT '',
+                tags_json TEXT DEFAULT '[]',
+                shared INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_browsed_content_created
+                ON browsed_content(created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_browsed_content_unshared
+                ON browsed_content(shared) WHERE shared = 0;
         """)
         # 兼容已有数据库：补加新列
         for col_sql in [

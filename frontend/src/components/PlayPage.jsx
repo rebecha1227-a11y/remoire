@@ -1,9 +1,19 @@
 import { useState } from 'react';
 import { Card, SectionLabel } from './primitives';
 import RoomShell from './RoomShell';
+import ConnieTimeline from './ConnieTimeline';
 
 export default function PlayPage({ nav }) {
   const [space, setSpace] = useState(null);
+  const [showTimeline, setShowTimeline] = useState(false);
+
+  if (showTimeline) {
+    return (
+      <RoomShell nav={nav}>
+        <ConnieTimeline onBack={() => setShowTimeline(false)} />
+      </RoomShell>
+    );
+  }
 
   if (space) {
     return (
@@ -33,6 +43,39 @@ export default function PlayPage({ nav }) {
   return (
     <RoomShell nav={nav}>
     <div style={{ overflowY: 'auto', flex: 1, padding: '20px 16px 16px', position: 'relative', zIndex: 10 }}>
+      <div style={{ marginBottom: 'var(--space-6)' }}>
+        <SectionLabel>Connie的世界</SectionLabel>
+        <div className="r-glass" onClick={() => setShowTimeline(true)} style={{
+          position: 'relative',
+          cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 14,
+          animation: 'card-in 180ms ease',
+        }}>
+          <div style={{
+            width: 44, height: 44, borderRadius: 12, flexShrink: 0,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'rgba(124,99,80,0.10)',
+          }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ink-accent, var(--accent))" strokeWidth="1.5">
+              <path d="M12 6v6l4 2"/><circle cx="12" cy="12" r="10"/>
+            </svg>
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ fontSize: 15, fontWeight: 500, color: 'var(--ink, var(--text-primary))' }}>
+              Connie的生活日志和碎碎念
+            </span>
+            <div style={{
+              fontSize: 12, color: 'var(--ink-faint, var(--text-tertiary))',
+              marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>
+              看他自己醒来、游荡、想起你的记录
+            </div>
+          </div>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft, var(--text-tertiary))" strokeWidth="1.5" style={{ flexShrink: 0 }}>
+            <path d="M9 18l6-6-6-6"/>
+          </svg>
+        </div>
+      </div>
+
       <div style={{ marginBottom: 'var(--space-6)' }}>
         <SectionLabel>共读</SectionLabel>
         <Card padding="lg" style={{ animation: 'card-in 180ms ease' }}>

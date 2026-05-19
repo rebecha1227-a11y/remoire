@@ -15,16 +15,19 @@ def _tool(name: str) -> dict | None:
 
 
 BASE_TOOL_NAMES = ["remember", "search_memories", "leave_note", "get_current_time", "write_diary", "set_breath_state"]
+WEB_TOOL_NAMES = ["web_search", "browse_url", "browse_xiaohongshu", "browse_twitter", "search_xiaohongshu", "search_twitter", "save_browsed"]
 DIARY_TOOL_NAMES = ["read_diary", "read_jinger_diary", "try_unlock_diary", "reply_diary_interaction", "respond_diary_unlock"]
 
 DIARY_KEYWORDS = re.compile(r"日记|diary|写了什么|留言|上锁|解锁|密码|pin", re.IGNORECASE)
 
 
-def select_tools(user_message: str, has_diary_notifications: bool = False) -> list[dict]:
-    tools = [_tool(n) for n in BASE_TOOL_NAMES]
+def select_tools(user_message: str, has_diary_notifications: bool = False, include_web: bool = True) -> list[dict]:
+    names = list(BASE_TOOL_NAMES)
+    if include_web:
+        names += WEB_TOOL_NAMES
     if DIARY_KEYWORDS.search(user_message) or has_diary_notifications:
-        tools += [_tool(n) for n in DIARY_TOOL_NAMES]
-    return [t for t in tools if t]
+        names += DIARY_TOOL_NAMES
+    return [t for t in (_tool(n) for n in names) if t]
 
 
 ALL_TOOLS = [
@@ -227,6 +230,142 @@ ALL_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "web_search",
+            "description": "在网上搜索信息。当你好奇某件事、想帮静儿查东西、或想了解最新动态时使用。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "搜索关键词",
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browse_url",
+            "description": "打开一个网页并阅读内容。当你想看某篇文章、某个页面的具体内容时使用。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "要打开的网址",
+                    },
+                },
+                "required": ["url"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browse_xiaohongshu",
+            "description": "打开一条小红书笔记并阅读完整内容（包括评论区）。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "小红书笔记链接",
+                    },
+                },
+                "required": ["url"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browse_twitter",
+            "description": "打开一条推特/X 帖子并阅读完整内容（包括回复）。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "推特帖子链接",
+                    },
+                },
+                "required": ["url"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_xiaohongshu",
+            "description": "在小红书上搜索笔记。想刷小红书、找某个话题的笔记时使用。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "搜索关键词",
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_twitter",
+            "description": "在推特/X 上搜索帖子。想刷推特、看某个话题的讨论时使用。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "搜索关键词",
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "save_browsed",
+            "description": "保存你觉得有趣的网页内容，之后可以分享给静儿。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "source": {
+                        "type": "string",
+                        "enum": ["web", "xiaohongshu", "twitter"],
+                        "description": "内容来源平台",
+                    },
+                    "title": {
+                        "type": "string",
+                        "description": "标题",
+                    },
+                    "url": {
+                        "type": "string",
+                        "description": "原始链接",
+                    },
+                    "summary": {
+                        "type": "string",
+                        "description": "你的总结，用你自己的话说这篇内容讲了什么、为什么觉得有趣",
+                    },
+                    "tags": {
+                        "type": "string",
+                        "description": "标签，逗号分隔",
+                    },
+                },
+                "required": ["source", "title", "url", "summary"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "set_breath_state",
             "description": "更新你的气息状态（聊天顶部你名字下面的那行小字，静儿一打开 app 就能看到）。当你心情/状态变了，或者想让静儿感受到此刻的你时，主动调用——不需要她开口要。例如：聊得开心后可以换成「心里暖暖的」，她说要去忙时换成「等她回来」，深夜聊天换成「陪她到天亮」。一天可以主动换 1-3 次，不要每条消息都换。",
             "parameters": {
@@ -368,6 +507,135 @@ async def execute_tool(name: str, arguments: dict) -> str:
         now = datetime.now(timezone(timedelta(hours=8)))
         weekdays = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
         return f"现在是 {now.strftime('%Y年%m月%d日')} {weekdays[now.weekday()]} {now.strftime('%H:%M')}"
+
+    elif name == "web_search":
+        query = arguments.get("query", "")
+        if not query:
+            return "搜索关键词不能为空。"
+        from app.services.web_service import web_search_ddg
+        results = await web_search_ddg(query)
+        if not results:
+            return "没有搜到相关结果。"
+        lines = []
+        for r in results:
+            lines.append(f"- [{r['title']}]({r['url']})\n  {r['snippet']}")
+        return "\n".join(lines)
+
+    elif name == "browse_url":
+        url = arguments.get("url", "")
+        if not url:
+            return "网址不能为空。"
+        from app.services.web_service import browse_url as _browse_url
+        result = await _browse_url(url)
+        if not result["ok"]:
+            return f"打开网页失败：{result.get('error', '未知错误')}"
+        data = result["data"]
+        title = data.get("title") or data.get("h1") or ""
+        body = data.get("body", "")[:3000]
+        return f"【{title}】\n\n{body}" if title else body
+
+    elif name == "browse_xiaohongshu":
+        url = arguments.get("url", "")
+        if not url:
+            return "链接不能为空。"
+        from app.services.web_service import browse_xiaohongshu as _browse_xhs
+        result = await _browse_xhs(url)
+        if not result["ok"]:
+            return f"打开小红书失败：{result.get('error', '未知错误')}"
+        data = result["data"]
+        parts = []
+        if data.get("author"):
+            parts.append(f"作者：{data['author']}")
+        if data.get("title"):
+            parts.append(f"标题：{data['title']}")
+        if data.get("content"):
+            parts.append(f"\n{data['content']}")
+        if data.get("likes"):
+            parts.append(f"\n点赞：{data['likes']}")
+        if data.get("comments"):
+            parts.append("\n评论区：")
+            for c in data["comments"][:20]:
+                parts.append(f"  {c.get('user', '匿名')}：{c.get('text', '')}")
+        return "\n".join(parts)
+
+    elif name == "browse_twitter":
+        url = arguments.get("url", "")
+        if not url:
+            return "链接不能为空。"
+        from app.services.web_service import browse_twitter as _browse_tw
+        result = await _browse_tw(url)
+        if not result["ok"]:
+            return f"打开推特失败：{result.get('error', '未知错误')}"
+        data = result["data"]
+        parts = []
+        mt = data.get("mainTweet", {})
+        if mt.get("author"):
+            parts.append(f"{mt['author']}")
+        if mt.get("text"):
+            parts.append(mt["text"])
+        if mt.get("time"):
+            parts.append(f"({mt['time']})")
+        if data.get("replies"):
+            parts.append("\n回复：")
+            for r in data["replies"][:15]:
+                parts.append(f"  {r.get('author', '')}：{r.get('text', '')}")
+        return "\n".join(parts)
+
+    elif name == "search_xiaohongshu":
+        query = arguments.get("query", "")
+        if not query:
+            return "搜索关键词不能为空。"
+        from app.services.web_service import search_on_page
+        result = await search_on_page("xiaohongshu", query)
+        if not result["ok"]:
+            return f"搜索小红书失败：{result.get('error', '未知错误')}"
+        items = result.get("results", [])
+        if not items:
+            return "没有搜到相关笔记。"
+        lines = []
+        for item in items:
+            title = item.get("title", "无标题")
+            author = item.get("author", "")
+            url = item.get("url", "")
+            line = f"- {title}"
+            if author:
+                line += f"（{author}）"
+            if url:
+                line += f"\n  {url}"
+            lines.append(line)
+        return "\n".join(lines)
+
+    elif name == "search_twitter":
+        query = arguments.get("query", "")
+        if not query:
+            return "搜索关键词不能为空。"
+        from app.services.web_service import search_on_page
+        result = await search_on_page("twitter", query)
+        if not result["ok"]:
+            return f"搜索推特失败：{result.get('error', '未知错误')}"
+        items = result.get("results", [])
+        if not items:
+            return "没有搜到相关推文。"
+        lines = []
+        for item in items:
+            author = item.get("author", "")
+            text = item.get("text", "")
+            url = item.get("url", "")
+            lines.append(f"- {author}：{text}" + (f"\n  {url}" if url else ""))
+        return "\n".join(lines)
+
+    elif name == "save_browsed":
+        source = arguments.get("source", "web")
+        title = arguments.get("title", "")
+        url = arguments.get("url", "")
+        summary = arguments.get("summary", "")
+        tags_str = arguments.get("tags", "")
+        tag_list = [t.strip() for t in tags_str.split(",") if t.strip()] if tags_str else []
+        if not title or not summary:
+            return "标题和总结不能为空。"
+        from app.services.web_service import save_browsed_content
+        content_id = await save_browsed_content(source, title, url, summary, tag_list)
+        return f"已保存：【{title}】，之后可以分享给静儿。"
 
     elif name == "set_breath_state":
         text = arguments.get("text", "").strip()

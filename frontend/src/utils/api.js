@@ -1,4 +1,12 @@
-const DEFAULT_API_BASE = import.meta.env.DEV ? 'http://localhost:8000/api' : '/api';
+function getDefaultApiBase() {
+  if (!import.meta.env.DEV) return '/api';
+  const protocol = window.location.protocol || 'http:';
+  const hostname = window.location.hostname || 'localhost';
+  const host = hostname.includes(':') ? `[${hostname}]` : hostname;
+  return `${protocol}//${host}:8000/api`;
+}
+
+const DEFAULT_API_BASE = getDefaultApiBase();
 const DEV_AUTH_TOKEN = 'remoire-rebechalovesconnie-4ever';
 
 export const API_BASE = (import.meta.env.VITE_API_BASE || DEFAULT_API_BASE).replace(/\/$/, '');

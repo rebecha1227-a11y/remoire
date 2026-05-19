@@ -3,14 +3,37 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.date import DateTrigger
 from app.database import init_db
-from app.routers import chat, memory, diary, note, settings, reminder, push
+from app.routers import chat, memory, diary, note, settings, reminder, push, signal, autonomous
 from app.scheduler.jobs import connie_auto_diary, catchup_missed_diary, generate_breath_state, decay_memories
-from app.services.nudge_service import run_nudge_check
+from app.services.nudge_service import run_autonomous_check
 from app.services.weather_service import fetch_and_cache as fetch_weather
 from app.services.memory_service import run_digest
 
 scheduler = AsyncIOScheduler()
+
+
+def _schedule_next_autonomous():
+    import random, logging
+    from datetime import datetime, timedelta
+    delay_minutes = random.randint(45, 75)
+    run_time = datetime.now() + timedelta(minutes=delay_minutes)
+    scheduler.add_job(
+        _run_autonomous_and_reschedule,
+        DateTrigger(run_date=run_time),
+        id="autonomous_check",
+        replace_existing=True,
+    )
+    print(f"[autonomous] 下次活动在 {delay_minutes} 分钟后（{run_time.strftime('%H:%M')}）", flush=True)
+
+
+async def _run_autonomous_and_reschedule():
+    try:
+        await run_autonomous_check()
+    finally:
+        _schedule_next_autonomous()
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -39,12 +62,7 @@ async def lifespan(app: FastAPI):
         id="decay_memories",
         replace_existing=True,
     )
-    scheduler.add_job(
-        run_nudge_check,
-        CronTrigger(hour="9-22", minute=30, timezone="Asia/Shanghai"),
-        id="nudge_check",
-        replace_existing=True,
-    )
+    _schedule_next_autonomous()
     scheduler.add_job(
         run_digest,
         CronTrigger(hour=2, minute=30, timezone="Asia/Shanghai"),
@@ -57,6 +75,11 @@ async def lifespan(app: FastAPI):
     await fetch_weather()
     yield
     scheduler.shutdown()
+    try:
+        from app.services.web_service import close_browser
+        await close_browser()
+    except Exception:
+        pass
 
 app = FastAPI(lifespan=lifespan)
 
@@ -74,6 +97,8 @@ app.include_router(note.router)
 app.include_router(settings.router)
 app.include_router(reminder.router)
 app.include_router(push.router)
+app.include_router(signal.router)
+app.include_router(autonomous.router)
 
 @app.get("/")
 async def root():

@@ -5,6 +5,7 @@ import DiaryPage from './components/DiaryPage.jsx';
 import PlayPage from './components/PlayPage.jsx';
 import SettingsPage from './components/SettingsPage.jsx';
 import { RoomAmbientProvider, useRoomAmbient, useRoomChrome } from './components/RoomShell.jsx';
+import { API_BASE, getAuthToken } from './utils/api.js';
 import './styles/room.css';
 
 
@@ -148,8 +149,8 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const token = localStorage.getItem('remoire_api_token') || 'remoire-rebechalovesconnie-4ever';
-    const base = import.meta.env.DEV ? 'http://localhost:8000/api' : '/api';
+    const token = getAuthToken();
+    const base = API_BASE;
     const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
     function setPresence(active) {
       const body = JSON.stringify({ active });

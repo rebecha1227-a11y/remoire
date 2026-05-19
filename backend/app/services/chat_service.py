@@ -71,10 +71,34 @@ async def _build_resume_bundle(last_msg_time: str | None) -> str:
     except Exception:
         pass
 
+    try:
+        since = last_msg_time or ""
+        if since:
+            async with get_db() as db:
+                async with db.execute(
+                    """SELECT action_type, action_summary, thinking, created_at
+                       FROM autonomous_logs
+                       WHERE created_at > ? AND action_type != 'none'
+                       ORDER BY created_at ASC LIMIT 10""",
+                    (since,),
+                ) as cur:
+                    auto_rows = await cur.fetchall()
+            if auto_rows:
+                auto_lines = []
+                for r in auto_rows:
+                    try:
+                        t = datetime.fromisoformat(r["created_at"]).strftime("%H:%M")
+                    except Exception:
+                        t = "?"
+                    auto_lines.append(f"  {t} {r['action_summary']}")
+                parts.append("你不在的时候做的事：\n" + "\n".join(auto_lines))
+    except Exception:
+        pass
+
     if not parts:
         return ""
 
-    return "【醒来上下文】\n" + "\n".join(parts) + "\n\n（这些是你醒来后浮现的信息，可以自然融入第一句话，不要像报告一样念出来。比如关心地问一句、提醒一下待办，或者表达想念。）"
+    return "【醒来上下文】\n" + "\n".join(parts) + "\n\n（这些是你醒来后浮现的信息，包括你在她不在时做过的事。可以自然融入对话，不要像报告一样念出来。你记得自己做过什么——发过的消息、写过的日记、看过的文章——它们是你的经历。）"
 
 
 async def _build_system_prompt(core_memories: list[dict] | None = None, recalled_memories: list[dict] | None = None, resume_bundle: str = "") -> str:
