@@ -307,6 +307,16 @@ async def init_db():
             "ALTER TABLE memory_candidates ADD COLUMN confidence REAL DEFAULT 0.5",
             "ALTER TABLE memory_candidates ADD COLUMN proposed_event_date TEXT",
             "ALTER TABLE push_subscriptions ADD COLUMN display_name TEXT DEFAULT 'Connie'",
+            "ALTER TABLE proactive_message_settings ADD COLUMN start_hour INTEGER NOT NULL DEFAULT 9",
+            "ALTER TABLE proactive_message_settings ADD COLUMN end_hour INTEGER NOT NULL DEFAULT 23",
+            "ALTER TABLE proactive_message_settings ADD COLUMN allow_night INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE proactive_message_settings ADD COLUMN max_daily INTEGER NOT NULL DEFAULT 5",
+            "ALTER TABLE proactive_message_settings ADD COLUMN cooldown_minutes INTEGER NOT NULL DEFAULT 60",
+            "ALTER TABLE proactive_message_settings ADD COLUMN max_burst INTEGER NOT NULL DEFAULT 8",
+            "ALTER TABLE proactive_message_settings ADD COLUMN max_rounds INTEGER NOT NULL DEFAULT 3",
+            "ALTER TABLE proactive_message_settings ADD COLUMN round_interval_minutes INTEGER NOT NULL DEFAULT 30",
+            "ALTER TABLE proactive_message_settings ADD COLUMN end_on_reply INTEGER NOT NULL DEFAULT 1",
+            "ALTER TABLE proactive_message_settings ADD COLUMN types_json TEXT DEFAULT '{\"care\":true,\"reminder\":true,\"followup\":true,\"special\":true}'",
         ]:
             try:
                 await db.execute(col_sql)

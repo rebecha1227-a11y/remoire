@@ -4,21 +4,14 @@ import logging
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from app.database import get_db
-from app.llm import call_llm
+from app.llm import call_llm, call_llm_with_tools
 from app.services import memory_service, model_settings_service, weather_service
+from app.tools import select_tools, execute_tool
 
 logger = logging.getLogger(__name__)
 
 BJ_TZ = timezone(timedelta(hours=8))
 PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
-
-ALLOWED_HOUR_START = 9
-ALLOWED_HOUR_END = 23
-COOLDOWN_HOURS = 4
-DAILY_LIMIT = 5
-BURST_MAX_ROUNDS = 3
-BURST_MAX_MESSAGES = 8
-BURST_FOLLOW_UP_MINUTES = 30
 
 
 def _load_prompt(filename: str) -> str:
@@ -26,25 +19,27 @@ def _load_prompt(filename: str) -> str:
     return path.read_text(encoding="utf-8") if path.exists() else ""
 
 
+async def _get_settings() -> dict:
+    async with get_db() as db:
+        async with db.execute("SELECT * FROM proactive_message_settings WHERE id = 1") as cur:
+            row = await cur.fetchone()
+    if not row:
+        return {
+            "enabled": True, "start_hour": 9, "end_hour": 23, "allow_night": False,
+            "max_daily": 5, "cooldown_minutes": 60, "max_burst": 8,
+            "max_rounds": 3, "round_interval_minutes": 30, "end_on_reply": True,
+        }
+    d = dict(row)
+    d["enabled"] = bool(d.get("enabled", 1))
+    d["allow_night"] = bool(d.get("allow_night", 0))
+    d["end_on_reply"] = bool(d.get("end_on_reply", 1))
+    return d
+
+
 async def _get_last_message_time(conversation_id: str) -> datetime | None:
     async with get_db() as db:
         async with db.execute(
             "SELECT created_at FROM messages WHERE conversation_id = ? ORDER BY created_at DESC LIMIT 1",
-            (conversation_id,),
-        ) as cur:
-            row = await cur.fetchone()
-    if not row:
-        return None
-    try:
-        return datetime.fromisoformat(row["created_at"])
-    except (ValueError, TypeError):
-        return None
-
-
-async def _get_last_user_message_time(conversation_id: str) -> datetime | None:
-    async with get_db() as db:
-        async with db.execute(
-            "SELECT created_at FROM messages WHERE conversation_id = ? AND role = 'user' ORDER BY created_at DESC LIMIT 1",
             (conversation_id,),
         ) as cur:
             row = await cur.fetchone()
@@ -96,167 +91,181 @@ async def _check_user_replied_since(conversation_id: str, since: str) -> bool:
     return (row["cnt"] or 0) > 0
 
 
-async def _is_enabled() -> bool:
-    async with get_db() as db:
-        async with db.execute(
-            "SELECT enabled FROM proactive_message_settings WHERE id = 1"
-        ) as cur:
-            row = await cur.fetchone()
-    if not row:
-        return True
-    return bool(row["enabled"])
-
-
 async def should_nudge() -> tuple[bool, str]:
-    if not await _is_enabled():
+    cfg = await _get_settings()
+
+    if not cfg["enabled"]:
         return False, "主动消息已关闭"
 
     now_bj = datetime.now(BJ_TZ)
+    start = cfg.get("start_hour", 9)
+    end = cfg.get("end_hour", 23)
+    allow_night = cfg.get("allow_night", False)
 
-    if not (ALLOWED_HOUR_START <= now_bj.hour < ALLOWED_HOUR_END):
-        return False, f"不在允许时间段（{ALLOWED_HOUR_START}:00-{ALLOWED_HOUR_END}:00）"
+    if allow_night:
+        if not (start <= now_bj.hour or now_bj.hour < 2):
+            return False, f"不在允许时间段"
+    else:
+        if not (start <= now_bj.hour < end):
+            return False, f"不在允许时间段（{start}:00-{end}:00）"
 
-    if await _get_today_nudge_count() >= DAILY_LIMIT:
-        return False, f"今日已达上限（{DAILY_LIMIT}次）"
+    max_daily = cfg.get("max_daily", 5)
+    if await _get_today_nudge_count() >= max_daily:
+        return False, f"今日已达上限（{max_daily}次）"
 
     conversation_id = await _get_latest_conversation_id()
     if not conversation_id:
         return False, "没有对话"
 
+    cooldown_minutes = cfg.get("cooldown_minutes", 60)
     last_msg_time = await _get_last_message_time(conversation_id)
     if last_msg_time:
         if last_msg_time.tzinfo is None:
             last_msg_time = last_msg_time.replace(tzinfo=timezone.utc)
-        gap_hours = (datetime.now(timezone.utc) - last_msg_time).total_seconds() / 3600
-        if gap_hours < COOLDOWN_HOURS:
-            return False, f"冷却中（距上次消息 {gap_hours:.1f}h，需 {COOLDOWN_HOURS}h）"
+        gap_minutes = (datetime.now(timezone.utc) - last_msg_time).total_seconds() / 60
+        if gap_minutes < cooldown_minutes:
+            return False, f"冷却中（距上次消息 {gap_minutes:.0f}min，需 {cooldown_minutes}min）"
 
     return True, "可以发送"
 
 
-async def _build_nudge_context(conversation_id: str) -> str:
+async def generate_nudge_as_chat(conversation_id: str) -> dict:
+    """像真实对话一样生成主动消息：完整 system prompt + 记忆召回 + 工具调用 + 思考链。"""
+    from app.services.chat_service import _build_system_prompt, _build_resume_bundle, get_history, _build_llm_history_with_time_gaps, _ensure_chinese_thinking
+
+    history = await get_history(conversation_id, limit=15)
+
+    last_msg_time = None
+    for msg in reversed(history):
+        if msg.get("created_at"):
+            last_msg_time = msg["created_at"]
+            break
+
+    core_memories = await memory_service.get_core_memories()
+
     now_bj = datetime.now(BJ_TZ)
     weekdays = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
-    parts = [f"当前时间：{now_bj.strftime('%Y年%m月%d日')} {weekdays[now_bj.weekday()]} {now_bj.strftime('%H:%M')}"]
+    time_hint = f"{now_bj.strftime('%H:%M')} {weekdays[now_bj.weekday()]}"
 
-    last_msg_time = await _get_last_message_time(conversation_id)
-    if last_msg_time:
-        if last_msg_time.tzinfo is None:
-            last_msg_time = last_msg_time.replace(tzinfo=timezone.utc)
-        gap = datetime.now(timezone.utc) - last_msg_time
-        hours = gap.total_seconds() / 3600
-        if hours >= 24:
-            parts.append(f"距离上次聊天：{int(hours // 24)} 天")
-        else:
-            parts.append(f"距离上次聊天：{int(hours)} 小时")
+    nudge_query = f"主动关心静儿 {time_hint}"
+    if history:
+        last_content = ""
+        for msg in reversed(history):
+            if msg["role"] == "user":
+                last_content = msg["content"][:50]
+                break
+        if last_content:
+            nudge_query = last_content
 
-    try:
-        w = await weather_service.get_latest()
-        if w:
-            parts.append(f"天气：{weather_service.format_for_prompt(w)}")
-    except Exception:
-        pass
-
-    async with get_db() as db:
-        async with db.execute(
-            "SELECT role, content FROM messages WHERE conversation_id = ? ORDER BY created_at DESC LIMIT 8",
-            (conversation_id,),
-        ) as cur:
-            rows = await cur.fetchall()
-    if rows:
-        recent = [f"{'静儿' if r['role'] == 'user' else 'Connie'}: {r['content'][:100]}" for r in reversed(rows)]
-        parts.append("最近聊天：\n" + "\n".join(recent))
-
-    recalled = await memory_service.recall("主动关心静儿", limit=3)
-    if recalled:
-        parts.append("相关记忆：\n" + "\n".join(f"- {m['content']}" for m in recalled))
-
-    return "\n\n".join(parts)
-
-
-async def generate_nudge(conversation_id: str) -> list[str]:
-    context = await _build_nudge_context(conversation_id)
-    prompt_template = _load_prompt("nudge.md")
-    prompt = prompt_template.replace("{context}", context)
-
-    identity = _load_prompt("identity.md").replace("{user}", "静儿")
-    voice = _load_prompt("voice.md").replace("{user}", "静儿")
-
-    config, _ = await model_settings_service.get_model_config_for_slot("daily")
-    result = await call_llm(
-        config,
-        [
-            {"role": "system", "content": identity + "\n\n---\n\n" + voice},
-            {"role": "user", "content": prompt},
-        ],
-        temperature=0.8,
-        max_tokens=300,
-        extended_thinking=False,
+    recalled = await memory_service.recall(nudge_query, limit=5)
+    resume_bundle = await _build_resume_bundle(last_msg_time)
+    system_prompt = await _build_system_prompt(
+        core_memories=core_memories,
+        recalled_memories=recalled if recalled else None,
+        resume_bundle=resume_bundle,
     )
 
-    result = result.strip()
-    if result.startswith("```"):
-        result = result.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+    nudge_instruction = _load_prompt("nudge.md")
+    system_prompt += "\n\n---\n\n" + nudge_instruction
+
+    llm_history = _build_llm_history_with_time_gaps(history)
+    messages = [{"role": "system", "content": system_prompt}] + llm_history
+
+    config, slot_settings = await model_settings_service.get_model_config_for_slot("daily")
+    extended_thinking = bool(slot_settings.get("extended_thinking"))
+    tools = select_tools("", has_diary_notifications=False)
 
     try:
-        messages = json.loads(result)
-        if isinstance(messages, list) and all(isinstance(m, str) for m in messages):
-            return messages[:3]
-    except (json.JSONDecodeError, TypeError):
-        pass
+        for _ in range(3):
+            assistant_msg = await call_llm_with_tools(
+                config,
+                messages,
+                tools=tools,
+                extended_thinking=extended_thinking,
+                max_tokens=2048,
+            )
+            tool_calls = assistant_msg.get("tool_calls")
+            if not tool_calls:
+                break
+            messages.append(assistant_msg)
+            for tc in tool_calls:
+                fn_name = tc["function"]["name"]
+                try:
+                    fn_args = json.loads(tc["function"]["arguments"])
+                except (json.JSONDecodeError, TypeError):
+                    fn_args = {}
+                result = await execute_tool(fn_name, fn_args)
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc["id"],
+                    "content": result,
+                })
+        else:
+            assistant_msg = await call_llm_with_tools(
+                config, messages,
+                extended_thinking=extended_thinking, max_tokens=2048,
+            )
+    except Exception as e:
+        logger.error("nudge LLM 调用异常: %s", e)
+        return {"content": "", "thinking": ""}
 
-    if result.startswith("["):
-        try:
-            messages = json.loads(result.split("\n")[0])
-            if isinstance(messages, list):
-                return [str(m) for m in messages[:3]]
-        except Exception:
-            pass
-
+    full_reply = assistant_msg.get("content", "")
     import re
-    strings = re.findall(r'"([^"]+)"', result)
-    if strings:
-        return [s for s in strings if len(s) > 1][:3]
+    _think_match = re.search(r'<(?:thinking|think)>(.*?)</(?:thinking|think)>', full_reply, re.DOTALL)
+    if _think_match:
+        thinking = _think_match.group(1) + "\n" + assistant_msg.get("reasoning_content", "")
+        full_reply = re.sub(r'<(?:thinking|think)>.*?</(?:thinking|think)>\s*', '', full_reply, flags=re.DOTALL)
+    else:
+        thinking = assistant_msg.get("reasoning_content", "")
 
-    cleaned = result.strip("[]\"' \n,")
-    return [cleaned] if cleaned else ["想你了"]
+    if thinking:
+        thinking = await _ensure_chinese_thinking(config, thinking)
+
+    return {"content": full_reply.strip(), "thinking": thinking.strip()}
 
 
-async def send_nudge(conversation_id: str, messages: list[str]) -> int:
+async def send_nudge(conversation_id: str, content: str, thinking: str = "") -> int:
     from app.services.chat_service import save_message
     from app.services.push_service import send_push
-    count = 0
-    for msg in messages:
-        if not msg.strip():
-            continue
-        await save_message(conversation_id, "assistant", msg.strip(), display_mode="split")
-        count += 1
-    if count > 0:
-        preview = messages[0][:60] if messages else ""
-        try:
-            await send_push(body=preview, tag="nudge")
-        except Exception as e:
-            logger.warning("nudge push 失败: %s", e)
-    return count
+
+    if not content.strip():
+        return 0
+
+    await save_message(conversation_id, "assistant", content, thinking=thinking, display_mode="split")
+
+    preview = content[:60].split("\n")[0]
+    try:
+        await send_push(body=preview, tag="nudge")
+    except Exception as e:
+        logger.warning("nudge push 失败: %s", e)
+
+    parts = [p.strip() for p in content.split("\n\n") if p.strip()]
+    return max(len(parts), 1)
 
 
 async def create_session(conversation_id: str) -> str:
+    cfg = await _get_settings()
     session_id = str(uuid.uuid4())
     now = datetime.now(BJ_TZ).isoformat()
-    follow_up_at = (datetime.now(BJ_TZ) + timedelta(minutes=BURST_FOLLOW_UP_MINUTES)).isoformat()
+    round_interval = cfg.get("round_interval_minutes", 30)
+    max_rounds = cfg.get("max_rounds", 3)
+    max_burst = cfg.get("max_burst", 8)
+    follow_up_at = (datetime.now(BJ_TZ) + timedelta(minutes=round_interval)).isoformat()
     async with get_db() as db:
         await db.execute(
             """INSERT INTO nudge_sessions (id, conversation_id, round, max_rounds, messages_sent, max_messages, status, created_at, last_sent_at, next_follow_up_at)
                VALUES (?, ?, 1, ?, 0, ?, 'active', ?, ?, ?)""",
-            (session_id, conversation_id, BURST_MAX_ROUNDS, BURST_MAX_MESSAGES, now, now, follow_up_at),
+            (session_id, conversation_id, max_rounds, max_burst, now, now, follow_up_at),
         )
         await db.commit()
     return session_id
 
 
 async def update_session_after_send(session_id: str, messages_sent: int):
+    cfg = await _get_settings()
     now = datetime.now(BJ_TZ).isoformat()
-    follow_up_at = (datetime.now(BJ_TZ) + timedelta(minutes=BURST_FOLLOW_UP_MINUTES)).isoformat()
+    round_interval = cfg.get("round_interval_minutes", 30)
+    follow_up_at = (datetime.now(BJ_TZ) + timedelta(minutes=round_interval)).isoformat()
     async with get_db() as db:
         await db.execute(
             """UPDATE nudge_sessions
@@ -286,6 +295,9 @@ async def close_session(session_id: str, reason: str = "completed"):
 
 
 async def check_and_close_if_replied(conversation_id: str) -> bool:
+    cfg = await _get_settings()
+    if not cfg.get("end_on_reply", True):
+        return False
     session = await _get_active_session(conversation_id)
     if not session:
         return False
@@ -305,11 +317,14 @@ async def run_nudge_check():
     if await check_and_close_if_replied(conversation_id):
         return
 
+    cfg = await _get_settings()
     session = await _get_active_session(conversation_id)
 
     if session:
         now_bj = datetime.now(BJ_TZ)
-        if not (ALLOWED_HOUR_START <= now_bj.hour < ALLOWED_HOUR_END):
+        start = cfg.get("start_hour", 9)
+        end = cfg.get("end_hour", 23)
+        if not (start <= now_bj.hour < end):
             logger.info("nudge: 不在允许时间段，跳过 burst 追发")
             return
 
@@ -330,12 +345,11 @@ async def run_nudge_check():
             return
 
         logger.info("nudge: burst 追发第 %d 轮", session["round"] + 1)
-        messages = await generate_nudge(conversation_id)
-        remaining = session["max_messages"] - session["messages_sent"]
-        messages = messages[:remaining]
-        count = await send_nudge(conversation_id, messages)
-        await update_session_after_send(session["id"], count)
-        await advance_round(session["id"])
+        result = await generate_nudge_as_chat(conversation_id)
+        if result["content"]:
+            count = await send_nudge(conversation_id, result["content"], result["thinking"])
+            await update_session_after_send(session["id"], count)
+            await advance_round(session["id"])
         return
 
     ok, reason = await should_nudge()
@@ -343,9 +357,12 @@ async def run_nudge_check():
         logger.info("nudge: 条件不满足 — %s", reason)
         return
 
-    logger.info("nudge: 开始生成主动消息")
-    messages = await generate_nudge(conversation_id)
-    count = await send_nudge(conversation_id, messages)
-    session_id = await create_session(conversation_id)
-    await update_session_after_send(session_id, count)
-    logger.info("nudge: 已发送 %d 条消息，session=%s", count, session_id)
+    logger.info("nudge: 开始生成主动消息（走完整对话流程）")
+    result = await generate_nudge_as_chat(conversation_id)
+    if result["content"]:
+        count = await send_nudge(conversation_id, result["content"], result["thinking"])
+        session_id = await create_session(conversation_id)
+        await update_session_after_send(session_id, count)
+        logger.info("nudge: 已发送 %d 条消息，session=%s", count, session_id)
+    else:
+        logger.info("nudge: LLM 没有生成内容，跳过")

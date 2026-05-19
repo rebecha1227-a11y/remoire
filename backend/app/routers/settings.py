@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from datetime import datetime, timezone, timedelta
 
 from app.auth import verify_token
+from app.database import get_db
 from app.services import model_settings_service
 
 
@@ -139,3 +141,81 @@ async def update_model_slot(slot: str, req: SlotUpdateRequest, _=Depends(verify_
         return {"ok": True, "data": updated}
     except (ValueError, model_settings_service.PresetNotFoundError) as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+
+# ── 主动消息设置 ──
+
+class ProactiveSettingsRequest(BaseModel):
+    enabled: bool | None = None
+    start_hour: int | None = None
+    end_hour: int | None = None
+    allow_night: bool | None = None
+    max_daily: int | None = None
+    cooldown_minutes: int | None = None
+    max_burst: int | None = None
+    max_rounds: int | None = None
+    round_interval_minutes: int | None = None
+    end_on_reply: bool | None = None
+    types_json: str | None = None
+
+
+BJ_TZ = timezone(timedelta(hours=8))
+
+
+@router.get("/proactive")
+async def get_proactive_settings(_=Depends(verify_token)):
+    async with get_db() as db:
+        async with db.execute("SELECT * FROM proactive_message_settings WHERE id = 1") as cur:
+            row = await cur.fetchone()
+    if not row:
+        async with get_db() as db:
+            now = datetime.now(BJ_TZ).isoformat()
+            await db.execute(
+                "INSERT OR IGNORE INTO proactive_message_settings (id, updated_at) VALUES (1, ?)",
+                (now,),
+            )
+            await db.commit()
+            async with db.execute("SELECT * FROM proactive_message_settings WHERE id = 1") as cur:
+                row = await cur.fetchone()
+    import json
+    data = dict(row)
+    data.pop("id", None)
+    data["enabled"] = bool(data.get("enabled", 1))
+    data["allow_night"] = bool(data.get("allow_night", 0))
+    data["end_on_reply"] = bool(data.get("end_on_reply", 1))
+    types_raw = data.pop("types_json", None)
+    try:
+        data["types"] = json.loads(types_raw) if types_raw else {"care": True, "reminder": True, "followup": True, "special": True}
+    except (json.JSONDecodeError, TypeError):
+        data["types"] = {"care": True, "reminder": True, "followup": True, "special": True}
+    return {"ok": True, "data": data}
+
+
+@router.put("/proactive")
+async def update_proactive_settings(req: ProactiveSettingsRequest, _=Depends(verify_token)):
+    fields = req.model_fields_set
+    if not fields:
+        return {"ok": True}
+    sets = []
+    params = []
+    for key in fields:
+        val = getattr(req, key)
+        if key in ("enabled", "allow_night", "end_on_reply"):
+            val = 1 if val else 0
+        sets.append(f"{key} = ?")
+        params.append(val)
+    now = datetime.now(BJ_TZ).isoformat()
+    sets.append("updated_at = ?")
+    params.append(now)
+    params.append(1)
+    async with get_db() as db:
+        await db.execute(
+            "INSERT OR IGNORE INTO proactive_message_settings (id, updated_at) VALUES (1, ?)",
+            (now,),
+        )
+        await db.execute(
+            f"UPDATE proactive_message_settings SET {', '.join(sets)} WHERE id = ?",
+            tuple(params),
+        )
+        await db.commit()
+    return {"ok": True}

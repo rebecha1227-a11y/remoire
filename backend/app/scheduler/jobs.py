@@ -198,9 +198,11 @@ async def _connie_auto_diary(target_date_bj=None):
         diary_content = await call_llm(diary_config, [
             {"role": "system", "content": f"{identity}\n\n{voice}"},
             {"role": "user", "content": diary_prompt},
-        ], temperature=0.85, max_tokens=600, extended_thinking=False)
+        ], temperature=0.85, max_tokens=1200, extended_thinking=False)
 
+        import re as _re
         raw = diary_content.strip()
+        raw = _re.sub(r'<[^>]+>', '', raw)
         skip_prefixes = ("让我", "好的", "以下是", "这是", "我来写", "日记：")
         while any(raw.startswith(p) for p in skip_prefixes):
             raw = raw.split("\n", 1)[-1].strip() if "\n" in raw else ""

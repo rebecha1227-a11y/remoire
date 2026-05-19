@@ -76,12 +76,65 @@ export function ProactiveSettings({ onBack }) {
   const [cfg, setCfg] = useState({
     enabled: true, channel: 'wechat', allowNight: false,
     startTime: '09:00', endTime: '22:30',
-    maxDaily: 5, cooldown: 60, maxBurst: 8, maxRounds: 3, roundInterval: 10,
+    maxDaily: 5, cooldown: 60, maxBurst: 8, maxRounds: 3, roundInterval: 30,
     endOnReply: true,
     types: { care: true, reminder: true, followup: true, special: true },
   });
-  const set = (k, v) => setCfg(c => ({ ...c, [k]: v }));
-  const setType = (k) => setCfg(c => ({ ...c, types: { ...c.types, [k]: !c.types[k] } }));
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    apiFetch('/api/settings/proactive').then(res => {
+      if (res?.ok && res.data) {
+        const d = res.data;
+        setCfg(c => ({
+          ...c,
+          enabled: d.enabled ?? true,
+          allowNight: d.allow_night ?? false,
+          startTime: String(d.start_hour ?? 9).padStart(2, '0') + ':00',
+          endTime: String(d.end_hour ?? 23).padStart(2, '0') + ':00',
+          maxDaily: d.max_daily ?? 5,
+          cooldown: d.cooldown_minutes ?? 60,
+          maxBurst: d.max_burst ?? 8,
+          maxRounds: d.max_rounds ?? 3,
+          roundInterval: d.round_interval_minutes ?? 30,
+          endOnReply: d.end_on_reply ?? true,
+          types: d.types ?? c.types,
+        }));
+        setLoaded(true);
+      }
+    }).catch(() => setLoaded(true));
+  }, []);
+
+  const save = (patch) => {
+    apiJsonFetch('/api/settings/proactive', {
+      method: 'PUT',
+      body: JSON.stringify(patch),
+    }).catch(() => {});
+  };
+
+  const set = (k, v) => {
+    setCfg(c => ({ ...c, [k]: v }));
+    const keyMap = {
+      enabled: 'enabled', allowNight: 'allow_night',
+      maxDaily: 'max_daily', cooldown: 'cooldown_minutes',
+      maxBurst: 'max_burst', maxRounds: 'max_rounds',
+      roundInterval: 'round_interval_minutes', endOnReply: 'end_on_reply',
+    };
+    if (k === 'startTime') {
+      save({ start_hour: parseInt(v.split(':')[0], 10) });
+    } else if (k === 'endTime') {
+      save({ end_hour: parseInt(v.split(':')[0], 10) });
+    } else if (keyMap[k] !== undefined) {
+      save({ [keyMap[k]]: v });
+    }
+  };
+  const setType = (k) => {
+    setCfg(c => {
+      const newTypes = { ...c.types, [k]: !c.types[k] };
+      save({ types_json: JSON.stringify(newTypes) });
+      return { ...c, types: newTypes };
+    });
+  };
 
   const CHANNELS = [
     { id: 'wechat', label: '微信优先' },
