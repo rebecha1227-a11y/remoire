@@ -51,8 +51,8 @@ ALL_TOOLS = [
                     },
                     "layer": {
                         "type": "string",
-                        "enum": ["core", "long", "short"],
-                        "description": "记忆层级：core=关系基石（极少用），long=重要长期记忆（默认），short=临时/短期事项",
+                        "enum": ["core", "long", "short", "consciousness"],
+                        "description": "记忆层级：core=关系基石（极少用），long=重要长期记忆（默认），short=临时/短期事项，consciousness=你自己的内心感悟",
                     },
                     "event_date": {
                         "type": "string",

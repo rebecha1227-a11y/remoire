@@ -163,7 +163,8 @@ export default function App() {
     function onChange() { setPresence(!document.hidden); }
     setPresence(true);
     document.addEventListener('visibilitychange', onChange);
-    return () => { setPresence(false); document.removeEventListener('visibilitychange', onChange); };
+    const heartbeat = setInterval(() => { if (!document.hidden) setPresence(true); }, 60000);
+    return () => { setPresence(false); document.removeEventListener('visibilitychange', onChange); clearInterval(heartbeat); };
   }, []);
 
   const nav = useMemo(

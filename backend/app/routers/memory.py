@@ -182,3 +182,21 @@ async def delete_memory(memory_id: str, _=Depends(verify_token)):
 async def recall_memories(req: RecallRequest, _=Depends(verify_token)):
     memories = await memory_service.recall(query=req.query, limit=req.limit)
     return {"ok": True, "data": memories}
+
+
+@router.post("/backfill-embeddings")
+async def backfill_embeddings(_=Depends(verify_token)):
+    count = await memory_service.backfill_embeddings()
+    return {"ok": True, "data": {"count": count}}
+
+
+@router.post("/digest")
+async def run_digest(_=Depends(verify_token)):
+    count = await memory_service.run_digest()
+    return {"ok": True, "data": {"deleted": count}}
+
+
+@router.post("/backfill-emotions")
+async def backfill_emotions(_=Depends(verify_token)):
+    count = await memory_service.backfill_emotions()
+    return {"ok": True, "data": {"count": count}}

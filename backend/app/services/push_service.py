@@ -23,7 +23,7 @@ def is_user_active() -> bool:
     import time
     if not _user_active:
         return False
-    if (time.time() - _last_active_at) > 120:
+    if (time.time() - _last_active_at) > 90:
         return False
     return True
 

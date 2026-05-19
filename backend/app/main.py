@@ -8,6 +8,7 @@ from app.routers import chat, memory, diary, note, settings, reminder, push
 from app.scheduler.jobs import connie_auto_diary, catchup_missed_diary, generate_breath_state, decay_memories
 from app.services.nudge_service import run_nudge_check
 from app.services.weather_service import fetch_and_cache as fetch_weather
+from app.services.memory_service import run_digest
 
 scheduler = AsyncIOScheduler()
 
@@ -42,6 +43,12 @@ async def lifespan(app: FastAPI):
         run_nudge_check,
         CronTrigger(hour="9-22", minute=30, timezone="Asia/Shanghai"),
         id="nudge_check",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        run_digest,
+        CronTrigger(hour=2, minute=30, timezone="Asia/Shanghai"),
+        id="memory_digest",
         replace_existing=True,
     )
     scheduler.start()

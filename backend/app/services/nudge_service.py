@@ -213,7 +213,13 @@ async def generate_nudge(conversation_id: str) -> list[str]:
         except Exception:
             pass
 
-    return [result] if result else ["想你了"]
+    import re
+    strings = re.findall(r'"([^"]+)"', result)
+    if strings:
+        return [s for s in strings if len(s) > 1][:3]
+
+    cleaned = result.strip("[]\"' \n,")
+    return [cleaned] if cleaned else ["想你了"]
 
 
 async def send_nudge(conversation_id: str, messages: list[str]) -> int:

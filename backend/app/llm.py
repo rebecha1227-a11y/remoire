@@ -65,7 +65,7 @@ async def call_llm_with_tools(
 
     for attempt in range(3):
         try:
-            async with httpx.AsyncClient(timeout=60) as client:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(120, connect=15)) as client:
                 resp = await client.post(f"{config.api_base}/chat/completions", headers=headers, json=payload)
                 resp.raise_for_status()
                 choice = resp.json()["choices"][0]
@@ -85,7 +85,7 @@ async def call_llm_with_tools(
 async def _call_llm_once(api_base: str, headers: dict, payload: dict, retries: int = 2) -> str:
     for attempt in range(retries + 1):
         try:
-            async with httpx.AsyncClient(timeout=60) as client:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(120, connect=15)) as client:
                 resp = await client.post(f"{api_base}/chat/completions", headers=headers, json=payload)
                 resp.raise_for_status()
                 msg = resp.json()["choices"][0]["message"]
@@ -102,7 +102,7 @@ async def _call_llm_once(api_base: str, headers: dict, payload: dict, retries: i
 async def _stream_llm(api_base: str, headers: dict, payload: dict, retries: int = 2) -> AsyncGenerator[dict, None]:
     for attempt in range(retries + 1):
         try:
-            async with httpx.AsyncClient(timeout=60) as client:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(300, connect=15)) as client:
                 async with client.stream("POST", f"{api_base}/chat/completions", headers=headers, json=payload) as resp:
                     resp.raise_for_status()
                     async for line in resp.aiter_lines():
@@ -127,6 +127,49 @@ async def _stream_llm(api_base: str, headers: dict, payload: dict, retries: int 
                 await asyncio.sleep(1 + attempt)
                 continue
             raise RuntimeError(f"LLM 流式调用失败：{e}")
+
+
+async def get_embedding(api_base: str, api_key: str, model_id: str, text: str) -> list[float] | None:
+    if not all([api_base, api_key, model_id]):
+        return None
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": model_id,
+        "input": text,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(30, connect=10)) as client:
+            resp = await client.post(f"{api_base}/embeddings", headers=headers, json=payload)
+            resp.raise_for_status()
+            data = resp.json()
+            return data["data"][0]["embedding"]
+    except Exception:
+        return None
+
+
+async def get_embeddings_batch(api_base: str, api_key: str, model_id: str, texts: list[str]) -> list[list[float] | None]:
+    if not all([api_base, api_key, model_id]):
+        return [None] * len(texts)
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": model_id,
+        "input": texts,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(60, connect=10)) as client:
+            resp = await client.post(f"{api_base}/embeddings", headers=headers, json=payload)
+            resp.raise_for_status()
+            data = resp.json()
+            items = sorted(data["data"], key=lambda x: x["index"])
+            return [item["embedding"] for item in items]
+    except Exception:
+        return [None] * len(texts)
 
 
 def _apply_thinking_options(config: ModelConfig, payload: dict, enabled: bool) -> None:

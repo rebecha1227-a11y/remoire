@@ -1,8 +1,10 @@
 import uuid
 import json
+import math
 from datetime import datetime
 from app.database import get_db
-from app.llm import call_llm
+from app.llm import call_llm, get_embedding, get_embeddings_batch
+from app.config import EMBEDDING_API_BASE, EMBEDDING_API_KEY, EMBEDDING_MODEL_ID
 from app.services import model_settings_service
 from pathlib import Path
 
@@ -10,10 +12,36 @@ PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 LAYERS = ("core", "long", "short", "consciousness")
 
 
-def _decay_rate_for_layer(layer: str) -> float:
-    if layer == "core":
+def _cosine_similarity(a: list[float], b: list[float]) -> float:
+    dot = sum(x * y for x, y in zip(a, b))
+    norm_a = math.sqrt(sum(x * x for x in a))
+    norm_b = math.sqrt(sum(x * x for x in b))
+    if norm_a == 0 or norm_b == 0:
         return 0.0
-    if layer in ("short", "consciousness"):
+    return dot / (norm_a * norm_b)
+
+
+async def _generate_embedding(text: str) -> list[float] | None:
+    return await get_embedding(EMBEDDING_API_BASE, EMBEDDING_API_KEY, EMBEDDING_MODEL_ID, text)
+
+
+def _pack_embedding(emb: list[float]) -> bytes:
+    return json.dumps(emb).encode("utf-8")
+
+
+def _unpack_embedding(blob: bytes | None) -> list[float] | None:
+    if not blob:
+        return None
+    try:
+        return json.loads(blob)
+    except Exception:
+        return None
+
+
+def _decay_rate_for_layer(layer: str) -> float:
+    if layer in ("core", "consciousness"):
+        return 0.0
+    if layer == "short":
         return 0.95
     return 0.995
 
@@ -70,11 +98,14 @@ async def extract_candidates(conversation_id: str, messages: list[dict]) -> list
         mem_type = c.get("memory_type", "fact")
         proposed_layer = c.get("layer", "long")
         event_date = c.get("event_date")
+        valence = max(0.0, min(1.0, float(c.get("valence", 0.5))))
+        arousal = max(0.0, min(1.0, float(c.get("arousal", 0.0))))
 
         if confidence >= 0.7:
             result = await create_memory(
                 content, tags=tags, layer=proposed_layer,
                 memory_type=mem_type, event_date=event_date,
+                valence=valence, arousal=arousal,
             )
             if result["memory"].get("duplicate"):
                 continue
@@ -255,8 +286,9 @@ async def reject_candidate(candidate_id: str):
 # ──────────────────────────────────────
 
 async def find_associated(content: str, tags: list[str], limit: int = 3,
-                          exclude_id: str | None = None) -> list[dict]:
-    """关键词 + 标签匹配，找 top-N 相关旧记忆。Phase 1 不用向量，纯文本匹配。"""
+                          exclude_id: str | None = None,
+                          content_embedding: list[float] | None = None) -> list[dict]:
+    """找 top-N 相关旧记忆。有 embedding 用语义匹配，否则退回 bigram。"""
     async with get_db() as db:
         async with db.execute("SELECT * FROM memories ORDER BY created_at DESC") as cur:
             all_memories = await cur.fetchall()
@@ -264,7 +296,8 @@ async def find_associated(content: str, tags: list[str], limit: int = 3,
     if not all_memories:
         return []
 
-    content_grams = _bigrams(content)
+    query_emb = content_embedding or await _generate_embedding(content)
+    use_embedding = query_emb is not None
 
     scored = []
     for mem in all_memories:
@@ -273,12 +306,27 @@ async def find_associated(content: str, tags: list[str], limit: int = 3,
         mem_content = mem["content"]
         mem_tags = json.loads(mem["tags_json"] or "[]")
 
-        tag_overlap = len(set(tags) & set(mem_tags))
-        mem_grams = _bigrams(mem_content)
-        gram_overlap = len(content_grams & mem_grams)
-        content_score = min(gram_overlap / max(len(content_grams), 1), 1.0)
+        if use_embedding:
+            mem_emb = _unpack_embedding(mem["embedding"] if "embedding" in mem.keys() else None)
+            if mem_emb:
+                sim = _cosine_similarity(query_emb, mem_emb)
+                tag_overlap = len(set(tags) & set(mem_tags))
+                score = max(0, sim) * 0.7 + min(tag_overlap * 0.15, 0.3)
+            else:
+                tag_overlap = len(set(tags) & set(mem_tags))
+                content_grams = _bigrams(content)
+                mem_grams = _bigrams(mem_content)
+                gram_overlap = len(content_grams & mem_grams)
+                content_score = min(gram_overlap / max(len(content_grams), 1), 1.0)
+                score = tag_overlap * 0.4 + content_score * 0.6
+        else:
+            tag_overlap = len(set(tags) & set(mem_tags))
+            content_grams = _bigrams(content)
+            mem_grams = _bigrams(mem_content)
+            gram_overlap = len(content_grams & mem_grams)
+            content_score = min(gram_overlap / max(len(content_grams), 1), 1.0)
+            score = tag_overlap * 0.4 + content_score * 0.6
 
-        score = tag_overlap * 0.4 + content_score * 0.6
         if score > 0.05:
             scored.append({"memory": mem, "score": score})
 
@@ -312,8 +360,26 @@ async def find_associated(content: str, tags: list[str], limit: int = 3,
 #  记忆召回（聊天前注入上下文）
 # ──────────────────────────────────────
 
+async def get_core_memories() -> list[dict]:
+    """获取所有核心记忆（core 层 或 pinned），每次聊天都必须带上。"""
+    async with get_db() as db:
+        async with db.execute(
+            "SELECT * FROM memories WHERE layer = 'core' OR pinned = 1 ORDER BY created_at ASC"
+        ) as cur:
+            rows = await cur.fetchall()
+    return [
+        {
+            "id": r["id"],
+            "content": r["content"],
+            "tags": json.loads(r["tags_json"] or "[]"),
+            "relevance_score": 1.0,
+        }
+        for r in rows
+    ]
+
+
 async def recall(query: str, limit: int = 5) -> list[dict]:
-    """根据关键词召回相关记忆，用于注入聊天上下文。"""
+    """双通道检索：关键词精确匹配 + 语义相似度，合并去重排序。"""
     async with get_db() as db:
         async with db.execute("SELECT * FROM memories ORDER BY created_at DESC") as cur:
             all_memories = await cur.fetchall()
@@ -321,41 +387,67 @@ async def recall(query: str, limit: int = 5) -> list[dict]:
     if not all_memories:
         return []
 
-    query_grams = _bigrams(query)
+    core_ids = {m["id"] for m in all_memories if m["layer"] == "core" or m["pinned"]}
+    non_core = [m for m in all_memories if m["id"] not in core_ids]
 
-    scored = []
-    for mem in all_memories:
+    # ── 通道 A：关键词搜索（精确命中名字、日期、短语） ──
+    keyword_scores = {}
+    for mem in non_core:
+        mid = mem["id"]
         mem_content = mem["content"]
         mem_tags = json.loads(mem["tags_json"] or "[]")
+        score = _keyword_search_score(query, mem_content, mem_tags)
+        if score > 0:
+            keyword_scores[mid] = score
 
-        mem_grams = _bigrams(mem_content)
-        gram_overlap = len(query_grams & mem_grams)
-        content_score = min(gram_overlap / max(len(query_grams), 1), 1.0)
+    # ── 通道 B：语义搜索（embedding 余弦相似度） ──
+    semantic_scores = {}
+    query_emb = await _generate_embedding(query)
+    if query_emb:
+        for mem in non_core:
+            mid = mem["id"]
+            mem_emb = _unpack_embedding(mem["embedding"] if "embedding" in mem.keys() else None)
+            if mem_emb:
+                sim = _cosine_similarity(query_emb, mem_emb)
+                if sim > 0.2:
+                    semantic_scores[mid] = sim
 
-        tag_score = sum(1 for tag in mem_tags if tag in query) * 0.3
+    # ── 合并两个通道：同一条记忆取最高分 ──
+    all_ids = set(keyword_scores.keys()) | set(semantic_scores.keys())
+    mem_lookup = {m["id"]: m for m in non_core}
 
-        keyword_score = 0
-        query_lower = query.lower()
-        for tag in mem_tags:
-            if tag in query_lower:
-                keyword_score += 0.4
-        words = [w for w in mem_content.split() if len(w) >= 2]
-        for w in words:
-            if w in query_lower:
-                keyword_score += 0.2
+    scored = []
+    for mid in all_ids:
+        mem = mem_lookup[mid]
+        kw_score = keyword_scores.get(mid, 0)
+        sem_score = semantic_scores.get(mid, 0)
+        raw_score = max(kw_score, sem_score)
 
-        score = content_score + tag_score + min(keyword_score, 1.0)
-        if score > 0.05:
-            scored.append({"memory": mem, "score": score})
+        layer_weight = {"core": 1.0, "long": 0.9, "short": 0.7, "consciousness": 0.6}.get(mem["layer"], 0.8)
+        mem_weight = mem["weight"] or 1.0
+        arousal_val = mem["arousal"] if "arousal" in mem.keys() and mem["arousal"] else 0.0
+        final_score = raw_score * layer_weight * (1 + arousal_val * 0.3) * mem_weight
+        is_resolved_task = (mem["memory_type"] == "unresolved" and not mem["unresolved"])
+        if is_resolved_task:
+            final_score *= 0.3
+
+        if final_score > 0.05:
+            scored.append({"memory": mem, "score": final_score})
 
     scored.sort(key=lambda x: x["score"], reverse=True)
 
     results = scored[:limit]
 
     if len(results) < limit:
-        already_ids = {item["memory"]["id"] for item in results}
+        import random
+        already_ids = {item["memory"]["id"] for item in results} | core_ids
+        remaining = [m for m in non_core if m["id"] not in already_ids]
+        if remaining and random.random() < 0.4:
+            drift = random.choice(remaining)
+            results.append({"memory": drift, "score": 0.02})
+            already_ids.add(drift["id"])
         fallback_count = limit - len(results)
-        for mem in all_memories[:fallback_count * 2]:
+        for mem in remaining[:fallback_count * 2]:
             if mem["id"] not in already_ids:
                 results.append({"memory": mem, "score": 0.01})
                 already_ids.add(mem["id"])
@@ -376,6 +468,15 @@ async def recall(query: str, limit: int = 5) -> list[dict]:
                            WHERE id = ?""",
                         (now, now, item["memory"]["id"]),
                     )
+                    mem = item["memory"]
+                    new_trigger = (mem["trigger_count"] or 0) + 1
+                    if mem["layer"] in ("short", "consciousness") and new_trigger >= 3:
+                        await db.execute(
+                            """UPDATE memories SET layer = 'long', decay_rate = ?
+                               WHERE id = ? AND layer IN ('short', 'consciousness')""",
+                            (_decay_rate_for_layer("long"), mem["id"]),
+                        )
+                        _digest_logger.info("auto-promote: %s → long (triggered %d times)", mem["id"][:8], new_trigger)
             await db.commit()
 
     return [
@@ -387,6 +488,46 @@ async def recall(query: str, limit: int = 5) -> list[dict]:
         }
         for item in results
     ]
+
+
+def _keyword_search_score(query: str, mem_content: str, mem_tags: list[str]) -> float:
+    """通道 A：关键词精确匹配。适合名字、日期、具体短语。"""
+    score = 0.0
+    query_lower = query.lower()
+    content_lower = mem_content.lower()
+
+    query_chars = set(query_lower)
+    keywords = []
+    for tag in mem_tags:
+        if tag.lower() in query_lower:
+            score += 0.4
+    for word in query.split():
+        if len(word) >= 2 and word in content_lower:
+            score += 0.3
+    if len(query) >= 3 and query_lower in content_lower:
+        score += 0.8
+
+    return min(score, 2.0)
+
+
+def _bigram_score(query: str, mem_content: str, mem_tags: list[str]) -> float:
+    query_grams = _bigrams(query)
+    mem_grams = _bigrams(mem_content)
+    gram_overlap = len(query_grams & mem_grams)
+    content_score = min(gram_overlap / max(len(query_grams), 1), 1.0)
+
+    tag_score = sum(1 for tag in mem_tags if tag in query) * 0.3
+    keyword_score = 0
+    query_lower = query.lower()
+    for tag in mem_tags:
+        if tag in query_lower:
+            keyword_score += 0.4
+    words = [w for w in mem_content.split() if len(w) >= 2]
+    for w in words:
+        if w in query_lower:
+            keyword_score += 0.2
+
+    return content_score + tag_score + min(keyword_score, 1.0)
 
 
 # ──────────────────────────────────────
@@ -411,21 +552,24 @@ async def create_memory(content: str, tags: list[str] | None = None,
 
     decay_rate = _decay_rate_for_layer(layer)
 
+    emb = await _generate_embedding(content)
+    emb_blob = _pack_embedding(emb) if emb else None
+
     async with get_db() as db:
         await db.execute(
             """INSERT INTO memories
                (id, content, tags_json, layer, memory_type, event_date, event_time,
                 weight, decay_rate, valence, arousal, unresolved, pinned,
-                created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, 1.0, ?, ?, ?, ?, ?, ?, ?)""",
+                embedding, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 1.0, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (mem_id, content, json.dumps(tags, ensure_ascii=False),
              layer, memory_type, event_date, event_time,
              decay_rate, valence, arousal, int(unresolved),
-             1 if layer == "core" else 0, now, now),
+             1 if layer == "core" else 0, emb_blob, now, now),
         )
         await db.commit()
 
-    associated = await find_associated(content, tags, limit=3, exclude_id=mem_id)
+    associated = await find_associated(content, tags, limit=3, exclude_id=mem_id, content_embedding=emb)
 
     if associated:
         async with get_db() as db:
@@ -670,3 +814,216 @@ async def get_heatmap(year: int, month: int) -> list[dict]:
             rows = await cur.fetchall()
 
     return [{"date": r["day"], "count": r["cnt"]} for r in rows]
+
+
+# ──────────────────────────────────────
+#  记忆整合（定时去重）
+# ──────────────────────────────────────
+
+import logging
+_digest_logger = logging.getLogger(__name__)
+
+
+async def run_digest():
+    """用 LLM 识别并清理重复记忆。按层分批处理。"""
+    digest_prompt = _load_prompt("digest.md")
+    if not digest_prompt:
+        _digest_logger.warning("digest: digest.md 不存在，跳过")
+        return
+
+    config, _ = await model_settings_service.get_model_config_for_slot("backend")
+    total_deleted = 0
+
+    for layer in ("core", "long", "short", "consciousness"):
+        async with get_db() as db:
+            async with db.execute(
+                "SELECT id, content, layer, memory_type FROM memories WHERE layer = ? ORDER BY created_at",
+                (layer,),
+            ) as cur:
+                rows = await cur.fetchall()
+
+        if len(rows) < 2:
+            continue
+
+        chunks = []
+        chunk_size = 15
+        for i in range(0, len(rows), chunk_size):
+            chunks.append(rows[i:i + chunk_size])
+
+        for chunk in chunks:
+            lines = []
+            for r in chunk:
+                lines.append(f"[{r['id']}] {r['content']} ({r['layer']}/{r['memory_type']})")
+            input_text = "\n".join(lines)
+
+            try:
+                raw = await call_llm(
+                    config,
+                    [
+                        {"role": "system", "content": digest_prompt},
+                        {"role": "user", "content": input_text},
+                    ],
+                    stream=False,
+                    temperature=0.2,
+                    max_tokens=2000,
+                )
+
+                _digest_logger.info("digest: %s 层 LLM 返回 %d 字符", layer, len(raw))
+                cleaned = raw.strip()
+                if cleaned.startswith("```"):
+                    cleaned = cleaned.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+                brace_start = cleaned.find("{")
+                brace_end = cleaned.rfind("}")
+                if brace_start == -1 or brace_end == -1:
+                    _digest_logger.warning("digest: %s 层 LLM 返回无 JSON，跳过", layer)
+                    continue
+                cleaned = cleaned[brace_start:brace_end + 1]
+                result = json.loads(cleaned)
+
+                ids_to_delete = set(result.get("delete", []))
+                for merge in result.get("merge", []):
+                    ids_to_delete.update(merge.get("delete_ids", []))
+
+                if ids_to_delete:
+                    async with get_db() as db:
+                        for mid in ids_to_delete:
+                            await db.execute("DELETE FROM memories WHERE id = ?", (mid,))
+                            await db.execute("DELETE FROM memory_links WHERE source_id = ? OR target_id = ?", (mid, mid))
+                        await db.commit()
+                    total_deleted += len(ids_to_delete)
+                    _digest_logger.info("digest: %s 层删除 %d 条重复记忆", layer, len(ids_to_delete))
+
+            except Exception as e:
+                _digest_logger.warning("digest: %s 层处理失败 — %s", layer, e)
+
+    _digest_logger.info("digest: 完成，共删除 %d 条重复记忆", total_deleted)
+    return total_deleted
+
+
+# ──────────────────────────────────────
+#  Embedding 回填
+# ──────────────────────────────────────
+
+async def backfill_embeddings(batch_size: int = 20) -> int:
+    """给所有没有 embedding 的记忆生成向量。返回成功数量。"""
+    if not all([EMBEDDING_API_BASE, EMBEDDING_API_KEY, EMBEDDING_MODEL_ID]):
+        _digest_logger.warning("backfill: embedding 配置不完整，跳过")
+        return 0
+
+    async with get_db() as db:
+        async with db.execute(
+            "SELECT id, content FROM memories WHERE embedding IS NULL ORDER BY created_at"
+        ) as cur:
+            rows = await cur.fetchall()
+
+    if not rows:
+        _digest_logger.info("backfill: 所有记忆都已有 embedding")
+        return 0
+
+    total = 0
+    for i in range(0, len(rows), batch_size):
+        batch = rows[i:i + batch_size]
+        texts = [r["content"] for r in batch]
+        embeddings = await get_embeddings_batch(
+            EMBEDDING_API_BASE, EMBEDDING_API_KEY, EMBEDDING_MODEL_ID, texts
+        )
+
+        async with get_db() as db:
+            for row, emb in zip(batch, embeddings):
+                if emb:
+                    await db.execute(
+                        "UPDATE memories SET embedding = ? WHERE id = ?",
+                        (_pack_embedding(emb), row["id"]),
+                    )
+                    total += 1
+            await db.commit()
+
+        _digest_logger.info("backfill: 已处理 %d/%d", min(i + batch_size, len(rows)), len(rows))
+
+    _digest_logger.info("backfill: 完成，共生成 %d 条 embedding", total)
+    return total
+
+
+# ──────────────────────────────────────
+#  情感标注回填
+# ──────────────────────────────────────
+
+EMOTION_PROMPT = """你是情感标注器。给每条记忆标注两个值：
+
+valence（情感正负，0~1）：0=极度消极，0.5=中性，1=极度积极
+arousal（情绪强度，0~1）：0=完全平静（日常事实），1=极度强烈（大哭/狂喜）
+
+纯事实（职业、偏好、日期）→ valence=0.5, arousal=0.0
+有情感的事件要认真评估。
+
+输入格式：每行 [id] 内容
+输出格式：严格只返回 JSON 对象，key 是 id，value 是 [valence, arousal]。
+
+示例输出：
+{"abc123": [0.7, 0.3], "def456": [0.3, 0.6]}"""
+
+
+async def backfill_emotions(batch_size: int = 10) -> int:
+    """用 LLM 给 valence=0 且 arousal=0 的记忆补标情感值。"""
+    config, _ = await model_settings_service.get_model_config_for_slot("backend")
+
+    async with get_db() as db:
+        async with db.execute(
+            """SELECT id, content FROM memories
+               WHERE (valence = 0.0 OR valence IS NULL)
+                 AND (arousal = 0.0 OR arousal IS NULL)
+               ORDER BY created_at""",
+        ) as cur:
+            rows = await cur.fetchall()
+
+    if not rows:
+        _digest_logger.info("emotion-backfill: 所有记忆都已有情感标注")
+        return 0
+
+    total = 0
+    for i in range(0, len(rows), batch_size):
+        batch = rows[i:i + batch_size]
+        lines = [f"[{r['id']}] {r['content']}" for r in batch]
+        input_text = "\n".join(lines)
+
+        try:
+            raw = await call_llm(
+                config,
+                [
+                    {"role": "system", "content": EMOTION_PROMPT},
+                    {"role": "user", "content": input_text},
+                ],
+                stream=False,
+                temperature=0.2,
+                max_tokens=1500,
+            )
+
+            cleaned = raw.strip()
+            if cleaned.startswith("```"):
+                cleaned = cleaned.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+            brace_start = cleaned.find("{")
+            brace_end = cleaned.rfind("}")
+            if brace_start == -1 or brace_end == -1:
+                _digest_logger.warning("emotion-backfill: LLM 返回无 JSON，跳过这批")
+                continue
+            result = json.loads(cleaned[brace_start:brace_end + 1])
+
+            async with get_db() as db:
+                for mid, vals in result.items():
+                    if isinstance(vals, list) and len(vals) == 2:
+                        v = max(0.0, min(1.0, float(vals[0])))
+                        a = max(0.0, min(1.0, float(vals[1])))
+                        await db.execute(
+                            "UPDATE memories SET valence = ?, arousal = ?, updated_at = ? WHERE id = ?",
+                            (v, a, datetime.utcnow().isoformat(), mid),
+                        )
+                        total += 1
+                await db.commit()
+
+            _digest_logger.info("emotion-backfill: 已处理 %d/%d", min(i + batch_size, len(rows)), len(rows))
+
+        except Exception as e:
+            _digest_logger.warning("emotion-backfill: 处理失败 — %s", e)
+
+    _digest_logger.info("emotion-backfill: 完成，共标注 %d 条记忆", total)
+    return total

@@ -77,7 +77,7 @@ async def _build_resume_bundle(last_msg_time: str | None) -> str:
     return "【醒来上下文】\n" + "\n".join(parts) + "\n\n（这些是你醒来后浮现的信息，可以自然融入第一句话，不要像报告一样念出来。比如关心地问一句、提醒一下待办，或者表达想念。）"
 
 
-async def _build_system_prompt(recalled_memories: list[dict] | None = None, resume_bundle: str = "") -> str:
+async def _build_system_prompt(core_memories: list[dict] | None = None, recalled_memories: list[dict] | None = None, resume_bundle: str = "") -> str:
     identity = _load_prompt("identity.md")
     voice = _load_prompt("voice.md")
     thinking = _load_prompt("thinking.md")
@@ -97,9 +97,15 @@ async def _build_system_prompt(recalled_memories: list[dict] | None = None, resu
         pass
 
     memory_block = ""
+    memory_parts = []
+    if core_memories:
+        core_lines = [f"- {m['content']}" for m in core_memories]
+        memory_parts.append("【核心记忆 · 永远记住】\n" + "\n".join(core_lines))
     if recalled_memories:
-        lines = [f"- {m['content']}" for m in recalled_memories]
-        memory_block = "【关于静儿的记忆】\n" + "\n".join(lines) + "\n\n（以上是你记得的关于静儿的事，自然融入对话，不要逐条播报）"
+        recall_lines = [f"- {m['content']}" for m in recalled_memories]
+        memory_parts.append("【与当前对话相关的记忆】\n" + "\n".join(recall_lines))
+    if memory_parts:
+        memory_block = "\n\n".join(memory_parts) + "\n\n（以上是你记得的关于静儿的事，自然融入对话，不要逐条播报。核心记忆是你必须始终牢记的基本事实。）"
     else:
         memory_block = "【关于静儿的记忆】\n当前没有召回到与这条消息相关的具体记忆。不要编造任何具体的事件、对话或场景——如果她问你记不记得某件事，而你没有相关记忆，诚实地说你想不起来具体的，或者温柔地请她提醒你。"
 
@@ -347,9 +353,10 @@ async def stream_chat(conversation_id: str, user_message: str, image: str | None
             last_msg_time = msg.get("created_at")
             break
 
+    core_memories = await memory_service.get_core_memories()
     recalled = await memory_service.recall(user_message, limit=5)
     resume_bundle = await _build_resume_bundle(last_msg_time)
-    system_prompt = await _build_system_prompt(recalled_memories=recalled if recalled else None, resume_bundle=resume_bundle)
+    system_prompt = await _build_system_prompt(core_memories=core_memories, recalled_memories=recalled if recalled else None, resume_bundle=resume_bundle)
     has_diary_notifs = "日记互动通知" in system_prompt
     tools = select_tools(user_message, has_diary_notifications=has_diary_notifs)
     llm_history = _build_llm_history_with_time_gaps(history)
