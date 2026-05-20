@@ -283,6 +283,24 @@ async def generate_autonomous_activity(conversation_id: str, mode: str = "light"
     llm_history = _build_llm_history_with_time_gaps(history)
     messages = [{"role": "system", "content": system_prompt}] + llm_history
 
+    last_assistant_texts = []
+    for msg in reversed(history):
+        if msg["role"] == "assistant":
+            last_assistant_texts.append(msg["content"][:80])
+            if len(last_assistant_texts) >= 3:
+                break
+        elif msg["role"] == "user":
+            break
+
+    dedup_hint = ""
+    if last_assistant_texts:
+        dedup_hint = "\n\n⚠️ 以下是你最近已经发送过的消息（不要重复发送类似的内容）：\n" + "\n".join(f"- 「{t}…」" for t in last_assistant_texts)
+
+    messages.append({
+        "role": "user",
+        "content": f"[系统：现在是你的自主活动时间。以上聊天记录仅供参考上下文，你不是在回复对话。如果你决定给静儿发消息，必须是全新的内容，不能重复你之前说过的话。]{dedup_hint}",
+    })
+
     config, slot_settings = await model_settings_service.get_model_config_for_slot("daily")
     extended_thinking = bool(slot_settings.get("extended_thinking"))
 
@@ -327,6 +345,7 @@ async def generate_autonomous_activity(conversation_id: str, mode: str = "light"
 
     full_reply = assistant_msg.get("content", "")
     import re
+
     _think_match = re.search(r'<(?:thinking|think)>(.*?)</(?:thinking|think)>', full_reply, re.DOTALL)
     if _think_match:
         thinking = _think_match.group(1) + "\n" + assistant_msg.get("reasoning_content", "")
@@ -334,12 +353,19 @@ async def generate_autonomous_activity(conversation_id: str, mode: str = "light"
     else:
         thinking = assistant_msg.get("reasoning_content", "")
 
+    msg_matches = re.findall(r'<message>(.*?)</message>', full_reply, re.DOTALL)
+    if msg_matches:
+        monologue = re.sub(r'<message>.*?</message>', '', full_reply, flags=re.DOTALL).strip()
+        if monologue:
+            thinking = monologue + "\n" + thinking
+        full_reply = "\n\n".join(m.strip() for m in msg_matches)
+    else:
+        if full_reply.strip():
+            thinking = full_reply.strip() + "\n" + thinking
+            full_reply = ""
+
     if thinking:
         thinking = await _ensure_chinese_thinking(config, thinking)
-
-    if not thinking.strip() and full_reply.strip() and not tool_calls_made:
-        thinking = full_reply.strip()
-        full_reply = ""
 
     if not thinking.strip():
         logger.warning("autonomous: thinking 为空，生成补充内心独白 (model=%s, content=%r)", config.model_id, full_reply[:100])

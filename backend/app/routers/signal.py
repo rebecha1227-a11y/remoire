@@ -1,7 +1,9 @@
 import uuid
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter
+from fastapi import Depends
 from pydantic import BaseModel
+from app.auth import verify_token
 from app.database import get_db
 
 router = APIRouter(prefix="/api/signal", tags=["signal"])
@@ -11,7 +13,7 @@ BJ_TZ = timezone(timedelta(hours=8))
 
 class AppEventRequest(BaseModel):
     app_name: str
-    event_type: str = "open"
+    event_type: str = "auto"
 
 
 class DeviceSnapshotRequest(BaseModel):
@@ -26,29 +28,38 @@ class DeviceSnapshotRequest(BaseModel):
 
 
 @router.post("/app-event")
-async def report_app_event(req: AppEventRequest):
+async def report_app_event(req: AppEventRequest, _=Depends(verify_token)):
     now = datetime.now(BJ_TZ)
     now_str = now.isoformat()
     five_min_ago = (now - timedelta(minutes=5)).isoformat()
 
+    event_type = req.event_type
     async with get_db() as db:
+        if event_type == "auto":
+            async with db.execute(
+                "SELECT event_type FROM app_usage_events WHERE app_name = ? ORDER BY created_at DESC LIMIT 1",
+                (req.app_name,),
+            ) as cur:
+                last = await cur.fetchone()
+            event_type = "close" if last and last["event_type"] == "open" else "open"
+
         async with db.execute(
-            "SELECT 1 FROM app_usage_events WHERE app_name = ? AND created_at > ? LIMIT 1",
-            (req.app_name, five_min_ago),
+            "SELECT 1 FROM app_usage_events WHERE app_name = ? AND event_type = ? AND created_at > ? LIMIT 1",
+            (req.app_name, event_type, five_min_ago),
         ) as cur:
             if await cur.fetchone():
                 return {"ok": True, "deduped": True}
 
         await db.execute(
             "INSERT INTO app_usage_events (id, app_name, event_type, created_at) VALUES (?, ?, ?, ?)",
-            (str(uuid.uuid4()), req.app_name, req.event_type, now_str),
+            (str(uuid.uuid4()), req.app_name, event_type, now_str),
         )
         await db.commit()
-    return {"ok": True}
+    return {"ok": True, "event_type": event_type}
 
 
 @router.post("/device-snapshot")
-async def report_device_snapshot(req: DeviceSnapshotRequest):
+async def report_device_snapshot(req: DeviceSnapshotRequest, _=Depends(verify_token)):
     now_str = datetime.now(BJ_TZ).isoformat()
     import json
     async with get_db() as db:
@@ -68,7 +79,7 @@ async def report_device_snapshot(req: DeviceSnapshotRequest):
 
 
 @router.get("/recent-activity")
-async def get_recent_activity(hours: int = 6):
+async def get_recent_activity(hours: int = 6, _=Depends(verify_token)):
     since = (datetime.now(BJ_TZ) - timedelta(hours=hours)).isoformat()
     async with get_db() as db:
         async with db.execute(

@@ -522,7 +522,8 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
               setToolCall({ tools: parsed.tools, count: parsed.count, done: false });
               setTyping(false);
             } else if (parsed.type === 'tool_done') {
-              setToolCall(prev => prev ? { ...prev, done: true } : null);
+              setMessages(m => [...m, { id: ++msgIdRef.current, type: 'tool_call', tools: parsed.tools, count: parsed.count }]);
+              setToolCall(null);
               setTyping(true);
             } else if (parsed.type === 'chunk') {
               replyText += parsed.content;
@@ -545,7 +546,7 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
         try {
           const parsed = JSON.parse(line.slice(5).trim());
           if (parsed.type === 'tool_start') { setToolCall({ tools: parsed.tools, count: parsed.count, done: false }); setTyping(false); }
-          else if (parsed.type === 'tool_done') { setToolCall(prev => prev ? { ...prev, done: true } : null); setTyping(true); }
+          else if (parsed.type === 'tool_done') { setMessages(m => [...m, { id: ++msgIdRef.current, type: 'tool_call', tools: parsed.tools, count: parsed.count }]); setToolCall(null); setTyping(true); }
           else if (parsed.type === 'chunk') { replyText += parsed.content; }
           else if (parsed.type === 'thinking') thinkingText += parsed.content;
           else if (parsed.type === 'note') { setNoteData(parsed.note); setNoteState('visible'); }
@@ -899,6 +900,9 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
                 }}>{m.text}</div>
               );
             }
+            if (m.type === 'tool_call') {
+              return <ToolCallBanner key={m.id} tools={m.tools} count={m.count} done />;
+            }
             return (
               <MessageRow
                 key={m.id} m={m}
@@ -912,7 +916,7 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
           })}
 
           {toolCall && (
-            <ToolCallBanner tools={toolCall.tools} count={toolCall.count} done={toolCall.done} />
+            <ToolCallBanner tools={toolCall.tools} count={toolCall.count} done={false} />
           )}
 
           {streaming && (
