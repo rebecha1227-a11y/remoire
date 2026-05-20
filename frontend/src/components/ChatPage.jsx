@@ -32,6 +32,75 @@ function FormattedText({ text }) {
   });
 }
 
+const TOOL_LABELS = {
+  remember: '记忆', search_memories: '搜索记忆', leave_note: '留纸条',
+  get_current_time: '看时间', write_diary: '写日记', set_breath_state: '更新状态',
+  web_search: '搜索', browse_url: '看网页', browse_xiaohongshu: '刷小红书',
+  browse_twitter: '刷推特', search_xiaohongshu: '搜小红书', search_twitter: '搜推特',
+  save_browsed: '保存内容', read_diary: '翻日记', read_jinger_diary: '看静儿日记',
+  try_unlock_diary: '猜密码', reply_diary_interaction: '回复日记',
+};
+
+function ToolCallBanner({ tools, count, done }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div style={{
+      margin: '0 40px', textAlign: 'center',
+      animation: 'card-in 180ms ease',
+    }}>
+      <button
+        onClick={() => setExpanded(!expanded)}
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: 6,
+          padding: '5px 14px', borderRadius: 12,
+          background: 'rgba(124,99,80,0.06)',
+          border: '1px solid var(--ink-faint, rgba(0,0,0,0.08))',
+          fontSize: 12, color: 'var(--ink-soft, var(--text-secondary))',
+          cursor: 'pointer', fontFamily: 'var(--font-body)',
+        }}
+      >
+        <svg
+          width="14" height="14" viewBox="0 0 24 24" fill="none"
+          stroke="var(--ink-accent, var(--accent))" strokeWidth="1.5"
+          style={{
+            animation: done ? 'none' : 'spin 1.2s linear infinite',
+            flexShrink: 0,
+          }}
+        >
+          <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+        </svg>
+        <span>{done ? `调用了 ${count} 个工具` : `正在调用工具…`}</span>
+        <svg
+          width="10" height="10" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" strokeWidth="2"
+          style={{
+            transform: expanded ? 'rotate(180deg)' : 'rotate(0)',
+            transition: 'transform 150ms ease',
+          }}
+        >
+          <path d="M6 9l6 6 6-6"/>
+        </svg>
+      </button>
+      {expanded && (
+        <div style={{
+          marginTop: 6, padding: '6px 12px',
+          background: 'rgba(124,99,80,0.04)',
+          borderRadius: 8, fontSize: 12,
+          color: 'var(--ink-soft, var(--text-secondary))',
+          lineHeight: 1.8,
+        }}>
+          {tools.map((t, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'center' }}>
+              <span style={{ opacity: 0.5 }}>›</span>
+              <span>{TOOL_LABELS[t] || t}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const CHAT_MODES = {
   daily: { label: '日常', desc: '轻松聊天、日常陪伴' },
   deep:  { label: '深度', desc: '需要更长更深的对话' },
@@ -414,9 +483,12 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
     loadNote();
   }, []);
 
+  const [toolCall, setToolCall] = useState(null);
+
   async function fetchReply(txt, image) {
     const time = formatBJTime(new Date().toISOString());
     setTyping(true);
+    setToolCall(null);
     try {
       const body = { message: txt || '（发了一张图片）', conversation_id: conversationIdRef.current || null, mode: chatMode, reply_style: replyStyle };
       if (image) body.image = image;
@@ -446,6 +518,12 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
             if (parsed.type === 'conversation_id') {
               conversationIdRef.current = parsed.conversation_id;
               localStorage.setItem('remoire_conv_id', parsed.conversation_id);
+            } else if (parsed.type === 'tool_start') {
+              setToolCall({ tools: parsed.tools, count: parsed.count, done: false });
+              setTyping(false);
+            } else if (parsed.type === 'tool_done') {
+              setToolCall(prev => prev ? { ...prev, done: true } : null);
+              setTyping(true);
             } else if (parsed.type === 'chunk') {
               replyText += parsed.content;
             } else if (parsed.type === 'thinking') {
@@ -466,7 +544,9 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
         if (!line.startsWith('data:')) continue;
         try {
           const parsed = JSON.parse(line.slice(5).trim());
-          if (parsed.type === 'chunk') { replyText += parsed.content; }
+          if (parsed.type === 'tool_start') { setToolCall({ tools: parsed.tools, count: parsed.count, done: false }); setTyping(false); }
+          else if (parsed.type === 'tool_done') { setToolCall(prev => prev ? { ...prev, done: true } : null); setTyping(true); }
+          else if (parsed.type === 'chunk') { replyText += parsed.content; }
           else if (parsed.type === 'thinking') thinkingText += parsed.content;
           else if (parsed.type === 'note') { setNoteData(parsed.note); setNoteState('visible'); }
           else if (parsed.type === 'done') streamDone = true;
@@ -479,6 +559,7 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
 
       setTyping(false);
       setStreaming('');
+      setToolCall(null);
       if (!replyText.trim()) {
         setMessages(m => [...m, { id: ++msgIdRef.current, role: 'ai', text: '……我刚刚走神了，你再说一次好吗？', time, type: 'normal', isNew: true }]);
       } else if (replyStyle === 'whole') {
@@ -829,6 +910,10 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
               />
             );
           })}
+
+          {toolCall && (
+            <ToolCallBanner tools={toolCall.tools} count={toolCall.count} done={toolCall.done} />
+          )}
 
           {streaming && (
             <div className="r-row r-row-ai">

@@ -18,7 +18,7 @@ const ACTION_LABELS = {
   memory_review: '回顾记忆',
   note: '留了纸条',
   breath: '更新了状态',
-  none: '享受安静',
+  none: '想了想事情',
 };
 
 const ACTION_ICONS = {

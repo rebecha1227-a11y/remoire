@@ -512,13 +512,18 @@ async def execute_tool(name: str, arguments: dict) -> str:
         query = arguments.get("query", "")
         if not query:
             return "搜索关键词不能为空。"
-        from app.services.web_service import web_search_ddg
-        results = await web_search_ddg(query)
-        if not results:
+        from app.services.web_service import web_search, web_search_ddg
+        items = await web_search(query)
+        if not items:
+            items = await web_search_ddg(query)
+        if not items:
             return "没有搜到相关结果。"
         lines = []
-        for r in results:
-            lines.append(f"- [{r['title']}]({r['url']})\n  {r['snippet']}")
+        for r in items:
+            title = r.get("title", "")
+            url = r.get("url", r.get("href", ""))
+            snippet = r.get("snippet", "")
+            lines.append(f"- [{title}]({url})\n  {snippet}")
         return "\n".join(lines)
 
     elif name == "browse_url":

@@ -202,10 +202,30 @@ async def _connie_auto_diary(target_date_bj=None):
 
         import re as _re
         raw = diary_content.strip()
+        raw = _re.sub(r'<(?:thinking|think)>.*?</(?:thinking|think)>\s*', '', raw, flags=_re.DOTALL)
         raw = _re.sub(r'<[^>]+>', '', raw)
-        skip_prefixes = ("让我", "好的", "以下是", "这是", "我来写", "日记：")
-        while any(raw.startswith(p) for p in skip_prefixes):
-            raw = raw.split("\n", 1)[-1].strip() if "\n" in raw else ""
+        skip_patterns = (
+            "让我", "好的", "以下是", "这是", "我来写", "日记：",
+            "用户", "作为 Connie", "作为Connie", "需要我", "任务",
+            "回顾今天", "关键时刻", "触动我的", "日记应该", "参考",
+            "标题可以", "我选", "让我试", "还是写", "或者更",
+        )
+        lines_out = []
+        skip_mode = True
+        for line in raw.split("\n"):
+            stripped = line.strip()
+            if skip_mode:
+                if not stripped:
+                    continue
+                if any(stripped.startswith(p) for p in skip_patterns):
+                    continue
+                if _re.match(r'^\d+[\.\、]', stripped):
+                    continue
+                if stripped.startswith("- ") and ("→" in stripped or "——" in stripped and len(stripped) > 40):
+                    continue
+                skip_mode = False
+            lines_out.append(line)
+        raw = "\n".join(lines_out).strip()
         if not raw:
             logger.warning("自动日记内容被过滤为空，跳过")
             return

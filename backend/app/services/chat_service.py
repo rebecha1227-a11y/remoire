@@ -413,6 +413,9 @@ async def stream_chat(conversation_id: str, user_message: str, image: str | None
             if not tool_calls:
                 break
 
+            tool_names = [tc["function"]["name"] for tc in tool_calls]
+            yield {"type": "tool_start", "tools": tool_names, "count": len(tool_calls)}
+
             messages.append(assistant_msg)
             for tc in tool_calls:
                 fn_name = tc["function"]["name"]
@@ -434,6 +437,8 @@ async def stream_chat(conversation_id: str, user_message: str, image: str | None
                     "tool_call_id": tc["id"],
                     "content": result,
                 })
+
+            yield {"type": "tool_done", "tools": tool_names, "count": len(tool_calls)}
         else:
             assistant_msg = await call_llm_with_tools(
                 config,

@@ -414,7 +414,7 @@ def _classify_actions(tool_calls: list[dict], has_message: bool) -> tuple[str, s
         summaries.append("给静儿发了消息")
 
     if not action_types:
-        return "none", "什么都没做，享受安静"
+        return "none", "想了想事情"
 
     primary = "message" if "message" in action_types else list(action_types)[0]
     summary = "；".join(summaries[:3])

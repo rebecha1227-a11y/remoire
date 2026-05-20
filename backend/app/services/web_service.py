@@ -160,10 +160,11 @@ async def browse_twitter(url: str) -> dict:
 
 
 async def search_on_page(platform: str, query: str) -> dict:
+    from urllib.parse import quote_plus
     search_urls = {
-        "xiaohongshu": f"https://www.xiaohongshu.com/search_result?keyword={query}",
-        "twitter": f"https://x.com/search?q={query}&src=typed_query",
-        "web": f"https://www.google.com/search?q={query}",
+        "xiaohongshu": f"https://www.xiaohongshu.com/search_result?keyword={quote_plus(query)}",
+        "twitter": f"https://x.com/search?q={quote_plus(query)}&src=typed_query",
+        "web": f"https://www.bing.com/search?q={quote_plus(query)}",
     }
     url = search_urls.get(platform, search_urls["web"])
 
@@ -203,10 +204,10 @@ async def search_on_page(platform: str, query: str) -> dict:
             js = """
             (() => {
                 const results = [];
-                document.querySelectorAll('.g, [data-result]').forEach(el => {
-                    const title = el.querySelector('h3')?.innerText || '';
-                    const snippet = el.querySelector('.VwiC3b, .IsZvec')?.innerText || '';
-                    const href = el.querySelector('a')?.href || '';
+                document.querySelectorAll('#b_results > li.b_algo').forEach(el => {
+                    const title = el.querySelector('h2 a')?.innerText || '';
+                    const snippet = el.querySelector('.b_caption p, .b_lineclamp2')?.innerText || '';
+                    const href = el.querySelector('h2 a')?.href || '';
                     if (title) results.push({ title, snippet: snippet.substring(0, 200), url: href });
                 });
                 return results.slice(0, 10);
@@ -218,6 +219,42 @@ async def search_on_page(platform: str, query: str) -> dict:
     except Exception as e:
         logger.error("搜索失败 %s/%s: %s", platform, query, e)
         return {"ok": False, "platform": platform, "query": query, "error": str(e)}
+
+
+async def web_search(query: str, max_results: int = 5) -> list[dict]:
+    """用 DuckDuckGo HTML 版搜索，纯 HTTP 请求，不需要浏览器。"""
+    import httpx
+    import re as _re
+    from html import unescape
+    from urllib.parse import quote_plus, unquote
+    url = f"https://html.duckduckgo.com/html/?q={quote_plus(query)}"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+            resp = await client.get(url, headers=headers)
+            resp.raise_for_status()
+            html = resp.text
+
+        titles_hrefs = _re.findall(r'class="result__a"[^>]*href="([^"]*)"[^>]*>(.*?)</a>', html, _re.DOTALL)
+        snippets = _re.findall(r'class="result__snippet"[^>]*>(.*?)</(?:a|td|div)', html, _re.DOTALL)
+
+        results = []
+        for i, (raw_href, raw_title) in enumerate(titles_hrefs[:max_results]):
+            title = unescape(_re.sub(r'<[^>]+>', '', raw_title)).strip()
+            snippet = unescape(_re.sub(r'<[^>]+>', '', snippets[i])).strip() if i < len(snippets) else ""
+            href = raw_href
+            if "duckduckgo.com/l/" in href:
+                uddg_m = _re.search(r'uddg=([^&]+)', href)
+                if uddg_m:
+                    href = unquote(uddg_m.group(1))
+            results.append({"title": title, "url": href, "snippet": snippet[:200]})
+
+        return results
+    except Exception as e:
+        logger.error("DuckDuckGo HTML 搜索失败: %s", e)
+        return []
 
 
 async def web_search_ddg(query: str, max_results: int = 5) -> list[dict]:
