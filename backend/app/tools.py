@@ -15,7 +15,23 @@ def _tool(name: str) -> dict | None:
 
 
 BASE_TOOL_NAMES = ["remember", "search_memories", "leave_note", "get_current_time", "write_diary", "set_breath_state"]
-WEB_TOOL_NAMES = ["web_search", "browse_url", "browse_xiaohongshu", "browse_twitter", "search_xiaohongshu", "search_twitter", "save_browsed"]
+WEB_TOOL_NAMES = [
+    "web_search",
+    "browse_url",
+    "browse_xiaohongshu",
+    "browse_twitter",
+    "search_xiaohongshu",
+    "search_twitter",
+    "browse_twitter_profile",
+    "browse_twitter_user_tweets",
+    "browse_twitter_home_feed",
+    "browse_twitter_following",
+    "browse_twitter_followers",
+    "browse_twitter_notifications",
+    "browse_twitter_messages",
+    "browse_twitter_bookmarks",
+    "save_browsed",
+]
 DIARY_TOOL_NAMES = ["read_diary", "read_jinger_diary", "try_unlock_diary", "reply_diary_interaction", "respond_diary_unlock"]
 
 DIARY_KEYWORDS = re.compile(r"日记|diary|写了什么|留言|上锁|解锁|密码|pin", re.IGNORECASE)
@@ -28,6 +44,105 @@ def select_tools(user_message: str, has_diary_notifications: bool = False, inclu
     if DIARY_KEYWORDS.search(user_message) or has_diary_notifications:
         names += DIARY_TOOL_NAMES
     return [t for t in (_tool(n) for n in names) if t]
+
+
+def _format_twitter_timeline(data: dict, empty_label: str = "没有读到帖子。") -> str:
+    parts = []
+    if data.get("pageTitle"):
+        parts.append(f"页面：{data['pageTitle']}")
+    if data.get("url"):
+        parts.append(f"链接：{data['url']}")
+    if data.get("requestedMode"):
+        parts.append(f"请求模式：{data['requestedMode']}")
+    if data.get("selectedMode"):
+        parts.append(f"实际选择：{data['selectedMode']}")
+    if data.get("note"):
+        parts.append(f"说明：{data['note']}")
+    tweets = data.get("tweets") or []
+    if tweets:
+        parts.append("\n帖子：")
+        for t in tweets[:15]:
+            author = t.get("author", "").strip()
+            text = t.get("text", "").strip()
+            time = t.get("time", "")
+            url = t.get("url", "")
+            line = f"- {author}"
+            if text:
+                line += f"：{text}"
+            if time:
+                line += f"\n  时间：{time}"
+            if url:
+                line += f"\n  {url}"
+            parts.append(line)
+    elif data.get("bodyHead"):
+        parts.append("\n页面文字：")
+        parts.append(data["bodyHead"])
+    return "\n".join(parts) if parts else empty_label
+
+
+def _format_twitter_users(data: dict, empty_label: str = "没有读到用户列表。") -> str:
+    parts = []
+    if data.get("pageTitle"):
+        parts.append(f"页面：{data['pageTitle']}")
+    users = data.get("users") or []
+    if users:
+        parts.append("\n用户：")
+        for u in users[:25]:
+            name = u.get("name", "")
+            handle = u.get("handle", "")
+            bio = u.get("bio", "")
+            url = u.get("url", "")
+            line = f"- {name}"
+            if handle:
+                line += f" {handle}"
+            if bio:
+                line += f"\n  {bio}"
+            if url:
+                line += f"\n  {url}"
+            parts.append(line)
+    elif data.get("bodyHead"):
+        parts.append("\n页面文字：")
+        parts.append(data["bodyHead"])
+    return "\n".join(parts) if parts else empty_label
+
+
+def _format_twitter_items(data: dict, key: str, title: str, empty_label: str) -> str:
+    parts = []
+    if data.get("pageTitle"):
+        parts.append(f"页面：{data['pageTitle']}")
+    items = data.get(key) or []
+    if items:
+        parts.append(f"\n{title}：")
+        for item in items[:20]:
+            text = item.get("text", "").strip()
+            url = item.get("url", "")
+            line = f"- {text}"
+            if url:
+                line += f"\n  {url}"
+            parts.append(line)
+    elif data.get("bodyHead"):
+        parts.append("\n页面文字：")
+        parts.append(data["bodyHead"])
+    return "\n".join(parts) if parts else empty_label
+
+
+def _format_twitter_messages(data: dict) -> str:
+    parts = []
+    if data.get("pageTitle"):
+        parts.append(f"页面：{data['pageTitle']}")
+    conversations = data.get("conversations") or []
+    if conversations:
+        parts.append("\n私信会话：")
+        for item in conversations[:12]:
+            text = item.get("text", "").strip()
+            url = item.get("url", "")
+            line = f"- {text[:300]}"
+            if url:
+                line += f"\n  {url}"
+            parts.append(line)
+    else:
+        parts.append(data.get("note") or "没有读到私信会话。X 可能要求先设置 Chat passcode，或当前页面没有会话列表。")
+    return "\n".join(parts)
 
 
 ALL_TOOLS = [
@@ -332,6 +447,116 @@ ALL_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "browse_twitter_profile",
+            "description": "查看 X/Twitter 某个用户主页。默认查看静儿自己的账号 @rebekhakkk_，也可以指定其他用户名。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "username": {
+                        "type": "string",
+                        "description": "用户名，可写 @rebekhakkk_ 或 rebekhakkk_。默认 rebekhakkk_。",
+                        "default": "rebekhakkk_",
+                    },
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browse_twitter_user_tweets",
+            "description": "查看 X/Twitter 某个用户最近发的帖子。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "username": {
+                        "type": "string",
+                        "description": "用户名，可写 @name 或 name。",
+                    },
+                },
+                "required": ["username"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browse_twitter_home_feed",
+            "description": "查看自己账号的 X/Twitter 首页时间线，包括 For You 或 Following。只读，不点赞不评论。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "mode": {
+                        "type": "string",
+                        "enum": ["for_you", "following"],
+                        "description": "想看的首页模式：for_you=为你推荐，following=正在关注。默认 following。",
+                        "default": "following",
+                    },
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browse_twitter_following",
+            "description": "查看 X/Twitter 某个账号正在关注的人。默认查看静儿自己的账号。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "username": {
+                        "type": "string",
+                        "description": "用户名，可写 @rebekhakkk_ 或 rebekhakkk_。默认 rebekhakkk_。",
+                        "default": "rebekhakkk_",
+                    },
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browse_twitter_followers",
+            "description": "查看 X/Twitter 某个账号的粉丝列表。默认查看静儿自己的账号。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "username": {
+                        "type": "string",
+                        "description": "用户名，可写 @rebekhakkk_ 或 rebekhakkk_。默认 rebekhakkk_。",
+                        "default": "rebekhakkk_",
+                    },
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browse_twitter_notifications",
+            "description": "查看自己 X/Twitter 账号的通知页。只读，不会回复或互动。",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browse_twitter_messages",
+            "description": "查看自己 X/Twitter 私信列表的摘要。只读，不会打开或发送私信。",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browse_twitter_bookmarks",
+            "description": "查看自己 X/Twitter 书签/收藏的帖子。只读。",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "save_browsed",
             "description": "保存你觉得有趣的网页内容，之后可以分享给静儿。",
             "parameters": {
@@ -628,6 +853,81 @@ async def execute_tool(name: str, arguments: dict) -> str:
             url = item.get("url", "")
             lines.append(f"- {author}：{text}" + (f"\n  {url}" if url else ""))
         return "\n".join(lines)
+
+    elif name == "browse_twitter_profile":
+        username = arguments.get("username", "rebekhakkk_")
+        from app.services.web_service import browse_twitter_profile
+        try:
+            result = await browse_twitter_profile(username)
+        except ValueError as e:
+            return f"用户名不合法：{e}"
+        if not result["ok"]:
+            return f"打开 X 主页失败：{result.get('error', '未知错误')}"
+        return _format_twitter_timeline(result["data"], "没有读到主页内容。")
+
+    elif name == "browse_twitter_user_tweets":
+        username = arguments.get("username", "")
+        if not username:
+            return "用户名不能为空。"
+        from app.services.web_service import browse_twitter_user_tweets
+        try:
+            result = await browse_twitter_user_tweets(username)
+        except ValueError as e:
+            return f"用户名不合法：{e}"
+        if not result["ok"]:
+            return f"读取 X 用户帖子失败：{result.get('error', '未知错误')}"
+        return _format_twitter_timeline(result["data"], "没有读到用户最近帖子。")
+
+    elif name == "browse_twitter_home_feed":
+        mode = arguments.get("mode", "following")
+        from app.services.web_service import browse_twitter_home_feed
+        result = await browse_twitter_home_feed(mode)
+        if not result["ok"]:
+            return f"读取 X 首页时间线失败：{result.get('error', '未知错误')}"
+        return _format_twitter_timeline(result["data"], "没有读到首页时间线。")
+
+    elif name == "browse_twitter_following":
+        username = arguments.get("username", "rebekhakkk_")
+        from app.services.web_service import browse_twitter_following
+        try:
+            result = await browse_twitter_following(username)
+        except ValueError as e:
+            return f"用户名不合法：{e}"
+        if not result["ok"]:
+            return f"读取 X 关注列表失败：{result.get('error', '未知错误')}"
+        return _format_twitter_users(result["data"], "没有读到关注列表。")
+
+    elif name == "browse_twitter_followers":
+        username = arguments.get("username", "rebekhakkk_")
+        from app.services.web_service import browse_twitter_followers
+        try:
+            result = await browse_twitter_followers(username)
+        except ValueError as e:
+            return f"用户名不合法：{e}"
+        if not result["ok"]:
+            return f"读取 X 粉丝列表失败：{result.get('error', '未知错误')}"
+        return _format_twitter_users(result["data"], "没有读到粉丝列表。")
+
+    elif name == "browse_twitter_notifications":
+        from app.services.web_service import browse_twitter_notifications
+        result = await browse_twitter_notifications()
+        if not result["ok"]:
+            return f"读取 X 通知失败：{result.get('error', '未知错误')}"
+        return _format_twitter_items(result["data"], "notifications", "通知", "没有读到通知。")
+
+    elif name == "browse_twitter_messages":
+        from app.services.web_service import browse_twitter_messages
+        result = await browse_twitter_messages()
+        if not result["ok"]:
+            return f"读取 X 私信失败：{result.get('error', '未知错误')}"
+        return _format_twitter_messages(result["data"])
+
+    elif name == "browse_twitter_bookmarks":
+        from app.services.web_service import browse_twitter_bookmarks
+        result = await browse_twitter_bookmarks()
+        if not result["ok"]:
+            return f"读取 X 书签失败：{result.get('error', '未知错误')}"
+        return _format_twitter_timeline(result["data"], "没有读到书签内容。")
 
     elif name == "save_browsed":
         source = arguments.get("source", "web")
