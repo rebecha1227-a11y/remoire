@@ -379,14 +379,14 @@ export default function UsPage({ tweaks = {}, nav }) {
         </div>
 
         <div className="r-glass" style={{ position: 'relative', animation: 'card-in 180ms 100ms ease both' }}>
-          <SectionLabel>提醒与待办</SectionLabel>
-          {reminders.length === 0 ? (
+          <SectionLabel>今日待办</SectionLabel>
+          {todayReminders.length === 0 ? (
             <div style={{ padding: '12px 0', fontSize: 13, color: 'var(--ink-faint, var(--text-tertiary))' }}>
-              暂时没有待办，跟 Connie 聊天时说"提醒我…"就会自动创建
+              今天没有待办，跟 Connie 聊天时说"提醒我…"就会自动创建
             </div>
           ) : (
             <div>
-              {[...reminders].sort((a, b) => (a.status === 'done') - (b.status === 'done')).map((r, idx) => {
+              {[...todayReminders].sort((a, b) => (a.status === 'done') - (b.status === 'done')).map((r, idx) => {
                 const isDone = r.status === 'done';
                 return (
                 <div
@@ -396,7 +396,7 @@ export default function UsPage({ tweaks = {}, nav }) {
                     alignItems: 'center',
                     gap: 10,
                     padding: '10px 0',
-                    borderBottom: idx < reminders.length - 1 ? '1px solid rgba(0,0,0,0.06)' : 'none',
+                    borderBottom: idx < todayReminders.length - 1 ? '1px solid rgba(0,0,0,0.06)' : 'none',
                     opacity: isDone ? 0.45 : 1,
                     transition: 'opacity 0.3s ease',
                   }}
