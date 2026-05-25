@@ -106,10 +106,23 @@ const CHAT_MODES = {
   deep:  { label: '深度', desc: '需要更长更深的对话' },
 };
 
-const MessageRow = memo(function MessageRow({ m, isKept, isThinkOpen, onToggleThink, onHold, onRelease }) {
+const MessageRow = memo(function MessageRow({ m, isKept, isThinkOpen, onToggleThink, onHold, onRelease, onQuote, onRegenerate }) {
   const isAi = m.role === 'ai';
+  const [copied, setCopied] = useState(false);
   const handleToggle = useCallback(() => onToggleThink(m.id), [onToggleThink, m.id]);
   const handleHold = useCallback(() => onHold(m.id), [onHold, m.id]);
+  const handleCopy = useCallback(() => {
+    navigator.clipboard?.writeText(m.text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  }, [m.text]);
+  const actBtn = {
+    background: 'none', border: 'none', cursor: 'pointer',
+    padding: 3, display: 'flex', alignItems: 'center', justifyContent: 'center',
+    color: 'var(--ink-faint, rgba(0,0,0,0.25))',
+  };
+  const ico = { width: 13, height: 13, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round', strokeLinejoin: 'round' };
   return (
     <div className={`r-row ${isAi ? 'r-row-ai' : 'r-row-user'}`}
       onMouseDown={handleHold} onMouseUp={onRelease} onMouseLeave={onRelease}
@@ -117,6 +130,17 @@ const MessageRow = memo(function MessageRow({ m, isKept, isThinkOpen, onToggleTh
       style={{ opacity: isKept ? 0.6 : 1 }}>
       {isAi && <div className="r-spark">✦</div>}
       <div className="r-bubble-stack">
+        {m.quote && (
+          <div style={{
+            padding: '4px 10px', marginBottom: 2, borderRadius: 8,
+            background: 'rgba(124,99,80,0.06)',
+            borderLeft: '2px solid var(--ink-faint, rgba(0,0,0,0.15))',
+            fontSize: 12, color: 'var(--ink-soft, var(--text-tertiary))',
+            lineHeight: 1.4, maxHeight: 36, overflow: 'hidden',
+          }}>
+            {m.quote}
+          </div>
+        )}
         {m.image && <img src={m.image} alt="" className="r-bubble-img" />}
         {m.text && (
           <div className={`r-bubble ${isAi ? 'r-bubble-ai' : 'r-bubble-user'}`}>
@@ -132,20 +156,42 @@ const MessageRow = memo(function MessageRow({ m, isKept, isThinkOpen, onToggleTh
             textAlign: 'center', fontStyle: 'italic',
           }}>{m.text}</div>
         )}
-        <div className={`r-meta ${isAi ? 'r-meta-ai' : 'r-meta-user'}`}>
-          {m.time && <span className="r-time">{m.time}</span>}
-          {isAi && m.thinking && (
-            <button className="r-think-handle" onClick={handleToggle}>
-              <span className="r-think-icon">✦</span>
-              <span>{isThinkOpen ? '收起' : '偷偷看他在想什么'}</span>
-              <span style={{
-                transform: isThinkOpen ? 'rotate(90deg)' : 'rotate(0deg)',
-                transition: 'transform 280ms cubic-bezier(0.16,1,0.3,1)',
-              }}>›</span>
+        {m.text && m.role !== 'system' && (
+          <div className={`r-meta ${isAi ? 'r-meta-ai' : 'r-meta-user'}`} style={{
+            display: 'flex', alignItems: 'center', gap: 4,
+            flexDirection: isAi ? 'row' : 'row-reverse',
+          }}>
+            {m.time && <span className="r-time" style={{ order: isAi ? 99 : -1 }}>{m.time}</span>}
+            <button style={actBtn} onClick={handleCopy} title="复制">
+              {copied
+                ? <svg {...ico} stroke="var(--success, #6B9)"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><path d="M22 4L12 14.01l-3-3" /></svg>
+                : <svg {...ico}><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+              }
             </button>
-          )}
-          {isKept && <span className="r-kept-marker">· 留下</span>}
-        </div>
+            <button style={actBtn} onClick={() => onQuote(m)} title="引用">
+              <svg {...ico}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
+            </button>
+            <button style={actBtn} onClick={onRegenerate} title="重新生成">
+              <svg {...ico}><path d="M21 2v6h-6" /><path d="M3 12a9 9 0 0 1 15-6.7L21 8" /><path d="M3 22v-6h6" /><path d="M21 12a9 9 0 0 1-15 6.7L3 16" /></svg>
+            </button>
+            {isKept && <span className="r-kept-marker">· 留下</span>}
+          </div>
+        )}
+        {m.role === 'system' && m.time && (
+          <div className={`r-meta r-meta-ai`}>
+            <span className="r-time">{m.time}</span>
+          </div>
+        )}
+        {isAi && m.thinking && (
+          <button className="r-think-handle" onClick={handleToggle}>
+            <span className="r-think-icon">✦</span>
+            <span>{isThinkOpen ? '收起' : '偷偷看他在想什么'}</span>
+            <span style={{
+              transform: isThinkOpen ? 'rotate(90deg)' : 'rotate(0deg)',
+              transition: 'transform 280ms cubic-bezier(0.16,1,0.3,1)',
+            }}>›</span>
+          </button>
+        )}
         {isAi && m.thinking && isThinkOpen && (
           <div className="r-think-panel">{m.thinking}</div>
         )}
@@ -301,6 +347,7 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
   const [expandedThink, setExpandedThink] = useState(new Set());
   const [kept, setKept] = useState(new Set());
   const [pendingImage, setPendingImage] = useState(null);
+  const [quotedMsg, setQuotedMsg] = useState(null);
   const [voiceHold, setVoiceHold] = useState(false);
   const [chatBgImage, setChatBgImage] = useState(() => localStorage.getItem('remoire_chat_bg') || '');
   const [timeOverride, setTimeOverride] = useState(() => localStorage.getItem('remoire_time_override') || 'auto');
@@ -598,16 +645,29 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
     if (!inputValRef.current.trim() && !pendingImage) return;
     const txt = inputValRef.current;
     const img = pendingImage;
+    const quote = quotedMsg;
     inputValRef.current = '';
     if (inputRef.current) { inputRef.current.value = ''; inputRef.current.style.height = 'auto'; }
     setHasInput(false);
     setPendingImage(null);
+    setQuotedMsg(null);
     setShowActions(false);
     const time = formatBJTime(new Date().toISOString());
     const userMsg = { id: ++msgIdRef.current, role: 'user', text: txt, time, isNew: true };
     if (img) userMsg.image = img;
+    if (quote) userMsg.quote = quote.text.length > 60 ? quote.text.slice(0, 60) + '…' : quote.text;
     setMessages(m => [...m, userMsg]);
-    await fetchReply(txt, img);
+    const msgToSend = quote
+      ? `[引用${quote.role === 'ai' ? ' Connie' : '自己'}的话：「${quote.text.slice(0, 120)}」]\n${txt}`
+      : txt;
+    await fetchReply(msgToSend, img);
+  }
+
+  async function regenerate() {
+    const lastUserIdx = [...messages].reverse().findIndex(m => m.role === 'user');
+    if (lastUserIdx === -1) return;
+    const lastUser = messages[messages.length - 1 - lastUserIdx];
+    await fetchReply(lastUser.text, lastUser.image);
   }
 
   function toggleKeep(id) {
@@ -615,6 +675,7 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
   }
   const holdMessage = useCallback((id) => { msgTimer.current = setTimeout(() => toggleKeep(id), 480); }, []);
   const releaseMessage = useCallback(() => { if (msgTimer.current) clearTimeout(msgTimer.current); }, []);
+  const quoteMessage = useCallback((m) => { setQuotedMsg(m); inputRef.current?.focus(); }, []);
   const toggleThink = useCallback((id) => {
     setExpandedThink(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   }, []);
@@ -911,6 +972,8 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
                 onToggleThink={toggleThink}
                 onHold={holdMessage}
                 onRelease={releaseMessage}
+                onQuote={quoteMessage}
+                onRegenerate={regenerate}
               />
             );
           })}
@@ -941,6 +1004,27 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
       <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }}
         onChange={e => pickPhoto(e.target.files?.[0])} />
       <div className="r-input-wrap">
+        {quotedMsg && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '6px 12px', margin: '0 0 -2px',
+            background: 'rgba(124,99,80,0.06)',
+            borderLeft: '2px solid var(--ink-accent, var(--accent))',
+            borderRadius: '4px 8px 0 0',
+            fontSize: 12, color: 'var(--ink-soft, var(--text-tertiary))',
+            lineHeight: 1.4,
+          }}>
+            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {quotedMsg.role === 'ai' ? '引用 Connie：' : '引用自己：'}
+              {quotedMsg.text?.slice(0, 50)}{quotedMsg.text?.length > 50 ? '…' : ''}
+            </span>
+            <button onClick={() => setQuotedMsg(null)} style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              color: 'var(--ink-faint, var(--text-tertiary))', fontSize: 14,
+              padding: '0 2px', lineHeight: 1,
+            }}>✕</button>
+          </div>
+        )}
         {pendingImage && (
           <div className="r-pending">
             <img src={pendingImage} alt="" />
