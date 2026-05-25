@@ -30,7 +30,7 @@ async def _build_resume_bundle(last_msg_time: str | None) -> str:
         except (ValueError, TypeError):
             gap_minutes = 9999
 
-    if gap_minutes < 180:
+    if gap_minutes < 120:
         return ""
 
     parts = []
@@ -394,6 +394,26 @@ async def stream_chat(conversation_id: str, user_message: str, image: str | None
             ]
 
     messages = [{"role": "system", "content": system_prompt}] + llm_history
+
+    if last_msg_time:
+        try:
+            last_t = datetime.fromisoformat(last_msg_time)
+            if last_t.tzinfo is None:
+                last_t = last_t.replace(tzinfo=timezone.utc)
+            gap_min = (datetime.now(timezone.utc) - last_t).total_seconds() / 60
+        except (ValueError, TypeError):
+            gap_min = 0
+        if gap_min >= 120:
+            now_bj = datetime.now(BJ_TZ)
+            if gap_min >= 1440:
+                gap_text = f"{int(gap_min // 1440)} 天"
+            else:
+                gap_text = f"{int(gap_min // 60)} 小时"
+            time_reminder = {
+                "role": "system",
+                "content": f"⚠️ 距离你们上次对话已经过去了 {gap_text}。现在是 {now_bj.strftime('%Y-%m-%d %H:%M')}（北京时间）。注意时间变化——不要接着上一句话的语境直接回复，先感受一下现在是什么时候、她这段时间可能在做什么。",
+            }
+            messages.insert(-1, time_reminder)
 
     model_slot = mode if mode in ("daily", "deep") else "daily"
     config, slot_settings = await model_settings_service.get_model_config_for_slot(model_slot)

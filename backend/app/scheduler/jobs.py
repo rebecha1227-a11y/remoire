@@ -194,11 +194,22 @@ async def _connie_auto_diary(target_date_bj=None):
 
 现在直接输出日记，第一行就是标题："""
 
-        diary_config, diary_slot_settings = await model_settings_service.get_model_config_for_slot("daily")
-        diary_content = await call_llm(diary_config, [
+        diary_msgs = [
             {"role": "system", "content": f"{identity}\n\n{voice}"},
             {"role": "user", "content": diary_prompt},
-        ], temperature=0.85, max_tokens=1200, extended_thinking=False)
+        ]
+        diary_content = None
+        for slot in ["daily", "backend"]:
+            try:
+                diary_config, _ = await model_settings_service.get_model_config_for_slot(slot)
+                diary_content = await call_llm(diary_config, diary_msgs, temperature=0.85, max_tokens=1200, extended_thinking=False)
+                break
+            except Exception as e:
+                logger.warning("自动日记 LLM 调用失败 (slot=%s): %s", slot, e)
+                continue
+        if not diary_content:
+            logger.error("自动日记：所有模型槽位都失败，跳过")
+            return
 
         import re as _re
         raw = diary_content.strip()
@@ -209,6 +220,11 @@ async def _connie_auto_diary(target_date_bj=None):
             "用户", "作为 Connie", "作为Connie", "需要我", "任务",
             "回顾今天", "关键时刻", "触动我的", "日记应该", "参考",
             "标题可以", "我选", "让我试", "还是写", "或者更",
+            "The user", "Let me", "I need to", "I'll write", "I should",
+            "Based on", "Here's", "Here is", "Diary:", "Title:",
+            "Analysis", "Key moment", "First,", "Now,",
+            "从聊天记录", "根据以上", "综合以上", "分析一下",
+            "首先", "接下来", "最后总结",
         )
         lines_out = []
         skip_mode = True
@@ -222,6 +238,8 @@ async def _connie_auto_diary(target_date_bj=None):
                 if _re.match(r'^\d+[\.\、]', stripped):
                     continue
                 if stripped.startswith("- ") and ("→" in stripped or "——" in stripped and len(stripped) > 40):
+                    continue
+                if _re.match(r'^[A-Za-z]', stripped) and len(stripped) > 5:
                     continue
                 skip_mode = False
             lines_out.append(line)
@@ -405,3 +423,112 @@ async def generate_breath_state():
 
     except Exception as e:
         logger.error("气息状态生成异常: %s", e)
+
+
+async def digest_memories():
+    """每晚执行。用 LLM 找出可合并的相似记忆，合并后删除旧的。"""
+    try:
+        async with get_db() as db:
+            async with db.execute(
+                "SELECT id, content, layer, weight, tags_json FROM memories WHERE layer IN ('long', 'short') ORDER BY created_at DESC LIMIT 200"
+            ) as cur:
+                rows = await cur.fetchall()
+
+        if len(rows) < 5:
+            logger.info("记忆整理：记忆数量不足，跳过")
+            return
+
+        memory_list = "\n".join(
+            f"[{r['id'][:8]}] ({r['layer']}, w={r['weight']:.1f}) {r['content'][:120]}"
+            for r in rows
+        )
+
+        prompt = f"""以下是记忆库中的记忆条目（格式：[短ID] (层级, 权重) 内容）：
+
+{memory_list}
+
+请找出内容重复或高度相似、可以合并的记忆组。
+
+规则：
+- 只合并内容确实重复或高度重叠的（比如同一件事记了两次、同一个偏好记了不同措辞）
+- 不要合并只是同一主题但内容不同的（比如"她喜欢奶茶"和"她今天喝了奶茶"不算重复）
+- 每组给出合并后的内容（保留最完整的信息）
+
+输出格式（严格 JSON 数组，不要多说话）：
+[
+  {{"merge": ["短ID1", "短ID2"], "into": "合并后的内容"}},
+  ...
+]
+
+如果没有可合并的，输出空数组 []"""
+
+        config = None
+        result = None
+        for slot in ["backend", "daily"]:
+            try:
+                config, _ = await model_settings_service.get_model_config_for_slot(slot)
+                result = await call_llm(config, [
+                    {"role": "system", "content": "你是记忆整理助手。只输出 JSON，不要多说话。"},
+                    {"role": "user", "content": prompt},
+                ], temperature=0.3, max_tokens=2000, extended_thinking=False)
+                break
+            except Exception as e:
+                logger.warning("记忆整理 LLM 调用失败 (slot=%s): %s", slot, e)
+                continue
+
+        if not result:
+            logger.error("记忆整理：所有模型槽位都失败，跳过")
+            return
+
+        import re as _re
+        clean = result.strip()
+        if clean.startswith("```"):
+            clean = clean.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+        clean = _re.sub(r'<[^>]+>', '', clean).strip()
+
+        try:
+            merges = json.loads(clean)
+        except (json.JSONDecodeError, ValueError):
+            logger.warning("记忆整理：LLM 返回无法解析: %s", clean[:200])
+            return
+
+        if not merges:
+            logger.info("记忆整理：没有需要合并的记忆")
+            return
+
+        id_lookup = {r["id"][:8]: r for r in rows}
+        merged_count = 0
+
+        for group in merges[:10]:
+            short_ids = group.get("merge", [])
+            merged_content = group.get("into", "")
+            if len(short_ids) < 2 or not merged_content:
+                continue
+
+            full_rows = [id_lookup[sid] for sid in short_ids if sid in id_lookup]
+            if len(full_rows) < 2:
+                continue
+
+            best = max(full_rows, key=lambda r: r["weight"])
+
+            from app.services import memory_service
+            await memory_service.create_memory(
+                content=merged_content,
+                tags=json.loads(best["tags_json"] or "[]"),
+                layer=best["layer"],
+                memory_type="fact",
+            )
+
+            async with get_db() as db:
+                for r in full_rows:
+                    await db.execute("DELETE FROM memory_links WHERE source_id = ? OR target_id = ?", (r["id"], r["id"]))
+                    await db.execute("DELETE FROM memories WHERE id = ?", (r["id"],))
+                await db.commit()
+
+            merged_count += 1
+            logger.info("记忆整理：合并 %d 条 → 「%s」", len(full_rows), merged_content[:50])
+
+        logger.info("记忆整理完成：合并了 %d 组记忆", merged_count)
+
+    except Exception as e:
+        logger.error("记忆整理异常: %s", e)

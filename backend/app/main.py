@@ -6,7 +6,7 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.date import DateTrigger
 from app.database import init_db
 from app.routers import chat, memory, diary, note, settings, reminder, push, signal, autonomous
-from app.scheduler.jobs import connie_auto_diary, catchup_missed_diary, generate_breath_state, decay_memories
+from app.scheduler.jobs import connie_auto_diary, catchup_missed_diary, generate_breath_state, decay_memories, digest_memories
 from app.services.nudge_service import run_autonomous_check
 from app.services.weather_service import fetch_and_cache as fetch_weather
 from app.services.memory_service import run_digest
@@ -60,6 +60,12 @@ async def lifespan(app: FastAPI):
         decay_memories,
         CronTrigger(hour=3, minute=0, timezone="Asia/Shanghai"),
         id="decay_memories",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        digest_memories,
+        CronTrigger(hour=3, minute=30, timezone="Asia/Shanghai"),
+        id="digest_memories",
         replace_existing=True,
     )
     _schedule_next_autonomous()

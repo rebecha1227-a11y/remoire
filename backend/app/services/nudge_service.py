@@ -301,68 +301,76 @@ async def generate_autonomous_activity(conversation_id: str, mode: str = "light"
         "content": f"[系统：现在是你的自主活动时间。以上聊天记录仅供参考上下文，你不是在回复对话。如果你决定给静儿发消息，必须是全新的内容，不能重复你之前说过的话。]{dedup_hint}",
     })
 
-    config, slot_settings = await model_settings_service.get_model_config_for_slot("daily")
-    extended_thinking = bool(slot_settings.get("extended_thinking"))
-
     include_web = (mode == "full")
     tools = select_tools("", has_diary_notifications=False, include_web=include_web)
 
     tool_calls_made = []
 
-    try:
-        for _ in range(4):
-            max_tokens = 2048 if mode == "full" else 1024
-            assistant_msg = await call_llm_with_tools(
-                config, messages, tools=tools,
-                extended_thinking=extended_thinking,
-                max_tokens=max_tokens,
-            )
-            tool_calls = assistant_msg.get("tool_calls")
-            if not tool_calls:
-                break
-            messages.append(assistant_msg)
-            for tc in tool_calls:
-                fn_name = tc["function"]["name"]
-                try:
-                    fn_args = json.loads(tc["function"]["arguments"])
-                except (json.JSONDecodeError, TypeError):
-                    fn_args = {}
-                result = await execute_tool(fn_name, fn_args)
-                tool_calls_made.append({"name": fn_name, "args": fn_args, "result_preview": result[:200]})
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tc["id"],
-                    "content": result,
-                })
-        else:
-            assistant_msg = await call_llm_with_tools(
-                config, messages,
-                extended_thinking=extended_thinking, max_tokens=1024,
-            )
-    except Exception as e:
-        logger.error("autonomous LLM 调用异常: %s | model=%s, mode=%s", e, config.model_id, mode, exc_info=True)
-        return {"content": "", "thinking": "", "tool_calls": [], "mode": mode}
+    slots_to_try = ["daily", "backend"]
+    assistant_msg = None
+    config = None
+
+    for slot in slots_to_try:
+        try:
+            config, slot_settings = await model_settings_service.get_model_config_for_slot(slot)
+            extended_thinking = bool(slot_settings.get("extended_thinking"))
+
+            slot_messages = list(messages)
+            for _ in range(4):
+                max_tokens = 2048 if mode == "full" else 1024
+                assistant_msg = await call_llm_with_tools(
+                    config, slot_messages, tools=tools,
+                    extended_thinking=extended_thinking,
+                    max_tokens=max_tokens,
+                )
+                tool_calls = assistant_msg.get("tool_calls")
+                if not tool_calls:
+                    break
+                slot_messages.append(assistant_msg)
+                for tc in tool_calls:
+                    fn_name = tc["function"]["name"]
+                    try:
+                        fn_args = json.loads(tc["function"]["arguments"])
+                    except (json.JSONDecodeError, TypeError):
+                        fn_args = {}
+                    result = await execute_tool(fn_name, fn_args)
+                    tool_calls_made.append({"name": fn_name, "args": fn_args, "result_preview": result[:200]})
+                    slot_messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc["id"],
+                        "content": result,
+                    })
+            else:
+                assistant_msg = await call_llm_with_tools(
+                    config, slot_messages,
+                    extended_thinking=extended_thinking, max_tokens=1024,
+                )
+            break
+        except Exception as e:
+            logger.warning("autonomous LLM 调用异常 (slot=%s, model=%s): %s", slot, config.model_id if config else "?", e)
+            if slot == slots_to_try[-1]:
+                logger.error("autonomous: 所有模型槽位都失败，跳过本次活动")
+                return {"content": "", "thinking": "", "tool_calls": [], "mode": mode, "error": str(e)}
 
     full_reply = assistant_msg.get("content", "")
     import re
 
-    _think_match = re.search(r'<(?:thinking|think)>(.*?)</(?:thinking|think)>', full_reply, re.DOTALL)
-    if _think_match:
-        thinking = _think_match.group(1) + "\n" + assistant_msg.get("reasoning_content", "")
-        full_reply = re.sub(r'<(?:thinking|think)>.*?</(?:thinking|think)>\s*', '', full_reply, flags=re.DOTALL)
-    else:
-        thinking = assistant_msg.get("reasoning_content", "")
+    api_reasoning = assistant_msg.get("reasoning_content", "")
 
-    msg_matches = re.findall(r'<message>(.*?)</message>', full_reply, re.DOTALL)
+    think_contents = re.findall(r'<(?:thinking|think)>(.*?)</(?:thinking|think)>', full_reply, re.DOTALL)
+    full_reply_no_think = re.sub(r'<(?:thinking|think)>.*?</(?:thinking|think)>\s*', '', full_reply, flags=re.DOTALL)
+
+    all_text = full_reply_no_think + "\n" + "\n".join(think_contents)
+    msg_matches = re.findall(r'<message>(.*?)</message>', all_text, re.DOTALL)
+
+    monologue = re.sub(r'<message>.*?</message>', '', all_text, flags=re.DOTALL).strip()
+    thinking_parts = [p for p in [monologue, api_reasoning] if p.strip()]
+    thinking = "\n".join(thinking_parts)
+
     if msg_matches:
-        monologue = re.sub(r'<message>.*?</message>', '', full_reply, flags=re.DOTALL).strip()
-        if monologue:
-            thinking = monologue + "\n" + thinking
         full_reply = "\n\n".join(m.strip() for m in msg_matches)
     else:
-        if full_reply.strip():
-            thinking = full_reply.strip() + "\n" + thinking
-            full_reply = ""
+        full_reply = ""
 
     if thinking:
         thinking = await _ensure_chinese_thinking(config, thinking)
@@ -420,7 +428,12 @@ def _classify_actions(tool_calls: list[dict], has_message: bool) -> tuple[str, s
         elif name == "set_breath_state":
             action_types.add("breath")
             summaries.append(f"更新状态为「{args.get('text', '')}」")
-        elif name in ("web_search", "browse_url", "browse_xiaohongshu", "browse_twitter", "search_xiaohongshu", "search_twitter"):
+        elif name in ("web_search", "browse_url", "browse_xiaohongshu", "browse_twitter",
+                      "search_xiaohongshu", "search_twitter",
+                      "browse_twitter_profile", "browse_twitter_user_tweets",
+                      "browse_twitter_home_feed", "browse_twitter_following",
+                      "browse_twitter_followers", "browse_twitter_notifications",
+                      "browse_twitter_messages", "browse_twitter_bookmarks"):
             action_types.add("explore")
             if name == "browse_xiaohongshu":
                 summaries.append("刷了小红书")
@@ -608,7 +621,11 @@ async def _do_autonomous_activity(conversation_id: str, can_message: bool = True
         )
     except Exception as e:
         logger.error("autonomous: generate_autonomous_activity 崩溃: %s", e, exc_info=True)
-        await _save_autonomous_log("none", f"活动生成失败：{e}", "系统异常", {"error": str(e)}, mode)
+        await _save_autonomous_log("error", f"活动生成失败：{e}", "系统异常", {"error": str(e)}, mode)
+        return
+
+    if result.get("error"):
+        await _save_autonomous_log("error", f"LLM 调用失败：{result['error']}", "LLM 不可用", {"error": result["error"]}, mode)
         return
 
     has_message_content = bool(result["content"].strip())
@@ -625,3 +642,4 @@ async def _do_autonomous_activity(conversation_id: str, can_message: bool = True
     thinking = result["thinking"]
     await _save_autonomous_log(action_type, thinking, summary, {"tool_calls": result["tool_calls"]}, mode)
     logger.info("autonomous: 完成 — %s: %s (thinking=%d字)", action_type, summary, len(thinking))
+
