@@ -298,7 +298,7 @@ async def generate_autonomous_activity(conversation_id: str, mode: str = "light"
 
     messages.append({
         "role": "user",
-        "content": f"[系统：现在是你的自主活动时间。以上聊天记录仅供参考上下文，你不是在回复对话。如果你决定给静儿发消息，必须是全新的内容，不能重复你之前说过的话。]{dedup_hint}",
+        "content": f"[系统：{time_info}。现在是你的自主活动时间。以上聊天记录仅供参考上下文，你不是在回复对话。如果你决定给静儿发消息，必须是全新的内容，不能重复你之前说过的话。注意：根据当前时间和上面的聊天记录判断静儿的状态，不要问与时间或聊天内容矛盾的问题。]{dedup_hint}",
     })
 
     include_web = (mode == "full")
@@ -355,6 +355,9 @@ async def generate_autonomous_activity(conversation_id: str, mode: str = "light"
     full_reply = assistant_msg.get("content", "")
     import re
 
+    full_reply = re.sub(r'<[｜\|]+DSML[｜\|]+[^>]*>.*?</[｜\|]+DSML[｜\|]+[^>]*>', '', full_reply, flags=re.DOTALL)
+    full_reply = re.sub(r'<[｜\|]+DSML[｜\|]+[^>]*>', '', full_reply)
+
     api_reasoning = assistant_msg.get("reasoning_content", "")
 
     think_contents = re.findall(r'<(?:thinking|think)>(.*?)</(?:thinking|think)>', full_reply, re.DOTALL)
@@ -364,6 +367,9 @@ async def generate_autonomous_activity(conversation_id: str, mode: str = "light"
     msg_matches = re.findall(r'<message>(.*?)</message>', all_text, re.DOTALL)
 
     monologue = re.sub(r'<message>.*?</message>', '', all_text, flags=re.DOTALL).strip()
+    monologue = re.sub(r'<[｜\|]+DSML[｜\|]+[^>]*>.*?</[｜\|]+DSML[｜\|]+[^>]*>', '', monologue, flags=re.DOTALL)
+    monologue = re.sub(r'<[｜\|]+DSML[｜\|]+[^>]*>', '', monologue)
+    monologue = re.sub(r'\n{3,}', '\n\n', monologue).strip()
     thinking_parts = [p for p in [monologue, api_reasoning] if p.strip()]
     thinking = "\n".join(thinking_parts)
 

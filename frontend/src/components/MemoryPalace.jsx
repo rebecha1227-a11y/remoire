@@ -290,17 +290,46 @@ function CandidateReview({ candidates, onAccept, onReject }) {
 
 function MemoryItem({ mem, onEdit, onDelete, onMove }) {
   const [expanded, setExpanded] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editContent, setEditContent] = useState(mem.content);
+  const [saving, setSaving] = useState(false);
   const raw = mem.tags || mem.tags_json;
   const tags = Array.isArray(raw) ? raw :
     (typeof raw === 'string' ? (() => { try { return JSON.parse(raw); } catch { return []; } })() : []);
+
+  async function handleSave() {
+    if (!editContent.trim() || editContent === mem.content) {
+      setEditing(false);
+      return;
+    }
+    setSaving(true);
+    const ok = await onEdit(mem.id, { content: editContent.trim() });
+    setSaving(false);
+    if (ok) setEditing(false);
+  }
 
   return (
     <div style={{
       padding: '12px 0',
       borderBottom: '1px solid rgba(0,0,0,0.06)',
     }}>
-      <div onClick={() => setExpanded(!expanded)} style={{ cursor: 'pointer' }}>
-        <div style={{ fontSize: 14, color: 'var(--ink)', lineHeight: 1.6 }}>{mem.content}</div>
+      <div onClick={() => !editing && setExpanded(!expanded)} style={{ cursor: editing ? 'default' : 'pointer' }}>
+        {editing ? (
+          <textarea
+            value={editContent}
+            onChange={e => setEditContent(e.target.value)}
+            onClick={e => e.stopPropagation()}
+            style={{
+              width: '100%', minHeight: 80, border: '1px solid rgba(0,0,0,0.1)',
+              borderRadius: 8, padding: '8px 10px', fontSize: 14, color: 'var(--ink)',
+              lineHeight: 1.6, fontFamily: 'var(--font-body)', background: 'rgba(0,0,0,0.02)',
+              outline: 'none', resize: 'vertical', boxSizing: 'border-box',
+            }}
+            autoFocus
+          />
+        ) : (
+          <div style={{ fontSize: 14, color: 'var(--ink)', lineHeight: 1.6 }}>{mem.content}</div>
+        )}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6, alignItems: 'center' }}>
           {tags.map((t, i) => <Pill key={i} tone="neutral">{t}</Pill>)}
           <span style={{ fontSize: 11, color: 'var(--ink-faint)', marginLeft: 4 }}>
@@ -310,13 +339,33 @@ function MemoryItem({ mem, onEdit, onDelete, onMove }) {
           </span>
         </div>
       </div>
-      {expanded && (
+      {editing && (
+        <div style={{ marginTop: 10, display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button onClick={() => { setEditing(false); setEditContent(mem.content); }} style={{
+            padding: '5px 14px', borderRadius: 8, border: '1px solid rgba(0,0,0,0.08)',
+            background: 'transparent', fontSize: 12, color: 'var(--ink-soft)',
+            cursor: 'pointer', fontFamily: 'var(--font-body)',
+          }}>取消</button>
+          <button onClick={handleSave} disabled={saving} style={{
+            padding: '5px 14px', borderRadius: 8, border: 'none',
+            background: 'var(--ink-accent)', fontSize: 12, color: '#FAF8F4',
+            cursor: saving ? 'default' : 'pointer', fontWeight: 500,
+            fontFamily: 'var(--font-body)', opacity: saving ? 0.6 : 1,
+          }}>{saving ? '保存中…' : '保存'}</button>
+        </div>
+      )}
+      {expanded && !editing && (
         <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 11, color: 'var(--ink-faint)', lineHeight: '28px' }}>
             权重 {mem.weight != null ? (mem.weight * 100).toFixed(0) + '%' : '—'}
             {mem.pinned && ' · 已固定'}
           </span>
           <div style={{ flex: 1 }} />
+          <button onClick={() => { setEditing(true); setEditContent(mem.content); }} style={{
+            padding: '4px 10px', borderRadius: 6, border: '1px solid rgba(0,0,0,0.08)',
+            background: 'transparent', fontSize: 11, color: 'var(--ink-accent)',
+            cursor: 'pointer', fontFamily: 'var(--font-body)',
+          }}>编辑</button>
           {Object.keys(LAYER_META).filter(l => l !== mem.layer).map(l => (
             <button key={l} onClick={() => onMove(mem.id, l)} style={{
               padding: '4px 10px', borderRadius: 6, border: '1px solid rgba(0,0,0,0.08)',
@@ -359,6 +408,20 @@ function LayerDetail({ layer, onBack }) {
   }, [layer, search, typeFilter, sortBy]);
 
   useEffect(() => { load(); }, [load]);
+
+  async function handleEdit(id, updates) {
+    try {
+      const res = await apiJsonFetch(`/memory/${id}`, {
+        method: 'PUT', body: JSON.stringify(updates),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setMemories(m => m.map(x => x.id === id ? { ...x, ...updates } : x));
+        return true;
+      }
+    } catch (e) {}
+    return false;
+  }
 
   async function handleMove(id, target) {
     try {
@@ -447,7 +510,7 @@ function LayerDetail({ layer, onBack }) {
       ) : (
         <div className="r-glass" style={{ position: 'relative' }}>
           {memories.map(m => (
-            <MemoryItem key={m.id} mem={m} onMove={handleMove} onDelete={handleDelete} />
+            <MemoryItem key={m.id} mem={m} onEdit={handleEdit} onMove={handleMove} onDelete={handleDelete} />
           ))}
         </div>
       )}

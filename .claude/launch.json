@@ -15,5 +15,13 @@
       "port": 5174,
       "cwd": "frontend"
     }
+    ,
+    {
+      "name": "tutorial",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "3457"],
+      "port": 3457,
+      "cwd": "教程html文档"
+    }
   ]
 }
