@@ -280,7 +280,19 @@ async def browse_url(url: str, extract_js: str = None) -> dict:
         return {"ok": False, "url": url, "error": str(e)}
 
 
+def _normalize_xhs_url(url: str) -> str:
+    import re
+    m = re.search(r'/(?:search_result|discovery/item)/([a-f0-9]{24})', url)
+    if m:
+        return f"https://www.xiaohongshu.com/explore/{m.group(1)}"
+    m = re.search(r'/explore/([a-f0-9]{24})', url)
+    if m:
+        return f"https://www.xiaohongshu.com/explore/{m.group(1)}"
+    return url
+
+
 async def browse_xiaohongshu(url: str) -> dict:
+    url = _normalize_xhs_url(url)
     try:
         page = await _get_page()
         await page.goto(url, wait_until="domcontentloaded", timeout=20000)
@@ -416,7 +428,10 @@ async def search_on_page(platform: str, query: str) -> dict:
                     const key = href || `${title}|${author}`;
                     if (title && (href.includes('/explore/') || href.includes('/search_result/')) && !bad && !seen.has(key)) {
                         seen.add(key);
-                        results.push({ title: title.substring(0, 100), author: author.substring(0, 50), url: href });
+                        let cleanUrl = href;
+                        const idMatch = href.match(/\\/(?:search_result|discovery\\/item)\\/([a-f0-9]{24})/);
+                        if (idMatch) cleanUrl = 'https://www.xiaohongshu.com/explore/' + idMatch[1];
+                        results.push({ title: title.substring(0, 100), author: author.substring(0, 50), url: cleanUrl });
                     }
                 });
                 return results.slice(0, 10);
