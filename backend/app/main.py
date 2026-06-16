@@ -9,7 +9,6 @@ from app.routers import chat, memory, diary, note, settings, reminder, push, sig
 from app.scheduler.jobs import connie_auto_diary, catchup_missed_diary, generate_breath_state, decay_memories, digest_memories
 from app.services.nudge_service import run_autonomous_check
 from app.services.weather_service import fetch_and_cache as fetch_weather
-from app.services.memory_service import run_digest
 
 scheduler = AsyncIOScheduler()
 
@@ -69,12 +68,6 @@ async def lifespan(app: FastAPI):
         replace_existing=True,
     )
     _schedule_next_autonomous()
-    scheduler.add_job(
-        run_digest,
-        CronTrigger(hour=2, minute=30, timezone="Asia/Shanghai"),
-        id="memory_digest",
-        replace_existing=True,
-    )
     scheduler.start()
     await catchup_missed_diary()
     await generate_breath_state()

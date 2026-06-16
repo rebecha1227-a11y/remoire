@@ -443,24 +443,18 @@ async def digest_memories():
             for r in rows
         )
 
-        prompt = f"""以下是记忆库中的记忆条目（格式：[短ID] (层级, 权重) 内容）：
-
+        prompt = f"""记忆条目：
 {memory_list}
 
-请找出内容重复或高度相似、可以合并的记忆组。
+找出重复/高度相似的记忆，合并它们。
 
 规则：
-- 只合并内容确实重复或高度重叠的（比如同一件事记了两次、同一个偏好记了不同措辞）
-- 不要合并只是同一主题但内容不同的（比如"她喜欢奶茶"和"她今天喝了奶茶"不算重复）
-- 每组给出合并后的内容（保留最完整的信息）
+- 只合并内容确实重复或高度重叠的（同一件事记了两次、同一偏好不同措辞）
+- 不要合并仅同一主题但内容不同的（"她喜欢奶茶"和"她今天喝了奶茶"不算重复）
+- 合并后保留最完整的信息
+- 没有可合并的就输出 []
 
-输出格式（严格 JSON 数组，不要多说话）：
-[
-  {{"merge": ["短ID1", "短ID2"], "into": "合并后的内容"}},
-  ...
-]
-
-如果没有可合并的，输出空数组 []"""
+直接输出 JSON，不要解释："""
 
         config = None
         result = None
@@ -468,9 +462,9 @@ async def digest_memories():
             try:
                 config, _ = await model_settings_service.get_model_config_for_slot(slot)
                 result = await call_llm(config, [
-                    {"role": "system", "content": "你是记忆整理助手。只输出 JSON，不要多说话。"},
+                    {"role": "system", "content": '你是 JSON 生成器。用户给你一批记忆条目，你找出重复的并合并。只输出一个 JSON 数组，格式：[{"merge":["短ID1","短ID2"],"into":"合并后内容"}]。没有重复就输出 []。禁止输出任何非 JSON 内容。'},
                     {"role": "user", "content": prompt},
-                ], temperature=0.3, max_tokens=2000, extended_thinking=False)
+                ], temperature=0.1, max_tokens=2000, extended_thinking=False)
                 break
             except Exception as e:
                 logger.warning("记忆整理 LLM 调用失败 (slot=%s): %s", slot, e)
@@ -485,6 +479,11 @@ async def digest_memories():
         if clean.startswith("```"):
             clean = clean.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
         clean = _re.sub(r'<[^>]+>', '', clean).strip()
+        # 提取第一个 JSON 数组
+        bracket_start = clean.find("[")
+        bracket_end = clean.rfind("]")
+        if bracket_start != -1 and bracket_end > bracket_start:
+            clean = clean[bracket_start:bracket_end + 1]
 
         try:
             merges = json.loads(clean)

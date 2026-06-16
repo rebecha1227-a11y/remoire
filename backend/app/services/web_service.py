@@ -5,7 +5,9 @@ import asyncio
 import re
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urlparse, quote_plus
+
+import httpx
 
 from app.database import get_db
 
@@ -79,17 +81,74 @@ JS_EXTRACT_XIAOHONGSHU = """
     document.querySelectorAll('.cookie-banner-overlay, [class*="cookie"]').forEach(el => {
         if ((el.innerText || '').includes('Cookie Preferences')) el.remove();
     });
-    const title = document.querySelector('#detail-title, .title, .note-title, [class*="title"]')?.innerText || document.title || '';
-    const content = document.querySelector('#detail-desc, .desc, .note-content, .content, [class*="desc"]')?.innerText || '';
-    const author = document.querySelector('.author-name, .user-name, [class*="author"], [class*="nickname"]')?.innerText || '';
-    const likes = document.querySelector('[class*="like"] span, .like-count')?.innerText || '';
+
+    // 优先从笔记详情弹窗/overlay 中提取（/explore/{id} 页面结构）
+    const noteContainer = document.querySelector(
+        '[class*="note-detail"], [class*="noteDetail"], .note-container, #noteContainer, '
+        + '[class*="note-scroller"], [class*="interaction-container"], '
+        + '.detail-wrapper, [class*="detail-content"]'
+    );
+    const root = noteContainer || document;
+
+    const tryText = (...sels) => {
+        for (const sel of sels) {
+            const el = root.querySelector(sel);
+            if (el && el.innerText && el.innerText.trim()) return el.innerText.trim();
+        }
+        // 也试试 document 级别
+        if (root !== document) {
+            for (const sel of sels) {
+                const el = document.querySelector(sel);
+                if (el && el.innerText && el.innerText.trim()) return el.innerText.trim();
+            }
+        }
+        return '';
+    };
+
+    const title = tryText(
+        '#detail-title', '[class*="title"][class*="note"]',
+        '.title', '.note-title', 'h1[class*="title"]'
+    ) || document.title || '';
+
+    const content = tryText(
+        '#detail-desc', '[class*="desc"][class*="note"]',
+        '.desc', '.note-content', '[class*="note-text"]',
+        '.content[class*="desc"]'
+    );
+
+    const author = tryText(
+        '.author-name', '.user-name', '[class*="author-wrapper"] [class*="name"]',
+        '[class*="nickname"]', '[class*="author"]'
+    );
+
+    const likes = tryText(
+        '[class*="like-wrapper"] [class*="count"]', '[class*="like"] span',
+        '.like-count', '[class*="likeCount"]'
+    );
+
     const comments = [];
-    document.querySelectorAll('.comment-item, .comment, [class*="comment-item"], [class*="commentItem"]').forEach(el => {
-        const user = el.querySelector('.user-name, .name, [class*="name"]')?.innerText || '';
-        const text = el.querySelector('.content, .text, [class*="content"]')?.innerText || '';
-        if (text) comments.push({ user, text: text.substring(0, 200) });
+    const commentRoot = noteContainer || document;
+    commentRoot.querySelectorAll(
+        '[class*="comment-item"], [class*="commentItem"], .comment-item, .comment'
+    ).forEach(el => {
+        const user = el.querySelector('[class*="name"], .user-name, .name')?.innerText || '';
+        const text = el.querySelector('[class*="content"], .content, .text')?.innerText || '';
+        if (text) comments.push({ user: user.trim(), text: text.substring(0, 200).trim() });
     });
-    return { title, content: content.substring(0, 3000), author, likes, comments: comments.slice(0, 30) };
+
+    // 如果以上都没拿到，尝试从 body 文本中提取（最后兜底）
+    let bodyFallback = '';
+    if (!title && !content) {
+        bodyFallback = (document.body?.innerText || '').substring(0, 3000);
+    }
+
+    return {
+        title,
+        content: (content || bodyFallback).substring(0, 3000),
+        author,
+        likes,
+        comments: comments.slice(0, 30),
+    };
 })()
 """
 
@@ -280,6 +339,184 @@ async def browse_url(url: str, extract_js: str = None) -> dict:
         return {"ok": False, "url": url, "error": str(e)}
 
 
+async def _xhs_get_sign(url_path: str, data=None) -> dict:
+    """借浏览器的 window._webmsxyw 计算小红书 API 签名"""
+    page = await _get_page()
+    current = page.url or ""
+    if "xiaohongshu.com" not in current:
+        await page.goto("https://www.xiaohongshu.com", wait_until="domcontentloaded", timeout=15000)
+        await page.wait_for_timeout(2000)
+    try:
+        result = await page.evaluate(
+            """([url, data]) => {
+                if (typeof window._webmsxyw === 'function') {
+                    return window._webmsxyw(url, data);
+                }
+                return null;
+            }""",
+            [url_path, json.dumps(data) if data else ""],
+        )
+        return result or {}
+    except Exception as e:
+        logger.warning("XHS 签名失败: %s", e)
+        return {}
+
+
+async def _xhs_get_cookies() -> str:
+    """从浏览器上下文提取小红书 cookies"""
+    global _browser_context
+    if not _browser_context:
+        await _get_page()
+    cookies = await _browser_context.cookies("https://www.xiaohongshu.com")
+    return "; ".join(f"{c['name']}={c['value']}" for c in cookies)
+
+
+async def _xhs_api_request(method: str, api_path: str, params: dict = None, data: dict = None) -> dict | None:
+    """带签名的小红书 API 请求"""
+    url_path = f"/api/sns/web{api_path}"
+    if params:
+        param_str = "&".join(f"{k}={v}" for k, v in params.items())
+        sign_url = f"{url_path}?{param_str}"
+    else:
+        sign_url = url_path
+
+    signs = await _xhs_get_sign(sign_url, data)
+    if not signs:
+        return None
+
+    cookie_str = await _xhs_get_cookies()
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Cookie": cookie_str,
+        "Referer": "https://www.xiaohongshu.com/",
+        "Origin": "https://www.xiaohongshu.com",
+        "X-S": signs.get("X-s", ""),
+        "X-T": str(signs.get("X-t", "")),
+        "Content-Type": "application/json",
+    }
+
+    full_url = f"https://edith.xiaohongshu.com{url_path}"
+    try:
+        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+            if method == "GET":
+                resp = await client.get(full_url, headers=headers, params=params)
+            else:
+                resp = await client.post(full_url, headers=headers, json=data)
+            resp.raise_for_status()
+            return resp.json()
+    except Exception as e:
+        logger.error("XHS API 请求失败 %s: %s", api_path, e)
+        return None
+
+
+async def _xhs_get_note_detail(note_id: str) -> dict:
+    """通过 API 获取小红书笔记详情"""
+    data = {
+        "source_note_id": note_id,
+        "image_formats": ["jpg", "webp", "avif"],
+        "extra": {"need_body_topic": 1},
+    }
+    result = await _xhs_api_request("POST", "/v1/feed", data=data)
+    if not result or result.get("code") != 0:
+        return {}
+
+    items = result.get("data", {}).get("items", [])
+    if not items:
+        return {}
+
+    note = items[0].get("note_card", {})
+    title = note.get("title", "")
+    desc = note.get("desc", "")
+    user = note.get("user", {})
+    author = user.get("nickname", "")
+    interact = note.get("interact_info", {})
+    likes = interact.get("liked_count", "")
+    collected = interact.get("collected_count", "")
+    comment_count = interact.get("comment_count", "")
+
+    tags = [t.get("name", "") for t in note.get("tag_list", []) if t.get("name")]
+
+    return {
+        "title": title,
+        "content": desc[:3000],
+        "author": author,
+        "likes": str(likes),
+        "collected": str(collected),
+        "comment_count": str(comment_count),
+        "tags": tags[:10],
+    }
+
+
+async def _xhs_get_comments(note_id: str, limit: int = 30) -> list[dict]:
+    """通过 API 获取小红书笔记评论"""
+    params = {
+        "note_id": note_id,
+        "cursor": "",
+        "top_comment_id": "",
+        "image_formats": "jpg,webp,avif",
+    }
+    result = await _xhs_api_request("GET", "/v2/comment/page", params=params)
+    if not result or result.get("code") != 0:
+        return []
+
+    comments = []
+    for c in result.get("data", {}).get("comments", []):
+        user = c.get("user_info", {}).get("nickname", "")
+        text = c.get("content", "")
+        likes = c.get("like_count", 0)
+        if text:
+            comments.append({"user": user, "text": text[:200], "likes": likes})
+        if len(comments) >= limit:
+            break
+    return comments
+
+
+async def _xhs_search_notes(keyword: str, page: int = 1) -> list[dict]:
+    """通过 API 搜索小红书笔记"""
+    data = {
+        "keyword": keyword,
+        "page": page,
+        "page_size": 20,
+        "search_id": "",
+        "sort": "general",
+        "note_type": 0,
+    }
+    result = await _xhs_api_request("POST", "/v1/search/notes", data=data)
+    if not result or result.get("code") != 0:
+        return []
+
+    items = result.get("data", {}).get("items", [])
+    results = []
+    for item in items:
+        note = item.get("note_card", {})
+        if not note:
+            continue
+        note_id = item.get("id", "")
+        title = note.get("display_title", "")
+        author = note.get("user", {}).get("nickname", "")
+        likes = note.get("interact_info", {}).get("liked_count", "")
+        url = f"https://www.xiaohongshu.com/explore/{note_id}" if note_id else ""
+        if title:
+            results.append({
+                "title": title[:100],
+                "author": author[:50],
+                "url": url,
+                "likes": str(likes),
+            })
+    return results[:10]
+
+
+def _extract_xhs_note_id(url: str) -> str | None:
+    """从各种小红书 URL 格式中提取 note_id"""
+    m = re.search(r'/(?:explore|search_result|discovery/item)/([a-f0-9]{24})', url)
+    if m:
+        return m.group(1)
+    m = re.search(r'noteId=([a-f0-9]{24})', url)
+    if m:
+        return m.group(1)
+    return None
+
+
 def _normalize_xhs_url(url: str) -> str:
     import re
     m = re.search(r'/(?:search_result|discovery/item)/([a-f0-9]{24})', url)
@@ -292,7 +529,51 @@ def _normalize_xhs_url(url: str) -> str:
 
 
 async def browse_xiaohongshu(url: str) -> dict:
-    url = _normalize_xhs_url(url)
+    # 短链（xhslink.com）直接用原始 URL 导航——小红书正常跳转链能通过反爬
+    if "xhslink.com" in url:
+        result = await _browse_xiaohongshu_dom(url)
+        if result.get("ok"):
+            data = result.get("data", {})
+            if data.get("title") or data.get("content"):
+                return result
+
+    note_id = _extract_xhs_note_id(url)
+
+    if not note_id and ("xhslink.com" in url or "xiaohongshu.com" in url):
+        try:
+            page = await _get_page()
+            await page.goto(url, wait_until="domcontentloaded", timeout=15000)
+            await page.wait_for_timeout(2000)
+            note_id = _extract_xhs_note_id(page.url)
+        except Exception:
+            pass
+
+    if not note_id:
+        return {"ok": False, "url": url, "error": "无法从 URL 提取笔记 ID"}
+
+    # /explore/{id} 直链会被反爬拦截，改为在搜索页点击对应笔记卡片
+    click_result = await _browse_xhs_via_click(note_id)
+    if click_result.get("ok"):
+        data = click_result.get("data", {})
+        if data.get("title") or data.get("content"):
+            return click_result
+
+    return {
+        "ok": True,
+        "url": f"https://www.xiaohongshu.com/explore/{note_id}",
+        "data": {
+            "note_id": note_id,
+            "title": "",
+            "content": "",
+            "author": "",
+            "comments": [],
+            "note": "小红书反爬限制，无法读取这篇笔记的正文和评论。可以通过搜索关键词找到相关内容摘要。",
+        },
+    }
+
+
+async def _browse_xiaohongshu_dom(url: str) -> dict:
+    """直接导航到 URL 并提取页面内容"""
     try:
         page = await _get_page()
         await page.goto(url, wait_until="domcontentloaded", timeout=20000)
@@ -303,10 +584,89 @@ async def browse_xiaohongshu(url: str) -> dict:
             await page.wait_for_timeout(1000)
 
         data = await page.evaluate(JS_EXTRACT_XIAOHONGSHU)
-        return {"ok": True, "url": url, "data": data}
+        return {"ok": True, "url": page.url, "data": data}
     except Exception as e:
         logger.error("浏览小红书失败 %s: %s", url, e)
         return {"ok": False, "url": url, "error": str(e)}
+
+
+async def _browse_xhs_via_click(note_id: str) -> dict:
+    """在小红书页面上点击包含目标 note_id 的卡片，从 SPA 弹窗中提取内容"""
+    try:
+        page = await _get_page()
+
+        # 确保在小红书域名下
+        current = page.url or ""
+        if "xiaohongshu.com" not in current:
+            await page.goto("https://www.xiaohongshu.com", wait_until="domcontentloaded", timeout=15000)
+            await page.wait_for_timeout(2000)
+
+        # 找到页面上包含 note_id 的链接并点击
+        clicked = await page.evaluate(f"""
+        (() => {{
+            const links = document.querySelectorAll('a[href*="{note_id}"]');
+            for (const link of links) {{
+                if (link.offsetParent !== null || link.offsetWidth > 0) {{
+                    link.click();
+                    return true;
+                }}
+            }}
+            // 也试试 section.note-item 里的封面图
+            const items = document.querySelectorAll('section.note-item');
+            for (const item of items) {{
+                const a = item.querySelector('a[href*="{note_id}"]');
+                if (a) {{
+                    const cover = item.querySelector('a.cover, a, img');
+                    if (cover) {{ cover.click(); return true; }}
+                }}
+            }}
+            return false;
+        }})()
+        """)
+
+        if not clicked:
+            # 当前页面没有这篇笔记，导航到它的 /explore/{id} 页面触发 SPA 加载
+            # 虽然直接 goto /explore/{id} 可能被重定向，但从小红书域名内跳转概率更高
+            logger.info("XHS 页面上没找到 note_id=%s 的卡片，尝试 SPA 内导航", note_id)
+            await page.evaluate(f"history.pushState(null, '', '/explore/{note_id}')")
+            await page.evaluate("window.dispatchEvent(new PopStateEvent('popstate'))")
+            await page.wait_for_timeout(3000)
+            # 检查 URL 是否变了
+            if note_id not in (page.url or ""):
+                # SPA 导航失败，直接 goto
+                await page.goto(f"https://www.xiaohongshu.com/explore/{note_id}",
+                                wait_until="domcontentloaded", timeout=15000)
+                await page.wait_for_timeout(3000)
+
+        # 等待详情弹窗/页面加载
+        await page.wait_for_timeout(3000)
+
+        # 等待笔记详情容器出现
+        for sel in ['[class*="note-detail"]', '[class*="noteDetail"]', '#detail-title',
+                     '[class*="note-scroller"]', '.note-container']:
+            try:
+                await page.wait_for_selector(sel, timeout=3000)
+                break
+            except Exception:
+                continue
+
+        for _ in range(2):
+            await page.evaluate("window.scrollBy(0, 600)")
+            await page.wait_for_timeout(1000)
+
+        data = await page.evaluate(JS_EXTRACT_XIAOHONGSHU)
+
+        # 关闭弹窗（按 Esc 或点击遮罩），恢复到列表页
+        try:
+            await page.keyboard.press("Escape")
+            await page.wait_for_timeout(500)
+        except Exception:
+            pass
+
+        return {"ok": True, "url": f"https://www.xiaohongshu.com/explore/{note_id}", "data": data}
+    except Exception as e:
+        logger.error("XHS 点击浏览失败 note_id=%s: %s", note_id, e)
+        return {"ok": False, "error": str(e)}
 
 
 async def browse_twitter(url: str) -> dict:
@@ -382,9 +742,16 @@ async def browse_twitter_bookmarks() -> dict:
 
 
 async def search_on_page(platform: str, query: str) -> dict:
-    from urllib.parse import quote_plus
+    if platform == "xiaohongshu":
+        try:
+            results = await _xhs_search_notes(query)
+            if results:
+                return {"ok": True, "platform": platform, "query": query, "results": results}
+        except Exception as e:
+            logger.warning("XHS API 搜索失败，降级 DOM: %s", e)
+        return await _search_xiaohongshu_dom(query)
+
     search_urls = {
-        "xiaohongshu": f"https://www.xiaohongshu.com/search_result?keyword={quote_plus(query)}",
         "twitter": f"https://x.com/search?q={quote_plus(query)}&src=typed_query",
         "web": f"https://www.bing.com/search?q={quote_plus(query)}",
     }
@@ -393,51 +760,9 @@ async def search_on_page(platform: str, query: str) -> dict:
     try:
         page = await _get_page()
         await page.goto(url, wait_until="domcontentloaded", timeout=20000)
-        if platform == "xiaohongshu":
-            try:
-                await page.wait_for_selector("section.note-item", timeout=12000)
-            except Exception:
-                await page.wait_for_timeout(5000)
-        else:
-            await page.wait_for_timeout(3000)
+        await page.wait_for_timeout(3000)
 
-        if platform == "xiaohongshu":
-            js = """
-            (() => {
-                const results = [];
-                const seen = new Set();
-                document.querySelectorAll('.cookie-banner-overlay, [class*="cookie"]').forEach(el => {
-                    if ((el.innerText || '').includes('Cookie Preferences')) el.remove();
-                });
-                document.querySelectorAll('section.note-item').forEach(el => {
-                    const links = Array.from(el.querySelectorAll('a'));
-                    const linkEl =
-                        links.find(a => (a.href || '').includes('/search_result/') && (a.href || '').includes('xsec_token='))
-                        || links.find(a => (a.href || '').includes('/explore/'));
-                    const hrefRaw = linkEl?.href || '';
-                    const href = hrefRaw.startsWith('http') ? hrefRaw : (hrefRaw ? new URL(hrefRaw, location.origin).href : '');
-                    const text = (el.innerText || '').trim();
-                    if (!text) return;
-                    const lines = text.split('\\n').map(s => s.trim()).filter(Boolean);
-                    if (lines.length < 2) return;
-                    const title = lines[0] || '';
-                    const author = lines[1] || '';
-                    const bad =
-                        ['大家都在搜', '发现', '直播', '发布', '通知', '沪ICP备', '营业执照', 'Cookie Preferences', 'Your Cookie Preferences']
-                            .some(word => title.includes(word) || author.includes(word));
-                    const key = href || `${title}|${author}`;
-                    if (title && (href.includes('/explore/') || href.includes('/search_result/')) && !bad && !seen.has(key)) {
-                        seen.add(key);
-                        let cleanUrl = href;
-                        const idMatch = href.match(/\\/(?:search_result|discovery\\/item)\\/([a-f0-9]{24})/);
-                        if (idMatch) cleanUrl = 'https://www.xiaohongshu.com/explore/' + idMatch[1];
-                        results.push({ title: title.substring(0, 100), author: author.substring(0, 50), url: cleanUrl });
-                    }
-                });
-                return results.slice(0, 10);
-            })()
-            """
-        elif platform == "twitter":
+        if platform == "twitter":
             js = """
             (() => {
                 const results = [];
@@ -472,12 +797,64 @@ async def search_on_page(platform: str, query: str) -> dict:
         return {"ok": False, "platform": platform, "query": query, "error": str(e)}
 
 
+async def _search_xiaohongshu_dom(query: str) -> dict:
+    """DOM 抓取兜底搜索（API 失败时用）"""
+    url = f"https://www.xiaohongshu.com/search_result?keyword={quote_plus(query)}"
+    try:
+        page = await _get_page()
+        await page.goto(url, wait_until="domcontentloaded", timeout=20000)
+        try:
+            await page.wait_for_selector("section.note-item", timeout=12000)
+        except Exception:
+            await page.wait_for_timeout(5000)
+
+        js = """
+        (() => {
+            const results = [];
+            const seen = new Set();
+            document.querySelectorAll('.cookie-banner-overlay, [class*="cookie"]').forEach(el => {
+                if ((el.innerText || '').includes('Cookie Preferences')) el.remove();
+            });
+            document.querySelectorAll('section.note-item').forEach(el => {
+                const links = Array.from(el.querySelectorAll('a'));
+                const linkEl =
+                    links.find(a => (a.href || '').includes('/search_result/') && (a.href || '').includes('xsec_token='))
+                    || links.find(a => (a.href || '').includes('/explore/'));
+                const hrefRaw = linkEl?.href || '';
+                const href = hrefRaw.startsWith('http') ? hrefRaw : (hrefRaw ? new URL(hrefRaw, location.origin).href : '');
+                const text = (el.innerText || '').trim();
+                if (!text) return;
+                const lines = text.split('\\n').map(s => s.trim()).filter(Boolean);
+                if (lines.length < 2) return;
+                const title = lines[0] || '';
+                const author = lines[1] || '';
+                const bad =
+                    ['大家都在搜', '发现', '直播', '发布', '通知', '沪ICP备', '营业执照', 'Cookie Preferences', 'Your Cookie Preferences']
+                        .some(word => title.includes(word) || author.includes(word));
+                const key = href || `${title}|${author}`;
+                if (title && (href.includes('/explore/') || href.includes('/search_result/')) && !bad && !seen.has(key)) {
+                    seen.add(key);
+                    let cleanUrl = href;
+                    const idMatch = href.match(/\\/(?:search_result|discovery\\/item)\\/([a-f0-9]{24})/);
+                    if (idMatch) cleanUrl = 'https://www.xiaohongshu.com/explore/' + idMatch[1];
+                    results.push({ title: title.substring(0, 100), author: author.substring(0, 50), url: cleanUrl });
+                }
+            });
+            return results.slice(0, 10);
+        })()
+        """
+        data = await page.evaluate(js)
+        return {"ok": True, "platform": "xiaohongshu", "query": query, "results": data}
+    except Exception as e:
+        logger.error("XHS DOM 搜索失败 %s: %s", query, e)
+        return {"ok": False, "platform": "xiaohongshu", "query": query, "error": str(e)}
+
+
 async def web_search(query: str, max_results: int = 5) -> list[dict]:
     """用 DuckDuckGo HTML 版搜索，纯 HTTP 请求，不需要浏览器。"""
-    import httpx
     import re as _re
     from html import unescape
-    from urllib.parse import quote_plus, unquote
+    from urllib.parse import unquote
     url = f"https://html.duckduckgo.com/html/?q={quote_plus(query)}"
     headers = {
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
