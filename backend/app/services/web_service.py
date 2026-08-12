@@ -2,7 +2,9 @@ import json
 import logging
 import uuid
 import asyncio
+import ipaddress
 import re
+import socket
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from urllib.parse import urlparse, quote_plus
@@ -15,7 +17,6 @@ logger = logging.getLogger(__name__)
 BJ_TZ = timezone(timedelta(hours=8))
 
 BROWSER_DATA_DIR = Path("/opt/remoire/backend/data/browser_profile")
-BROWSER_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 _playwright = None
 _browser_context = None
@@ -29,6 +30,7 @@ async def _get_page():
         if _page and not _page.is_closed():
             return _page
         try:
+            BROWSER_DATA_DIR.mkdir(parents=True, exist_ok=True)
             from playwright.async_api import async_playwright
             if _playwright is None:
                 _playwright = await async_playwright().start()
@@ -45,6 +47,71 @@ async def _get_page():
         except Exception as e:
             logger.error("启动浏览器失败: %s", e)
             raise
+
+
+async def validate_public_web_url(url: str) -> str:
+    """Reject non-HTTP and private-network browser targets before Playwright sees them."""
+    value = (url or "").strip()
+    if len(value) > 2048:
+        raise ValueError("网址过长")
+    parsed = urlparse(value)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise ValueError("只允许打开 http 或 https 网页")
+    if parsed.username or parsed.password:
+        raise ValueError("网址不能包含账号或密码")
+    host = parsed.hostname.lower().rstrip(".")
+    if host == "localhost" or host.endswith(".localhost"):
+        raise ValueError("不能访问本机地址")
+    try:
+        direct_ip = ipaddress.ip_address(host)
+    except ValueError:
+        direct_ip = None
+    if direct_ip:
+        if not direct_ip.is_global:
+            raise ValueError("只能访问公网地址")
+    else:
+        try:
+            infos = await asyncio.wait_for(
+                asyncio.to_thread(socket.getaddrinfo, host, parsed.port, type=socket.SOCK_STREAM),
+                timeout=5,
+            )
+        except (socket.gaierror, asyncio.TimeoutError) as exc:
+            raise ValueError("网址域名无法安全解析") from exc
+        resolved = {info[4][0] for info in infos}
+        if not resolved or any(not ipaddress.ip_address(address).is_global for address in resolved):
+            raise ValueError("网址必须解析到公网地址")
+    return parsed.geturl()
+
+
+async def _safe_page_goto(page, url: str, **kwargs):
+    target = await validate_public_web_url(url)
+    blocked: list[str] = []
+
+    async def guard_navigation(route):
+        if not route.request.is_navigation_request():
+            await route.continue_()
+            return
+        try:
+            await validate_public_web_url(route.request.url)
+        except ValueError:
+            blocked.append(route.request.url)
+            await route.abort("blockedbyclient")
+            return
+        await route.continue_()
+
+    await page.route("**/*", guard_navigation)
+    try:
+        response = await page.goto(target, **kwargs)
+        if blocked:
+            raise ValueError("网页跳转到了不安全的地址")
+        await validate_public_web_url(page.url)
+        return response
+    except Exception as exc:
+        if blocked:
+            raise ValueError("网页跳转到了不安全的地址") from exc
+        raise
+    finally:
+        await page.unroute("**/*", guard_navigation)
 
 
 async def close_browser():
@@ -271,7 +338,7 @@ await new Promise(r => setTimeout(r, 1500));
 async def _browse_twitter_page(url: str, extract_js: str = JS_EXTRACT_TWITTER_TIMELINE, scrolls: int = 3) -> dict:
     try:
         page = await _get_page()
-        await page.goto(url, wait_until="domcontentloaded", timeout=25000)
+        await _safe_page_goto(page, url, wait_until="domcontentloaded", timeout=25000)
         await page.wait_for_timeout(3000)
 
         for _ in range(scrolls):
@@ -327,7 +394,7 @@ async def _select_twitter_home_tab(page, mode: str) -> str:
 async def browse_url(url: str, extract_js: str = None) -> dict:
     try:
         page = await _get_page()
-        await page.goto(url, wait_until="domcontentloaded", timeout=20000)
+        await _safe_page_goto(page, url, wait_until="domcontentloaded", timeout=20000)
         await page.wait_for_timeout(2000)
 
         js = extract_js or JS_EXTRACT_GENERIC
@@ -542,7 +609,7 @@ async def browse_xiaohongshu(url: str) -> dict:
     if not note_id and ("xhslink.com" in url or "xiaohongshu.com" in url):
         try:
             page = await _get_page()
-            await page.goto(url, wait_until="domcontentloaded", timeout=15000)
+            await _safe_page_goto(page, url, wait_until="domcontentloaded", timeout=15000)
             await page.wait_for_timeout(2000)
             note_id = _extract_xhs_note_id(page.url)
         except Exception:
@@ -576,7 +643,7 @@ async def _browse_xiaohongshu_dom(url: str) -> dict:
     """直接导航到 URL 并提取页面内容"""
     try:
         page = await _get_page()
-        await page.goto(url, wait_until="domcontentloaded", timeout=20000)
+        await _safe_page_goto(page, url, wait_until="domcontentloaded", timeout=20000)
         await page.wait_for_timeout(3000)
 
         for _ in range(2):
@@ -671,8 +738,11 @@ async def _browse_xhs_via_click(note_id: str) -> dict:
 
 async def browse_twitter(url: str) -> dict:
     try:
+        parsed = urlparse(url)
+        if parsed.hostname not in {"x.com", "www.x.com", "twitter.com", "www.twitter.com"}:
+            raise ValueError("只允许打开 x.com 或 twitter.com 地址")
         page = await _get_page()
-        await page.goto(url, wait_until="domcontentloaded", timeout=20000)
+        await _safe_page_goto(page, url, wait_until="domcontentloaded", timeout=20000)
         await page.wait_for_timeout(3000)
 
         for _ in range(3):
@@ -759,7 +829,7 @@ async def search_on_page(platform: str, query: str) -> dict:
 
     try:
         page = await _get_page()
-        await page.goto(url, wait_until="domcontentloaded", timeout=20000)
+        await _safe_page_goto(page, url, wait_until="domcontentloaded", timeout=20000)
         await page.wait_for_timeout(3000)
 
         if platform == "twitter":
@@ -802,7 +872,7 @@ async def _search_xiaohongshu_dom(query: str) -> dict:
     url = f"https://www.xiaohongshu.com/search_result?keyword={quote_plus(query)}"
     try:
         page = await _get_page()
-        await page.goto(url, wait_until="domcontentloaded", timeout=20000)
+        await _safe_page_goto(page, url, wait_until="domcontentloaded", timeout=20000)
         try:
             await page.wait_for_selector("section.note-item", timeout=12000)
         except Exception:
