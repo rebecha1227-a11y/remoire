@@ -75,6 +75,13 @@ async def remember(
 
 
 @mcp.tool()
+async def resolve(memory_id: str) -> str:
+    """把一条进行中的未完成事项标记为已解决，同时保留历史记录。"""
+    memory = await memory_service.resolve_memory(memory_id)
+    return f"已解决：{memory['content']}"
+
+
+@mcp.tool()
 async def resume() -> str:
     """醒来时调用。返回最近的记忆、未读纸条等，帮助你恢复对静儿的感知。"""
     result = await memory_service.list_memories(limit=10)

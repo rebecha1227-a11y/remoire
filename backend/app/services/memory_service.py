@@ -10,6 +10,7 @@ from pathlib import Path
 
 PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 LAYERS = ("core", "long", "short", "consciousness")
+MEMORY_TYPES = ("fact", "event", "unresolved", "date", "consciousness")
 
 
 def _cosine_similarity(a: list[float], b: list[float]) -> float:
@@ -100,12 +101,14 @@ async def extract_candidates(conversation_id: str, messages: list[dict]) -> list
         event_date = c.get("event_date")
         valence = max(0.0, min(1.0, float(c.get("valence", 0.5))))
         arousal = max(0.0, min(1.0, float(c.get("arousal", 0.0))))
+        unresolved = bool(c.get("unresolved", mem_type == "unresolved")) or mem_type == "unresolved"
 
         if confidence >= 0.7:
             result = await create_memory(
                 content, tags=tags, layer=proposed_layer,
                 memory_type=mem_type, event_date=event_date,
                 valence=valence, arousal=arousal,
+                unresolved=unresolved,
             )
             if result["memory"].get("duplicate"):
                 continue
@@ -126,10 +129,12 @@ async def extract_candidates(conversation_id: str, messages: list[dict]) -> list
                     """INSERT INTO memory_candidates
                        (id, conversation_id, content, tags_json,
                         proposed_memory_type, proposed_layer, confidence, proposed_event_date,
+                        proposed_valence, proposed_arousal, proposed_unresolved,
                         status, created_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)""",
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)""",
                     (cid, conversation_id, content, json.dumps(tags, ensure_ascii=False),
-                     mem_type, proposed_layer, confidence, event_date, now),
+                     mem_type, proposed_layer, confidence, event_date,
+                     valence, arousal, int(unresolved), now),
                 )
                 await db.commit()
             saved.append({
@@ -207,8 +212,13 @@ async def accept_candidate(candidate_id: str, content: str | None = None,
         final_type = memory_type or _safe_get(row, "proposed_memory_type") or "fact"
         final_layer = layer or _safe_get(row, "proposed_layer") or "long"
         final_event_date = event_date or _safe_get(row, "proposed_event_date")
+        final_valence = max(0.0, min(1.0, float(_safe_get(row, "proposed_valence") or 0.5)))
+        final_arousal = max(0.0, min(1.0, float(_safe_get(row, "proposed_arousal") or 0.0)))
+        final_unresolved = bool(_safe_get(row, "proposed_unresolved")) or final_type == "unresolved"
         if final_layer not in LAYERS:
             final_layer = "long"
+        if final_type not in MEMORY_TYPES:
+            final_type = "fact"
 
         if await _is_duplicate(final_content):
             raise ValueError("与已有记忆重复")
@@ -216,16 +226,21 @@ async def accept_candidate(candidate_id: str, content: str | None = None,
         mem_id = str(uuid.uuid4())
         now = datetime.utcnow().isoformat()
         decay_rate = _decay_rate_for_layer(final_layer)
+        embedding = await _generate_embedding(final_content)
+        embedding_blob = _pack_embedding(embedding) if embedding else None
 
         await db.execute(
             """INSERT INTO memories
                (id, content, tags_json, layer, memory_type, event_date,
-                weight, decay_rate, pinned, source_candidate_id, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, 1.0, ?, ?, ?, ?, ?)""",
+                weight, decay_rate, valence, arousal, unresolved, pinned,
+                embedding, source_candidate_id, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, 1.0, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 mem_id, final_content, json.dumps(final_tags, ensure_ascii=False),
                 final_layer, final_type, final_event_date, decay_rate,
-                1 if final_layer == "core" else 0, candidate_id, now, now,
+                final_valence, final_arousal, int(final_unresolved),
+                1 if final_layer == "core" else 0, embedding_blob,
+                candidate_id, now, now,
             ),
         )
         await db.execute(
@@ -233,7 +248,9 @@ async def accept_candidate(candidate_id: str, content: str | None = None,
         )
         await db.commit()
 
-    associated = await find_associated(final_content, final_tags, exclude_id=mem_id)
+    associated = await find_associated(
+        final_content, final_tags, exclude_id=mem_id, content_embedding=embedding
+    )
     if associated:
         async with get_db() as db:
             for item in associated:
@@ -541,8 +558,17 @@ async def create_memory(content: str, tags: list[str] | None = None,
                         unresolved: bool = False) -> dict:
     """直接写入正式记忆（跳过候选流程），写入前去重，返回记忆 + 关联旧记忆。"""
     tags = tags or []
+    content = content.strip()
+    if not content:
+        raise ValueError("记忆内容不能为空")
     if layer not in LAYERS:
         layer = "long"
+    if memory_type not in MEMORY_TYPES:
+        memory_type = "fact"
+    if memory_type == "unresolved":
+        unresolved = True
+    elif unresolved:
+        memory_type = "unresolved"
 
     if await _is_duplicate(content):
         return {"memory": {"id": None, "content": content, "tags": tags, "duplicate": True}, "associated": []}
@@ -615,6 +641,9 @@ async def list_candidates(status: str = "pending", limit: int = 20, offset: int 
             "layer": _safe_get(r, "proposed_layer") or "long",
             "confidence": _safe_get(r, "confidence") if _safe_get(r, "confidence") is not None else 0.5,
             "event_date": _safe_get(r, "proposed_event_date"),
+            "valence": _safe_get(r, "proposed_valence") if _safe_get(r, "proposed_valence") is not None else 0.5,
+            "arousal": _safe_get(r, "proposed_arousal") if _safe_get(r, "proposed_arousal") is not None else 0.0,
+            "unresolved": bool(_safe_get(r, "proposed_unresolved")),
             "status": r["status"],
             "created_at": r["created_at"],
         }
@@ -702,6 +731,14 @@ async def update_memory(memory_id: str, content: str | None = None, tags: list[s
                         event_date: str | None = ..., event_time: str | None = ...,
                         valence: float | None = None, arousal: float | None = None,
                         unresolved: bool | None = None, pinned: bool | None = None) -> dict:
+    new_embedding_blob = ...
+    if content is not None:
+        content = content.strip()
+        if not content:
+            raise ValueError("记忆内容不能为空")
+        new_embedding = await _generate_embedding(content)
+        new_embedding_blob = _pack_embedding(new_embedding) if new_embedding else None
+
     async with get_db() as db:
         async with db.execute("SELECT * FROM memories WHERE id = ?", (memory_id,)) as cur:
             row = await cur.fetchone()
@@ -713,14 +750,19 @@ async def update_memory(memory_id: str, content: str | None = None, tags: list[s
 
         if content is not None:
             updates["content"] = content
+            # Never retain a vector for text it no longer represents. If the
+            # provider is unavailable, backfill_embeddings() can restore it later.
+            updates["embedding"] = new_embedding_blob
         if tags is not None:
             updates["tags_json"] = json.dumps(tags, ensure_ascii=False)
         if layer is not None and layer in LAYERS:
             updates["layer"] = layer
             updates["pinned"] = 1 if layer == "core" else 0
             updates["decay_rate"] = _decay_rate_for_layer(layer)
-        if memory_type is not None:
+        if memory_type is not None and memory_type in MEMORY_TYPES:
             updates["memory_type"] = memory_type
+            if unresolved is None:
+                updates["unresolved"] = int(memory_type == "unresolved")
         if event_date is not ...:
             updates["event_date"] = event_date
         if event_time is not ...:
@@ -731,6 +773,8 @@ async def update_memory(memory_id: str, content: str | None = None, tags: list[s
             updates["arousal"] = arousal
         if unresolved is not None:
             updates["unresolved"] = int(unresolved)
+            if unresolved:
+                updates["memory_type"] = "unresolved"
         if pinned is not None and layer is None:
             if pinned:
                 updates["pinned"] = 1
@@ -755,6 +799,25 @@ async def update_memory(memory_id: str, content: str | None = None, tags: list[s
             updated = await cur.fetchone()
 
     return _row_to_dict(updated)
+
+
+async def resolve_memory(memory_id: str) -> dict:
+    """Mark an active unresolved memory as completed without erasing its history."""
+    async with get_db() as db:
+        async with db.execute(
+            "SELECT memory_type, unresolved FROM memories WHERE id = ?", (memory_id,)
+        ) as cursor:
+            row = await cursor.fetchone()
+        if not row:
+            raise ValueError("记忆不存在")
+        if row["memory_type"] != "unresolved" and not row["unresolved"]:
+            raise ValueError("这条记忆不是未完成事项")
+        await db.execute(
+            "UPDATE memories SET memory_type = 'unresolved', unresolved = 0, updated_at = ? WHERE id = ?",
+            (datetime.utcnow().isoformat(), memory_id),
+        )
+        await db.commit()
+    return await get_memory(memory_id)
 
 
 async def move_layer(memory_id: str, target_layer: str) -> dict:

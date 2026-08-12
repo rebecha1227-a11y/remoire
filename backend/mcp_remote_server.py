@@ -56,10 +56,24 @@ async def recall(query: str, limit: int = 5) -> str:
 
 
 @mcp.tool()
-async def remember(content: str, tags: str = "") -> str:
-    """记住一件关于静儿的新事实。比如她的喜好、经历、重要日期等。tags 用逗号分隔。"""
+async def remember(
+    content: str,
+    tags: str = "",
+    layer: str = "long",
+    memory_type: str = "fact",
+    event_date: str = "",
+    unresolved: bool = False,
+) -> str:
+    """记住一件关于静儿的事。支持事实、事件、日期和待解决事项；tags 用逗号分隔。"""
     tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
-    result = await memory_service.create_memory(content, tags=tag_list)
+    result = await memory_service.create_memory(
+        content,
+        tags=tag_list,
+        layer=layer,
+        memory_type=memory_type,
+        event_date=event_date or None,
+        unresolved=unresolved,
+    )
     if result["memory"].get("duplicate"):
         return f"这条记忆已经存在了，不重复记录：{content}"
 
@@ -69,6 +83,13 @@ async def remember(content: str, tags: str = "") -> str:
         for item in result["associated"]:
             text += f"\n- {item['content']}"
     return text
+
+
+@mcp.tool()
+async def resolve(memory_id: str) -> str:
+    """把一条进行中的未完成事项标记为已解决，同时保留历史记录。"""
+    memory = await memory_service.resolve_memory(memory_id)
+    return f"已解决：{memory['content']}"
 
 
 @mcp.tool()

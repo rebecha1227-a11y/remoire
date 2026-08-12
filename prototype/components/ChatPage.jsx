@@ -341,7 +341,7 @@ function ChatPage({ tweaks }) {
       if (!convId) return;
       try {
         const res = await fetch(`http://localhost:8000/api/chat/history?conversation_id=${convId}&limit=50`, {
-          headers: { 'Authorization': 'Bearer remoire-rebechalovesconnie-4ever' }
+          credentials: 'include'
         });
         const data = await res.json();
         if (data.ok && data.data.messages.length > 0) {
@@ -372,7 +372,7 @@ function ChatPage({ tweaks }) {
     async function loadNote() {
       try {
         const res = await fetch('http://localhost:8000/api/note/unread', {
-          headers: { 'Authorization': 'Bearer remoire-rebechalovesconnie-4ever' }
+          credentials: 'include'
         });
         const data = await res.json();
         if (data.ok && data.data.note) {
@@ -401,7 +401,7 @@ function ChatPage({ tweaks }) {
     setNoteHistoryLoading(true);
     try {
       const res = await fetch('http://localhost:8000/api/note?limit=50', {
-        headers: { 'Authorization': 'Bearer remoire-rebechalovesconnie-4ever' }
+        credentials: 'include'
       });
       const data = await res.json();
       if (data.ok && data.data?.notes) setNoteHistory(data.data.notes);
@@ -417,7 +417,6 @@ function ChatPage({ tweaks }) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Bearer remoire-rebechalovesconnie-4ever',
         },
         body: JSON.stringify({ message: txt, conversation_id: conversationIdRef.current || null }),
       });
@@ -523,10 +522,10 @@ function ChatPage({ tweaks }) {
         <div style={{ padding: '12px 16px 0' }}>
           <NoteCard content={noteData.content} onKeep={async () => {
             setNoteState('minimized');
-            try { await fetch(`http://localhost:8000/api/note/${noteData.id}/read`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer remoire-rebechalovesconnie-4ever' }, body: JSON.stringify({ action: 'keep' }) }); } catch (e) {}
+            try { await fetch(`http://localhost:8000/api/note/${noteData.id}/read`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'keep' }) }); } catch (e) {}
           }} onDismiss={async () => {
             setNoteState('hidden');
-            try { await fetch(`http://localhost:8000/api/note/${noteData.id}/read`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer remoire-rebechalovesconnie-4ever' }, body: JSON.stringify({ action: 'dismiss' }) }); } catch (e) {}
+            try { await fetch(`http://localhost:8000/api/note/${noteData.id}/read`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'dismiss' }) }); } catch (e) {}
           }} noteStyle={tweaks && tweaks.noteStyle} />
         </div>
       )}

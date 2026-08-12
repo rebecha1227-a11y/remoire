@@ -157,6 +157,31 @@ scp -i ~/.ssh/remoire_vps dist/index.html \
 - 数据库和备份权限保持 `600`，备份目录保持 `700`。
 - 日志与诊断输出不得打印记忆正文、API key 或完整认证头。
 
+### 登录认证配置与轮换
+
+在后端目录运行密码散列生成器；它通过隐藏输入读取密码，不会把密码留在 shell history：
+
+```bash
+cd /opt/remoire/backend
+./venv/bin/python -m scripts.generate_password_hash
+```
+
+只把输出的 scrypt 散列写入 `/opt/remoire/backend/.env` 的 `APP_PASSWORD_HASH`。生产认证变量至少包括：
+
+```dotenv
+APP_USERNAME=connie
+APP_PASSWORD_HASH=<上一步输出>
+SESSION_COOKIE_SECURE=true
+SESSION_TTL_DAYS=30
+ALLOW_LEGACY_BEARER=false
+TRUSTED_ORIGINS=https://remoire.cc
+ALLOWED_HOSTS=remoire.cc,localhost,127.0.0.1
+```
+
+切换旧部署时，先短暂设置 `ALLOW_LEGACY_BEARER=true` 并发布后端，再发布登录版前端；确认新登录成功后立即改回 `false`、生成新的随机 `API_SECRET_KEY` 并重启。旧值即使仍存在 Git 历史中也会随轮换失效。修改认证配置会使旧 Bearer 失效；删除 `auth_sessions` 中的记录可强制所有浏览器重新登录。
+
+Nginx 使用仓库中的 `deploy/nginx/remoire.conf`。上线前先运行 `nginx -t`，它负责 HTTPS、HSTS、CSP 和正确转发客户端 IP/协议。
+
 ## 七、交付门禁
 
 一次生产发布只有同时满足以下条件才算完成：

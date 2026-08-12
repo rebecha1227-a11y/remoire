@@ -1,8 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from app.auth import verify_token
-from app.config import VAPID_PUBLIC_KEY, API_SECRET_KEY
+from app.config import VAPID_PUBLIC_KEY
 from app.services import push_service
 
 router = APIRouter(prefix="/api/push", tags=["push"])
@@ -50,22 +49,11 @@ class PresenceRequest(BaseModel):
     active: bool
 
 
-_optional_bearer = HTTPBearer(auto_error=False)
-
-
 @router.post("/presence")
 async def presence(
     req: PresenceRequest,
-    token: str = Query(""),
-    cred: HTTPAuthorizationCredentials | None = Depends(_optional_bearer),
+    _=Depends(verify_token),
 ):
-    ok = False
-    if cred and cred.credentials == API_SECRET_KEY:
-        ok = True
-    if token and token == API_SECRET_KEY:
-        ok = True
-    if not ok:
-        raise HTTPException(status_code=401, detail="无效的 token")
     push_service.set_presence(req.active)
     return {"ok": True}
 

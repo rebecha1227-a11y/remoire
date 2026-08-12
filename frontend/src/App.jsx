@@ -5,7 +5,7 @@ import DiaryPage from './components/DiaryPage.jsx';
 import PlayPage from './components/PlayPage.jsx';
 import SettingsPage from './components/SettingsPage.jsx';
 import { RoomAmbientProvider, useRoomAmbient, useRoomChrome } from './components/RoomShell.jsx';
-import { API_BASE, getAuthToken } from './utils/api.js';
+import { apiJsonFetch } from './utils/api.js';
 import './styles/room.css';
 
 
@@ -149,17 +149,12 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const token = getAuthToken();
-    const base = API_BASE;
-    const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
     function setPresence(active) {
-      const body = JSON.stringify({ active });
-      if (!active && navigator.sendBeacon) {
-        const blob = new Blob([body], { type: 'application/json' });
-        navigator.sendBeacon(`${base}/push/presence?token=${token}`, blob);
-      } else {
-        fetch(`${base}/push/presence`, { method: 'POST', headers, body }).catch(() => {});
-      }
+      apiJsonFetch('/push/presence', {
+        method: 'POST',
+        body: JSON.stringify({ active }),
+        keepalive: true,
+      }).catch(() => {});
     }
     function onChange() { setPresence(!document.hidden); }
     setPresence(true);

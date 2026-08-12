@@ -61,13 +61,10 @@ async def chat_search(conversation_id: str, q: str, limit: int = 80, _=Depends(v
     return {"ok": True, "data": {"messages": messages, "conversation_id": conversation_id}}
 
 @router.get("/image/{message_id}")
-async def chat_image(message_id: str, token: str = ""):
-    from app.config import API_SECRET_KEY
+async def chat_image(message_id: str, _=Depends(verify_token)):
     from app.services.chat_service import get_message_image
     from fastapi import HTTPException
     from fastapi.responses import Response
-    if token != API_SECRET_KEY:
-        raise HTTPException(status_code=401, detail="无效的 token")
     result = await get_message_image(message_id)
     if not result:
         raise HTTPException(status_code=404, detail="not found")

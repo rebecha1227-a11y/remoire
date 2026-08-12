@@ -971,7 +971,7 @@ function NoteHistorySettings({ onBack }) {
     async function load() {
       try {
         const res = await fetch('http://localhost:8000/api/note?limit=50', {
-          headers: { 'Authorization': 'Bearer remoire-rebechalovesconnie-4ever' }
+          credentials: 'include'
         });
         const data = await res.json();
         if (data.ok && data.data?.notes) {
@@ -1035,7 +1035,7 @@ function MemoryCandidatesSettings({ onBack }) {
   async function load() {
     try {
       const res = await fetch('http://localhost:8000/api/memory/candidates?status=pending&limit=50', {
-        headers: { 'Authorization': 'Bearer remoire-rebechalovesconnie-4ever' }
+        credentials: 'include'
       });
       const data = await res.json();
       if (data.ok && Array.isArray(data.data)) {
@@ -1051,7 +1051,7 @@ function MemoryCandidatesSettings({ onBack }) {
     try {
       const res = await fetch(`http://localhost:8000/api/memory/candidates/${id}/accept`, {
         method: 'POST',
-        headers: { 'Authorization': 'Bearer remoire-rebechalovesconnie-4ever', 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json' }, credentials: 'include',
         body: '{}',
       });
       const data = await res.json();
@@ -1063,7 +1063,7 @@ function MemoryCandidatesSettings({ onBack }) {
     try {
       const res = await fetch(`http://localhost:8000/api/memory/candidates/${id}/reject`, {
         method: 'POST',
-        headers: { 'Authorization': 'Bearer remoire-rebechalovesconnie-4ever' },
+        credentials: 'include',
       });
       const data = await res.json();
       if (data.ok) setCandidates(c => c.filter(x => x.id !== id));

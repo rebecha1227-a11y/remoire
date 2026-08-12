@@ -60,6 +60,9 @@ async def init_db():
                 proposed_layer TEXT DEFAULT 'long',
                 confidence REAL DEFAULT 0.5,
                 proposed_event_date TEXT,
+                proposed_valence REAL DEFAULT 0.5,
+                proposed_arousal REAL DEFAULT 0.0,
+                proposed_unresolved INTEGER DEFAULT 0,
                 status TEXT NOT NULL DEFAULT 'pending',
                 created_at TEXT NOT NULL
             );
@@ -203,6 +206,21 @@ async def init_db():
                 created_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS auth_sessions (
+                token_hash TEXT PRIMARY KEY,
+                csrf_hash TEXT NOT NULL,
+                username TEXT NOT NULL,
+                user_agent TEXT,
+                created_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                last_seen_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS schema_migrations (
+                version TEXT PRIMARY KEY,
+                applied_at TEXT NOT NULL
+            );
+
             CREATE INDEX IF NOT EXISTS idx_messages_conversation
                 ON messages(conversation_id, created_at);
             CREATE INDEX IF NOT EXISTS idx_memory_candidates_status
@@ -223,6 +241,8 @@ async def init_db():
                 ON device_snapshots(created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_app_usage_app_created
                 ON app_usage_events(app_name, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_auth_sessions_expires
+                ON auth_sessions(expires_at);
             CREATE TABLE IF NOT EXISTS weather_cache (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 temp TEXT,
@@ -335,6 +355,9 @@ async def init_db():
             "ALTER TABLE memory_candidates ADD COLUMN proposed_layer TEXT DEFAULT 'long'",
             "ALTER TABLE memory_candidates ADD COLUMN confidence REAL DEFAULT 0.5",
             "ALTER TABLE memory_candidates ADD COLUMN proposed_event_date TEXT",
+            "ALTER TABLE memory_candidates ADD COLUMN proposed_valence REAL DEFAULT 0.5",
+            "ALTER TABLE memory_candidates ADD COLUMN proposed_arousal REAL DEFAULT 0.0",
+            "ALTER TABLE memory_candidates ADD COLUMN proposed_unresolved INTEGER DEFAULT 0",
             "ALTER TABLE push_subscriptions ADD COLUMN display_name TEXT DEFAULT 'Connie'",
             "ALTER TABLE proactive_message_settings ADD COLUMN start_hour INTEGER NOT NULL DEFAULT 9",
             "ALTER TABLE proactive_message_settings ADD COLUMN end_hour INTEGER NOT NULL DEFAULT 23",
@@ -367,4 +390,28 @@ async def init_db():
             except Exception:
                 pass
         await db.execute("UPDATE memories SET layer = 'core' WHERE pinned = 1 AND layer = 'long'")
+        async with db.execute(
+            "SELECT 1 FROM schema_migrations WHERE version = ?",
+            ("2026-08-12-unresolved-invariant",),
+        ) as cursor:
+            unresolved_migrated = await cursor.fetchone()
+        if not unresolved_migrated:
+            # Older writers stored the type and active flag independently. No resolve()
+            # operation existed, so false flags on unresolved types were migration defaults,
+            # not user decisions. Normalize once; future resolved items stay resolved.
+            await db.execute(
+                "UPDATE memories SET memory_type = 'unresolved' WHERE unresolved = 1 AND memory_type <> 'unresolved'"
+            )
+            await db.execute(
+                "UPDATE memories SET unresolved = 1 WHERE memory_type = 'unresolved' AND unresolved = 0"
+            )
+            await db.execute(
+                """UPDATE memory_candidates
+                   SET proposed_unresolved = 1
+                   WHERE proposed_memory_type = 'unresolved'"""
+            )
+            await db.execute(
+                "INSERT INTO schema_migrations (version, applied_at) VALUES (?, datetime('now'))",
+                ("2026-08-12-unresolved-invariant",),
+            )
         await db.commit()

@@ -988,7 +988,7 @@ function DiaryPage({ tweaks }) {
 
   React.useEffect(() => {
     let cancelled = false;
-    const headers = { 'Authorization': 'Bearer remoire-rebechalovesconnie-4ever' };
+    const headers = {};
     async function loadDiaries() {
       try {
         const [connieRes, jingerRes] = await Promise.all([
@@ -1043,7 +1043,6 @@ function DiaryPage({ tweaks }) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Bearer remoire-rebechalovesconnie-4ever'
         },
         body: JSON.stringify({
           title: entry.title || '无题',
@@ -1069,7 +1068,7 @@ function DiaryPage({ tweaks }) {
   async function deleteInteraction(diaryId, interactionId) {
     const res = await fetch(`http://localhost:8000/api/diary/${diaryId}/interactions/${interactionId}`, {
       method: 'DELETE',
-      headers: { 'Authorization': 'Bearer remoire-rebechalovesconnie-4ever' }
+      credentials: 'include'
     });
     const data = await res.json();
     if (data.ok) {
@@ -1082,7 +1081,6 @@ function DiaryPage({ tweaks }) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': 'Bearer remoire-rebechalovesconnie-4ever'
       },
       body: JSON.stringify({ actor: 'jinger', type, content })
     });

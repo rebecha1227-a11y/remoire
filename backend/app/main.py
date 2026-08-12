@@ -1,11 +1,14 @@
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from contextlib import asynccontextmanager
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.date import DateTrigger
 from app.database import init_db
-from app.routers import chat, memory, diary, note, settings, reminder, push, signal, autonomous
+from app.auth import verify_token
+from app.config import ALLOWED_HOSTS, TRUSTED_ORIGINS
+from app.routers import auth, chat, memory, diary, note, settings, reminder, push, signal, autonomous
 from app.scheduler.jobs import connie_auto_diary, catchup_missed_diary, generate_breath_state, decay_memories, digest_memories
 from app.services.nudge_service import run_autonomous_check
 from app.services.weather_service import fetch_and_cache as fetch_weather
@@ -82,13 +85,29 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=ALLOWED_HOSTS)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=TRUSTED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "X-CSRF-Token", "Authorization"],
 )
 
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(self)"
+    response.headers["Cache-Control"] = "no-store"
+    if request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
+
+app.include_router(auth.router)
 app.include_router(chat.router)
 app.include_router(memory.router)
 app.include_router(diary.router)
@@ -104,7 +123,7 @@ async def root():
     return {"ok": True, "message": "Remoire 后端运行中 🌸"}
 
 @app.get("/api/weather")
-async def get_weather():
+async def get_weather(_=Depends(verify_token)):
     from datetime import datetime, timedelta, timezone
     from app.services.weather_service import get_latest, fetch_and_cache
     w = await get_latest()
@@ -126,7 +145,7 @@ async def get_weather():
     return {"ok": True, "data": w}
 
 @app.get("/api/chat/status")
-async def get_chat_status():
+async def get_chat_status(_=Depends(verify_token)):
     from app.database import get_db
     async with get_db() as db:
         async with db.execute(

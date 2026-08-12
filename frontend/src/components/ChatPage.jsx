@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, memo, useCallback } from "react";
-import { apiFetch, apiJsonFetch, API_BASE, getAuthToken } from "../utils/api";
+import { apiFetch, apiJsonFetch, API_BASE } from "../utils/api";
 import { PALETTES, currentBand, AMBIENT_BY_BAND, isDarkBand } from "../utils/ambient";
 import Floaters from "./Floaters";
 import { RainLayer, FogLayer } from "./WeatherEffects";
@@ -504,7 +504,7 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
             } else {
               const userMsg = { id: ++msgIdRef.current, role: 'user', text: m.content, time, type: 'normal' };
               if (m.image) userMsg.image = m.image;
-              else if (m.image_id) userMsg.image = `${API_BASE}/chat/image/${m.image_id}?token=${encodeURIComponent(getAuthToken())}`;
+              else if (m.image_id) userMsg.image = `${API_BASE}/chat/image/${m.image_id}`;
               loaded.push(userMsg);
             }
           }

@@ -267,7 +267,7 @@ function CandidateReview({ candidates, onAccept, onReject }) {
             )}
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <span style={{ fontSize: 11, color: 'var(--ink-faint)', flex: 1 }}>
-                {c.proposed_layer && LAYER_META[c.proposed_layer]?.label} · {TYPE_LABELS[c.proposed_memory_type] || c.proposed_memory_type}
+                {c.layer && LAYER_META[c.layer]?.label} · {TYPE_LABELS[c.memory_type] || c.memory_type}
                 {c.confidence != null && ` · ${Math.round(c.confidence * 100)}%`}
               </span>
               <button onClick={() => onReject(c.id)} style={{
@@ -288,7 +288,7 @@ function CandidateReview({ candidates, onAccept, onReject }) {
   );
 }
 
-function MemoryItem({ mem, onEdit, onDelete, onMove }) {
+function MemoryItem({ mem, onEdit, onDelete, onMove, onResolve }) {
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editContent, setEditContent] = useState(mem.content);
@@ -366,6 +366,13 @@ function MemoryItem({ mem, onEdit, onDelete, onMove }) {
             background: 'transparent', fontSize: 11, color: 'var(--ink-accent)',
             cursor: 'pointer', fontFamily: 'var(--font-body)',
           }}>编辑</button>
+          {mem.unresolved && (
+            <button onClick={() => onResolve(mem.id)} style={{
+              padding: '4px 10px', borderRadius: 6, border: '1px solid rgba(122,158,126,0.35)',
+              background: 'transparent', fontSize: 11, color: 'var(--success)',
+              cursor: 'pointer', fontFamily: 'var(--font-body)',
+            }}>标记已解决</button>
+          )}
           {Object.keys(LAYER_META).filter(l => l !== mem.layer).map(l => (
             <button key={l} onClick={() => onMove(mem.id, l)} style={{
               padding: '4px 10px', borderRadius: 6, border: '1px solid rgba(0,0,0,0.08)',
@@ -429,6 +436,16 @@ function LayerDetail({ layer, onBack }) {
         method: 'POST', body: JSON.stringify({ target_layer: target }),
       });
       setMemories(m => m.filter(x => x.id !== id));
+    } catch (e) {}
+  }
+
+  async function handleResolve(id) {
+    try {
+      const res = await apiFetch(`/memory/${id}/resolve`, { method: 'POST' });
+      const data = await res.json();
+      if (data.ok) {
+        setMemories(items => items.map(item => item.id === id ? data.data : item));
+      }
     } catch (e) {}
   }
 
@@ -510,7 +527,14 @@ function LayerDetail({ layer, onBack }) {
       ) : (
         <div className="r-glass" style={{ position: 'relative' }}>
           {memories.map(m => (
-            <MemoryItem key={m.id} mem={m} onEdit={handleEdit} onMove={handleMove} onDelete={handleDelete} />
+            <MemoryItem
+              key={m.id}
+              mem={m}
+              onEdit={handleEdit}
+              onMove={handleMove}
+              onDelete={handleDelete}
+              onResolve={handleResolve}
+            />
           ))}
         </div>
       )}

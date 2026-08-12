@@ -167,6 +167,15 @@ async def move_memory_layer(memory_id: str, req: MoveLayerRequest, _=Depends(ver
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@router.post("/{memory_id}/resolve")
+async def resolve_memory(memory_id: str, _=Depends(verify_token)):
+    try:
+        result = await memory_service.resolve_memory(memory_id)
+        return {"ok": True, "data": result}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.delete("/{memory_id}")
 async def delete_memory(memory_id: str, _=Depends(verify_token)):
     try:

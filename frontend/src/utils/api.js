@@ -7,39 +7,50 @@ function getDefaultApiBase() {
 }
 
 const DEFAULT_API_BASE = getDefaultApiBase();
-const DEV_AUTH_TOKEN = 'remoire-rebechalovesconnie-4ever';
+const CSRF_COOKIE_NAME = 'remoire_csrf';
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 export const API_BASE = (import.meta.env.VITE_API_BASE || DEFAULT_API_BASE).replace(/\/$/, '');
 
-export function getAuthToken() {
-  return localStorage.getItem('remoire_api_token') || DEV_AUTH_TOKEN;
+function readCookie(name) {
+  const prefix = `${encodeURIComponent(name)}=`;
+  const match = document.cookie.split('; ').find((entry) => entry.startsWith(prefix));
+  return match ? decodeURIComponent(match.slice(prefix.length)) : '';
 }
 
-export function apiHeaders(extra = {}) {
-  const token = getAuthToken();
-  return {
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    ...extra,
-  };
+export function apiHeaders(extra = {}, method = 'GET') {
+  const headers = { ...extra };
+  if (!SAFE_METHODS.has(method.toUpperCase())) {
+    const csrfToken = readCookie(CSRF_COOKIE_NAME);
+    if (csrfToken) headers['X-CSRF-Token'] = csrfToken;
+  }
+  return headers;
 }
 
 export function apiUrl(path) {
   return `${API_BASE}${path.startsWith('/') ? path : `/${path}`}`;
 }
 
-export function apiFetch(path, options = {}) {
-  return fetch(apiUrl(path), {
+export async function apiFetch(path, options = {}) {
+  const method = options.method || 'GET';
+  const response = await fetch(apiUrl(path), {
     ...options,
-    headers: apiHeaders(options.headers || {}),
+    method,
+    credentials: 'include',
+    headers: apiHeaders(options.headers || {}, method),
   });
+  if (response.status === 401 && !path.startsWith('/auth/')) {
+    window.dispatchEvent(new CustomEvent('remoire-auth-required'));
+  }
+  return response;
 }
 
 export function apiJsonFetch(path, options = {}) {
   return apiFetch(path, {
     ...options,
-    headers: apiHeaders({
+    headers: {
       'Content-Type': 'application/json',
       ...(options.headers || {}),
-    }),
+    },
   });
 }

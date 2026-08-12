@@ -15,22 +15,24 @@ https://{your-domain}/api
 
 ### 认证
 
-生产目标方案：用户名 + 密码登录，登录成功后后端设置 HttpOnly session cookie。之后普通 `/api/*` 请求依赖浏览器自动携带的 cookie，不再要求前端保存固定 Bearer token。
+生产方案：用户名 + 密码登录，登录成功后后端设置一个只保存随机值的 `HttpOnly + Secure + SameSite=Strict` session cookie。session 的散列、过期时间和 CSRF 散列保存在 SQLite；浏览器和数据库都不保存明文密码。
 
-当前代码仍处在 Bearer token 过渡态；后续实现登录/session 后，应将通用 API 校验切到 session cookie。
+浏览器自动携带 session cookie。所有非 `GET/HEAD/OPTIONS` 请求还必须将可读的 `remoire_csrf` cookie 原样放入 `X-CSRF-Token` 请求头。前端统一通过 `apiFetch()` / `apiJsonFetch()` 完成这一步，业务组件不得自行拼认证信息。
+
+旧 Bearer 只可在迁移窗口通过 `ALLOW_LEGACY_BEARER=true` 临时启用；默认关闭，完成前端发布后必须关闭并轮换旧密钥。认证值禁止进入 URL 查询参数。
 
 **设备上传例外**：iOS 快捷指令调用的设备上传接口使用 URL 查询参数 `key` 认证（独立的 `DEVICE_SECRET_KEY`）。原因是 iOS 快捷指令无法方便地设置 HTTP Header，GET 请求 + URL 参数是最可靠的方式。`DEVICE_SECRET_KEY` 存在 `.env` 里，HTTPS 会加密完整 URL。内部读取类接口仍走普通 app 认证（当前 Bearer 过渡，目标 session cookie）。
 
-### 登录接口（计划）
+### 登录接口
 
 #### POST `/api/auth/login`
 
-用户名 + 密码登录。成功后设置 HttpOnly session cookie。
+用户名 + 密码登录。成功后设置 session 与 CSRF cookie。单 IP 15 分钟最多连续失败 5 次。
 
 **请求体**：
 ```json
 {
-  "username": "jinger",
+  "username": "connie",
   "password": "..."
 }
 ```
@@ -47,7 +49,7 @@ https://{your-domain}/api
 
 #### POST `/api/auth/logout`
 
-清除当前 session cookie。
+校验 CSRF，删除服务端 session，并清除两个 cookie。
 
 #### GET `/api/auth/me`
 
