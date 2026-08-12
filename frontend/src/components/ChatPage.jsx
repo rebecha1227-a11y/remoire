@@ -215,6 +215,11 @@ function SettingsSheet({ band, timeOverride, setTimeOverride, weather, setWeathe
   }
   const bgFileRef = useRef(null);
   const palette = PALETTES[band];
+  useEffect(() => {
+    const closeOnEscape = (event) => { if (event.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [onClose]);
   function pickBg(file) {
     if (!file) return;
     const r = new FileReader();
@@ -222,8 +227,8 @@ function SettingsSheet({ band, timeOverride, setTimeOverride, weather, setWeathe
     r.readAsDataURL(file);
   }
   return (
-    <div className="r-sheet-bd" onClick={onClose}>
-      <div className="r-sheet" onClick={e => e.stopPropagation()}>
+    <div className="r-sheet-bd" onClick={onClose} role="presentation">
+      <div className="r-sheet" role="dialog" aria-modal="true" aria-label="这间房设置" onClick={e => e.stopPropagation()}>
         <div className="r-sheet-grip" />
         <div className="r-sheet-title">这间房</div>
 
@@ -247,13 +252,13 @@ function SettingsSheet({ band, timeOverride, setTimeOverride, weather, setWeathe
           <input ref={bgFileRef} type="file" accept="image/*" style={{ display: 'none' }}
             onChange={e => pickBg(e.target.files?.[0])} />
           <div className="r-bg-picker">
-            <div className="r-bg-preview" onClick={() => bgFileRef.current?.click()}
+            <button type="button" aria-label="上传聊天背景" className="r-bg-preview" onClick={() => bgFileRef.current?.click()}
               style={chatBgImage ? {
                 backgroundImage: `url(${chatBgImage})`,
                 backgroundSize: 'cover', backgroundPosition: 'center',
               } : {}}>
               {!chatBgImage && <span>＋ 上传</span>}
-            </div>
+            </button>
             <div className="r-bg-actions">
               <button className="r-chip" onClick={() => bgFileRef.current?.click()}>
                 {chatBgImage ? '换一张' : '从相册选'}
@@ -812,7 +817,7 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
                 <div className="r-search-empty">没有找到相关内容</div>
               ) : (
                 searchResults.map(m => (
-                  <div key={m.id} className="r-search-item" onClick={() => { setSearchOpen(false); setSearchQuery(''); }}>
+                  <div key={m.id} className="r-search-item">
                     <div className="r-search-item-role">{m.role === 'ai' ? connieName : '你'}</div>
                     <div className="r-search-item-text">{m.text}</div>
                     {m.time && <div className="r-search-item-time">{m.time}</div>}

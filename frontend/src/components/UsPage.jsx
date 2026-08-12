@@ -108,7 +108,7 @@ function MiniCalendar({ reminderDays, onDaySelect, selectedDay, specialDates = {
           const tod = isToday(d);
           const dot = getDotType(d);
           return (
-            <div key={i} onClick={() => {
+            <button type="button" key={i} disabled={!d} aria-label={d ? `选择 ${viewMonth + 1} 月 ${d} 日` : undefined} onClick={() => {
               if (!d) return;
               const dateStr = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
               onDaySelect({ year: viewYear, month: viewMonth, day: d, dateStr });
@@ -122,12 +122,13 @@ function MiniCalendar({ reminderDays, onDaySelect, selectedDay, specialDates = {
               color: sel ? '#FAF8F4'
                 : tod ? 'var(--ink, var(--text-primary))'
                 : d ? 'var(--ink, var(--text-primary))' : 'transparent',
+              width: '100%', border: 'none', padding: 0, fontFamily: 'inherit',
               fontSize: 13, cursor: d ? 'pointer' : 'default',
               fontWeight: (sel || tod) ? 600 : 400,
             }}>
               {d || ''}
               {d && dot && !sel && <CalendarDot type={dot} />}
-            </div>
+            </button>
           );
         })}
       </div>
@@ -297,7 +298,8 @@ export default function UsPage({ tweaks = {}, nav }) {
       </div>
 
       <div style={{ padding: '0 14px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <div className="r-glass" onClick={() => setShowPalace(true)} style={{
+        <button type="button" className="r-glass" onClick={() => setShowPalace(true)} style={{
+          width: '100%', border: 'none', textAlign: 'left', fontFamily: 'inherit',
           position: 'relative', animation: 'card-in 180ms 20ms ease both',
           cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 14,
         }}>
@@ -329,7 +331,7 @@ export default function UsPage({ tweaks = {}, nav }) {
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft, var(--text-tertiary))" strokeWidth="1.5" style={{ flexShrink: 0 }}>
             <path d="M9 18l6-6-6-6"/>
           </svg>
-        </div>
+        </button>
 
         <div className="r-glass" style={{ position: 'relative', animation: 'card-in 180ms 60ms ease both' }}>
           <SectionLabel style={{ marginBottom: 'var(--space-4)' }}>今日概览</SectionLabel>
@@ -401,15 +403,15 @@ export default function UsPage({ tweaks = {}, nav }) {
                     transition: 'opacity 0.3s ease',
                   }}
                 >
-                  <div onClick={() => !isDone && toggleDone(r.id)} style={{
-                    width: 20, height: 20, borderRadius: '50%',
+                  <button type="button" aria-label={isDone ? '提醒已完成' : `完成提醒：${r.content}`} disabled={isDone} onClick={() => toggleDone(r.id)} style={{
+                    width: 44, height: 44, borderRadius: '50%', padding: 0,
                     border: `1.5px solid ${isDone ? 'var(--ink-faint, #aaa)' : 'var(--warning)'}`,
                     background: isDone ? 'var(--ink-faint, #aaa)' : 'transparent',
                     flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
                     cursor: isDone ? 'default' : 'pointer',
                   }}>
                     {isDone && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3"><path d="M5 12l5 5L19 7"/></svg>}
-                  </div>
+                  </button>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 14, color: 'var(--ink, var(--text-primary))', textDecoration: isDone ? 'line-through' : 'none' }}>{r.content}</div>
                     {!isDone && <div style={{ fontSize: 11, color: 'var(--warning)', marginTop: 2 }}>

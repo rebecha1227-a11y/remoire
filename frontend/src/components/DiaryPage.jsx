@@ -350,9 +350,9 @@ function WritingEditor({ onSave, onCancel }) {
 function PinkCover({ onClick, customCover }) {
   if (customCover) {
     return (
-      <div onClick={onClick} style={{
+      <button type="button" aria-label="打开静儿的日记" onClick={onClick} style={{
         width: '100%', aspectRatio: '3/5', borderRadius: '4px 8px 8px 4px',
-        position: 'relative', cursor: 'pointer', overflow: 'hidden',
+        position: 'relative', cursor: 'pointer', overflow: 'hidden', border: 'none', padding: 0,
         boxShadow: '3px 4px 14px rgba(40,33,28,0.2), 0 1px 3px rgba(40,33,28,0.12)',
         backgroundImage: `url(${customCover})`, backgroundSize: 'cover', backgroundPosition: 'center'
       }}>
@@ -363,7 +363,7 @@ function PinkCover({ onClick, customCover }) {
           <div style={{ color: 'rgba(255,255,255,0.9)', letterSpacing: 1, fontSize: "13px", fontFamily: "var(--font-display)", textShadow: '0 1px 4px rgba(40,33,28,0.4)' }}>Jinger's Diary</div>
         </div>
         <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 6, background: 'linear-gradient(90deg, rgba(0,0,0,0.08), transparent)', pointerEvents: 'none' }} />
-      </div>);
+      </button>);
 
   }
   // Create patchwork quilt pattern with CSS
@@ -388,9 +388,9 @@ function PinkCover({ onClick, customCover }) {
   }
 
   return (
-    <div onClick={onClick} style={{
+    <button type="button" aria-label="打开静儿的日记" onClick={onClick} style={{
       width: '100%', aspectRatio: '3/5', borderRadius: '4px 8px 8px 4px',
-      position: 'relative', cursor: 'pointer', overflow: 'hidden',
+      position: 'relative', cursor: 'pointer', overflow: 'hidden', border: 'none', padding: 0,
       boxShadow: '3px 4px 14px rgba(40,33,28,0.2), 0 1px 3px rgba(40,33,28,0.12)',
       background: '#F0C6D0'
     }}>
@@ -432,7 +432,7 @@ function PinkCover({ onClick, customCover }) {
       </div>
       {/* Spine */}
       <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 6, background: 'linear-gradient(90deg, rgba(0,0,0,0.08), transparent)', pointerEvents: 'none' }} />
-    </div>);
+    </button>);
 
 }
 
@@ -440,9 +440,9 @@ function PinkCover({ onClick, customCover }) {
 function BlueCover({ onClick, customCover }) {
   if (customCover) {
     return (
-      <div onClick={onClick} style={{
+      <button type="button" aria-label="打开 Connie 的日记" onClick={onClick} style={{
         width: '100%', aspectRatio: '3/5', borderRadius: '4px 8px 8px 4px',
-        position: 'relative', cursor: 'pointer', overflow: 'hidden',
+        position: 'relative', cursor: 'pointer', overflow: 'hidden', border: 'none', padding: 0,
         boxShadow: '3px 4px 14px rgba(40,33,28,0.2), 0 1px 3px rgba(40,33,28,0.12)',
         backgroundImage: `url(${customCover})`, backgroundSize: 'cover', backgroundPosition: 'center'
       }}>
@@ -453,7 +453,7 @@ function BlueCover({ onClick, customCover }) {
           <div style={{ color: 'rgba(255,255,255,0.9)', letterSpacing: 1, fontSize: "13px", fontFamily: "var(--font-display)", textShadow: '0 1px 4px rgba(40,33,28,0.4)' }}>Connie's Diary</div>
         </div>
         <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 6, background: 'linear-gradient(90deg, rgba(0,0,0,0.1), transparent)', pointerEvents: 'none' }} />
-      </div>);
+      </button>);
 
   }
   // Generate scattered stars
@@ -475,9 +475,9 @@ function BlueCover({ onClick, customCover }) {
   const starColors = ['#5A6878', '#D4C49A', '#E8E2D8'];
 
   return (
-    <div onClick={onClick} style={{
+    <button type="button" aria-label="打开 Connie 的日记" onClick={onClick} style={{
       width: '100%', aspectRatio: '3/5', borderRadius: '4px 8px 8px 4px',
-      position: 'relative', cursor: 'pointer', overflow: 'hidden',
+      position: 'relative', cursor: 'pointer', overflow: 'hidden', border: 'none', padding: 0,
       boxShadow: '3px 4px 14px rgba(40,33,28,0.2), 0 1px 3px rgba(40,33,28,0.12)',
       background: '#8B9EAE'
     }}>
@@ -516,7 +516,7 @@ function BlueCover({ onClick, customCover }) {
       </div>
       {/* Spine */}
       <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 6, background: 'linear-gradient(90deg, rgba(0,0,0,0.1), transparent)', pointerEvents: 'none' }} />
-    </div>);
+    </button>);
 
 }
 
@@ -539,9 +539,9 @@ function TOCPage({ entries, author, onSelect }) {
       }}>目录</div>
       <div style={{ width: 40, height: 1, background: isDark ? 'rgba(200,180,160,0.2)' : (isConnie ? 'rgba(90,104,120,0.25)' : 'rgba(155,107,123,0.25)'), margin: '0 auto 20px' }} />
       {entries.map((e, i) =>
-      <div key={i} onClick={() => onSelect(i)} style={{
+      <button type="button" key={e.id || i} onClick={() => onSelect(i)} style={{
         display: 'flex', alignItems: 'baseline', gap: 10,
-        padding: '10px 4px', cursor: 'pointer',
+        width: '100%', padding: '10px 4px', cursor: 'pointer', background: 'transparent', border: 'none', textAlign: 'left',
         borderBottom: '1px dotted rgba(0,0,0,0.08)',
         transition: 'background 0.15s'
       }}
@@ -556,7 +556,7 @@ function TOCPage({ entries, author, onSelect }) {
               <rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" />
             </svg>
         }
-        </div>
+        </button>
       )}
     </div>);
 

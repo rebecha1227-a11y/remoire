@@ -4,8 +4,10 @@ export function Card({ children, padding = 'md', elevated = true, style = {}, on
     md: 'var(--space-3) var(--space-4)',
     lg: 'var(--space-4) var(--space-5)',
   };
+  const Element = onClick ? 'button' : 'div';
   return (
-    <div
+    <Element
+      type={onClick ? 'button' : undefined}
       onClick={onClick}
       className={className}
       style={{
@@ -15,12 +17,16 @@ export function Card({ children, padding = 'md', elevated = true, style = {}, on
         padding: padMap[padding] || padMap.md,
         boxShadow: elevated ? 'var(--shadow-sm)' : 'none',
         cursor: onClick ? 'pointer' : 'default',
+        width: onClick ? '100%' : undefined,
+        textAlign: onClick ? 'left' : undefined,
+        color: onClick ? 'inherit' : undefined,
+        fontFamily: onClick ? 'var(--font-body)' : undefined,
         ...style,
       }}
       {...rest}
     >
       {children}
-    </div>
+    </Element>
   );
 }
 
@@ -81,8 +87,8 @@ export function IconButton({ children, onClick, size = 36, variant = 'outline', 
     <button
       onClick={onClick}
       style={{
-        width: size,
-        height: size,
+        width: Math.max(size, 44),
+        height: Math.max(size, 44),
         borderRadius: 'var(--radius-sm)',
         ...v,
         display: 'flex',
@@ -101,8 +107,10 @@ export function IconButton({ children, onClick, size = 36, variant = 'outline', 
 }
 
 export function Row({ children, onClick, urgent = false, dimmed = false, style = {}, ...rest }) {
+  const Element = onClick ? 'button' : 'div';
   return (
-    <div
+    <Element
+      type={onClick ? 'button' : undefined}
       onClick={onClick}
       style={{
         background: 'var(--bg-elevated)',
@@ -113,6 +121,10 @@ export function Row({ children, onClick, urgent = false, dimmed = false, style =
         alignItems: 'center',
         gap: 'var(--space-3)',
         cursor: onClick ? 'pointer' : 'default',
+        width: '100%',
+        textAlign: onClick ? 'left' : undefined,
+        color: 'inherit',
+        fontFamily: 'var(--font-body)',
         opacity: dimmed ? 0.5 : 1,
         transition: 'opacity 0.2s',
         ...style,
@@ -120,7 +132,7 @@ export function Row({ children, onClick, urgent = false, dimmed = false, style =
       {...rest}
     >
       {children}
-    </div>
+    </Element>
   );
 }
 

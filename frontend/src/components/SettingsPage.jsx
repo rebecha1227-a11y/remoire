@@ -86,7 +86,7 @@ export default function SettingsPage({ tweaks, nav }) {
 
       <div className="r-glass" style={{ position: 'relative' }}>
         <SettingsSectionTitle title="AI 与模型" />
-        <SettingRow label="关系档案" sub="告诉 Connie 你是谁、他是谁" onClick={() => setPanel('prompt')}><ChevronRight /></SettingRow>
+        <SettingRow label="关系档案" sub="查看当前身份与表达配置状态" onClick={() => setPanel('prompt')}><ChevronRight /></SettingRow>
         <SettingRow label="模型配置" sub="daily · deep · backend 三槽位" onClick={() => setPanel('model')}><ChevronRight /></SettingRow>
         <SettingRow label="语音配置" sub="即将推出" noBorder>
           <Pill tone="neutral">P2</Pill>
@@ -95,12 +95,12 @@ export default function SettingsPage({ tweaks, nav }) {
 
       <div className="r-glass" style={{ position: 'relative' }}>
         <SettingsSectionTitle title="连接与数据" />
-        <SettingRow label="微信桥接" sub="通过 iLink 连接微信" onClick={() => setPanel('wechat')}><ChevronRight /></SettingRow>
-        <SettingRow label="MCP 跨平台同步" sub="在 Claude.ai 恢复记忆" onClick={() => setPanel('mcp')}><ChevronRight /></SettingRow>
-        <SettingRow label="导入历史对话" sub="上传 Claude 导出 JSON" onClick={() => setPanel('import')}><ChevronRight /></SettingRow>
+        <SettingRow label="微信桥接" sub="规划中 · 尚未开放" onClick={() => setPanel('wechat')}><ChevronRight /></SettingRow>
+        <SettingRow label="MCP 跨平台同步" sub="连接 ChatGPT 等支持 MCP 的客户端" onClick={() => setPanel('mcp')}><ChevronRight /></SettingRow>
+        <SettingRow label="导入历史对话" sub="规划中 · 尚未开放" onClick={() => setPanel('import')}><ChevronRight /></SettingRow>
         <SettingRow label="消息推送" sub="Web Push 通知设置" onClick={() => setPanel('push')}><ChevronRight /></SettingRow>
         <SettingRow label="特殊日期管理" sub="生日 · 纪念日 · deadline" onClick={() => setPanel('dates')}><ChevronRight /></SettingRow>
-        <SettingRow label="导出数据" onClick={() => setPanel('export')} noBorder><ChevronRight /></SettingRow>
+        <SettingRow label="导出数据" sub="规划中 · 服务器已自动备份" onClick={() => setPanel('export')} noBorder><ChevronRight /></SettingRow>
       </div>
 
       <div className="r-glass" style={{ position: 'relative' }}>

@@ -2,26 +2,42 @@ import { SectionLabel } from './primitives';
 
 export function SettingsToggle({ on, onChange }) {
   return (
-    <div onClick={() => onChange(!on)} style={{
-      width: 40, height: 22, borderRadius: 11,
-      background: on ? 'var(--accent)' : 'var(--border)',
-      position: 'relative', cursor: 'pointer', transition: 'background 0.2s',
-      flexShrink: 0,
-    }}>
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      aria-label={on ? '关闭' : '开启'}
+      onClick={() => onChange(!on)}
+      style={{
+        width: 44, height: 44, border: 0, padding: 0, background: 'transparent',
+        position: 'relative', cursor: 'pointer', flexShrink: 0,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}
+    >
       <div style={{
-        width: 18, height: 18, borderRadius: '50%', background: '#FAF8F4',
-        position: 'absolute', top: 2, left: on ? 20 : 2, transition: 'left 0.2s',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.15)',
-      }} />
-    </div>
+        width: 40, height: 22, borderRadius: 11,
+        background: on ? 'var(--accent)' : 'var(--border)',
+        position: 'relative', transition: 'background 0.2s',
+      }}>
+        <span style={{
+          width: 18, height: 18, borderRadius: '50%', background: 'var(--bg-elevated)',
+          position: 'absolute', top: 2, left: on ? 20 : 2, transition: 'left 0.2s',
+          boxShadow: '0 1px 3px rgba(40,33,28,0.15)',
+        }} />
+      </div>
+    </button>
   );
 }
 
 export function SettingRow({ label, sub, children, danger, onClick, noBorder }) {
+  const Element = onClick ? 'button' : 'div';
   return (
-    <div onClick={onClick} style={{
+    <Element type={onClick ? 'button' : undefined} onClick={onClick} style={{
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      width: '100%', minHeight: 44, textAlign: 'left',
       padding: '12px 0', borderBottom: noBorder ? 'none' : '1px solid rgba(0,0,0,0.06)',
+      borderTop: 0, borderLeft: 0, borderRight: 0, background: 'transparent',
+      fontFamily: 'var(--font-body)',
       cursor: onClick ? 'pointer' : 'default',
     }}>
       <div style={{ flex: 1 }}>
@@ -29,7 +45,7 @@ export function SettingRow({ label, sub, children, danger, onClick, noBorder }) 
         {sub && <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginTop: 1 }}>{sub}</div>}
       </div>
       {children}
-    </div>
+    </Element>
   );
 }
 
@@ -42,7 +58,8 @@ export function SubPageHeader({ onBack, title, subtitle }) {
     <div style={{ marginBottom: 20 }}>
       <button onClick={onBack} style={{
         background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
-        color: 'var(--text-tertiary)', fontSize: 12, fontFamily: "var(--font-body)", marginBottom: 16, padding: 0,
+        color: 'var(--text-tertiary)', fontSize: 12, fontFamily: "var(--font-body)", marginBottom: 16,
+        minHeight: 44, padding: '0 8px 0 0',
       }}>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M19 12H5M12 5l-7 7 7 7" /></svg>
         返回

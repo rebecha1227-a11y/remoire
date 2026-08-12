@@ -74,13 +74,13 @@ function GlassSelect({ value, onChange, options, placeholder = '请选择', styl
 // ═══════════════════════════════════════════
 export function ProactiveSettings({ onBack }) {
   const [cfg, setCfg] = useState({
-    enabled: true, channel: 'wechat', allowNight: false,
+    enabled: true, allowNight: false,
     startTime: '09:00', endTime: '22:30',
     maxDaily: 5, cooldown: 60, maxBurst: 8, maxRounds: 3, roundInterval: 30,
     endOnReply: true,
     types: { care: true, reminder: true, followup: true, special: true },
   });
-  const [loaded, setLoaded] = useState(false);
+  const [status, setStatus] = useState('正在读取设置…');
 
   useEffect(() => {
     apiFetch('/api/settings/proactive').then(res => {
@@ -100,16 +100,22 @@ export function ProactiveSettings({ onBack }) {
           endOnReply: d.end_on_reply ?? true,
           types: d.types ?? c.types,
         }));
-        setLoaded(true);
+        setStatus('');
       }
-    }).catch(() => setLoaded(true));
+    }).catch(() => setStatus('设置加载失败，请稍后重试。'));
   }, []);
 
-  const save = (patch) => {
-    apiJsonFetch('/api/settings/proactive', {
+  const save = async (patch) => {
+    try {
+      const response = await apiJsonFetch('/api/settings/proactive', {
       method: 'PUT',
       body: JSON.stringify(patch),
-    }).catch(() => {});
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      setStatus('已保存');
+    } catch {
+      setStatus('保存失败，请稍后重试。');
+    }
   };
 
   const set = (k, v) => {
@@ -136,12 +142,6 @@ export function ProactiveSettings({ onBack }) {
     });
   };
 
-  const CHANNELS = [
-    { id: 'wechat', label: '微信优先' },
-    { id: 'remoire', label: 'Remoire 优先' },
-    { id: 'both', label: '两边都发' },
-  ];
-
   return (
     <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px 88px' }}>
       <SubPageHeader onBack={onBack} title="主动消息" subtitle="控制 Connie 主动找你的方式和频率" />
@@ -157,24 +157,9 @@ export function ProactiveSettings({ onBack }) {
         </div>
       ) : (
         <>
-          {/* 发送入口 */}
-          <SettingsSectionTitle title="发送入口" />
-          <div style={{ display: 'flex', gap: 8, marginBottom: 4 }}>
-            {CHANNELS.map(ch => (
-              <button key={ch.id} onClick={() => set('channel', ch.id)} style={{
-                flex: 1, padding: '10px 8px', borderRadius: 'var(--radius-sm)',
-                background: cfg.channel === ch.id ? 'var(--accent)' : 'var(--bg-elevated)',
-                color: cfg.channel === ch.id ? '#FAF8F4' : 'var(--text-secondary)',
-                border: cfg.channel === ch.id ? 'none' : '1px solid var(--border-light)',
-                fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'var(--font-body)',
-              }}>{ch.label}</button>
-            ))}
-          </div>
-          {cfg.channel === 'both' && (
-            <div style={{ fontSize: 11, color: 'var(--warning)', marginTop: 4, marginBottom: 8, lineHeight: 1.5 }}>
-              ⚠ 两边都发会增加打扰感和 token 消耗
-            </div>
-          )}
+          <SettingRow label="发送入口" sub="微信桥接开放前，主动消息只发送到 Remoire">
+            <Pill tone="neutral">Remoire</Pill>
+          </SettingRow>
 
           {/* 时间段 */}
           <SettingsSectionTitle title="时间段" />
@@ -194,9 +179,9 @@ export function ProactiveSettings({ onBack }) {
           <SettingsSectionTitle title="频率控制" />
           <SettingRow label="每日上限" sub={`最多 ${cfg.maxDaily} 次/天`}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <button onClick={() => set('maxDaily', Math.max(1, cfg.maxDaily - 1))} style={{ width: 28, height: 28, borderRadius: '50%', border: '1px solid var(--border)', background: 'var(--bg-elevated)', cursor: 'pointer', fontSize: 16, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
+              <button aria-label="减少每日上限" onClick={() => set('maxDaily', Math.max(1, cfg.maxDaily - 1))} style={{ width: 44, height: 44, borderRadius: '50%', border: '1px solid var(--border)', background: 'var(--bg-elevated)', cursor: 'pointer', fontSize: 16, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
               <span style={{ fontSize: 16, fontWeight: 500, color: 'var(--text-primary)', minWidth: 20, textAlign: 'center' }}>{cfg.maxDaily}</span>
-              <button onClick={() => set('maxDaily', Math.min(20, cfg.maxDaily + 1))} style={{ width: 28, height: 28, borderRadius: '50%', border: '1px solid var(--border)', background: 'var(--bg-elevated)', cursor: 'pointer', fontSize: 16, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
+              <button aria-label="增加每日上限" onClick={() => set('maxDaily', Math.min(20, cfg.maxDaily + 1))} style={{ width: 44, height: 44, borderRadius: '50%', border: '1px solid var(--border)', background: 'var(--bg-elevated)', cursor: 'pointer', fontSize: 16, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
             </div>
           </SettingRow>
           <SettingRow label="聊天后冷却" sub={`刚聊完 ${cfg.cooldown} 分钟内不打扰`}>
@@ -227,6 +212,7 @@ export function ProactiveSettings({ onBack }) {
               <SettingsToggle on={cfg.types[t.id]} onChange={() => setType(t.id)} />
             </SettingRow>
           ))}
+          {status && <div role="status" style={{ marginTop: 12, fontSize: 11, color: status.includes('失败') ? 'var(--danger)' : 'var(--text-tertiary)' }}>{status}</div>}
         </>
       )}
     </div>
@@ -237,102 +223,25 @@ export function ProactiveSettings({ onBack }) {
 // 2. Prompt 编辑器
 // ═══════════════════════════════════════════
 export function PromptSettings({ onBack }) {
-  // Profile section — who we are
-  const [profile, setProfile] = useState({
-    myName: '静儿',
-    aiName: 'Connie',
-    relationship: '恋人',
-    about: '',
-  });
-
-  const SCENES = [
-    { id: 'frontend_reply', title: 'Remoire 回复风格', desc: '在小窝里聊天时的表达方式', placeholder: '回复自然温暖，可以用列表帮静儿整理思路…' },
-    { id: 'wechat_reply', title: '微信回复风格', desc: '更短、更自然、适合分条', placeholder: '回复更短、更像真人微信消息。不使用 markdown…' },
-    { id: 'daytime_proactive', title: '白天主动消息', desc: '白天主动联系的语气', placeholder: '轻松、日常、不强迫回复…' },
-    { id: 'night_proactive', title: '夜间主动消息', desc: '夜间主动联系的语气', placeholder: '更安静、柔和、关心睡眠…' },
-    { id: 'tool_use', title: '工具使用策略', desc: '什么时候调用记忆、提醒、日记', placeholder: '当用户提到日期或计划时，自动提取提醒候选…' },
-  ];
-  const [expanded, setExpanded] = useState(null);
-  const [texts, setTexts] = useState({});
-  const [enabled, setEnabled] = useState(
-    Object.fromEntries(SCENES.map(s => [s.id, true]))
-  );
+  const connieName = localStorage.getItem('remoire_conn_name') || 'Connie';
 
   return (
     <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px 88px' }}>
-      <SubPageHeader onBack={onBack} title="关系档案" subtitle="告诉 Connie 你们是谁。有了聊天记忆后，这些只是基础信息。" />
-
-      {/* Profile card */}
+      <SubPageHeader onBack={onBack} title="关系档案" subtitle="查看当前关系身份与表达方式" />
       <Card padding="lg" style={{ marginBottom: 16 }}>
-        <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', marginBottom: 12 }}>基本信息</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
-          <div>
-            <label style={{ fontSize: 11, color: 'var(--text-tertiary)', display: 'block', marginBottom: 4 }}>我的名字</label>
-            <input value={profile.myName} onChange={e => setProfile(p => ({ ...p, myName: e.target.value }))}
-              style={{ width: '100%', padding: '8px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontSize: 13, fontFamily: 'var(--font-body)' }} />
-          </div>
-          <div>
-            <label style={{ fontSize: 11, color: 'var(--text-tertiary)', display: 'block', marginBottom: 4 }}>TA 的名字</label>
-            <input value={profile.aiName} onChange={e => setProfile(p => ({ ...p, aiName: e.target.value }))}
-              style={{ width: '100%', padding: '8px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontSize: 13, fontFamily: 'var(--font-body)' }} />
-          </div>
+        <SettingRow label="你的名字" sub="当前产品身份">静儿</SettingRow>
+        <SettingRow label="TA 的名字" sub="可在聊天设置中修改备注">{connieName}</SettingRow>
+        <SettingRow label="关系" sub="当前系统身份" noBorder>恋人</SettingRow>
+      </Card>
+      <Card padding="md" elevated={false} style={{ borderStyle: 'dashed' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+          <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-primary)' }}>表达偏好编辑尚未开放</div>
+          <Pill tone="neutral">规划中</Pill>
         </div>
-        <div style={{ marginBottom: 10 }}>
-          <label style={{ fontSize: 11, color: 'var(--text-tertiary)', display: 'block', marginBottom: 4 }}>我们的关系</label>
-          <input value={profile.relationship} onChange={e => setProfile(p => ({ ...p, relationship: e.target.value }))}
-            style={{ width: '100%', padding: '8px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontSize: 13, fontFamily: 'var(--font-body)' }} />
-        </div>
-        <div>
-          <label style={{ fontSize: 11, color: 'var(--text-tertiary)', display: 'block', marginBottom: 4 }}>补充说明 <span style={{ opacity: 0.5 }}>（可选）</span></label>
-          <textarea value={profile.about} onChange={e => setProfile(p => ({ ...p, about: e.target.value }))}
-            placeholder="任何你想让 Connie 知道的事，比如你的习惯、喜好、最近的状态…"
-            style={{ width: '100%', minHeight: 72, padding: '8px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontSize: 13, fontFamily: 'var(--font-body)', lineHeight: 1.7, resize: 'vertical', outline: 'none' }} />
-        </div>
-        <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 10, lineHeight: 1.6 }}>
-          这些信息会作为基础上下文。随着你们的对话积累，Connie 会自然地了解更多。
+        <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.8 }}>
+          当前表达方式由服务器上的身份与语气配置统一控制。等保存、预览和版本回退真正接通后，这里才会提供编辑入口。
         </div>
       </Card>
-
-      <SectionLabel style={{ marginTop: 8, marginBottom: 8 }}>表达偏好（高级）</SectionLabel>
-      <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 12, lineHeight: 1.6 }}>
-        微调 Connie 在不同场景下的表达方式。大多数情况下不需要修改。
-      </div>
-      <Stack gap="sm">
-        {SCENES.map(scene => (
-          <Card key={scene.id} padding="md" style={{ transition: 'all 0.15s' }}>
-            <div onClick={() => setExpanded(expanded === scene.id ? null : scene.id)}
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
-              <div style={{ flex: 1 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-primary)' }}>{scene.title}</span>
-                  <SettingsToggle on={enabled[scene.id]} onChange={() => setEnabled(e => ({ ...e, [scene.id]: !e[scene.id] }))} />
-                </div>
-                <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>{scene.desc}</div>
-              </div>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5"
-                style={{ transform: expanded === scene.id ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0 }}>
-                <path d="M6 9l6 6 6-6"/>
-              </svg>
-            </div>
-            {expanded === scene.id && (
-              <div style={{ marginTop: 12, animation: 'card-in 150ms ease' }}>
-                <textarea value={texts[scene.id] || ''} onChange={e => setTexts(t => ({ ...t, [scene.id]: e.target.value }))}
-                  placeholder={scene.placeholder}
-                  style={{
-                    width: '100%', minHeight: 120, padding: '10px 12px', borderRadius: 'var(--radius-sm)',
-                    border: '1px solid var(--border-light)', background: 'var(--bg-secondary)',
-                    color: 'var(--text-primary)', fontSize: 13, fontFamily: 'var(--font-body)',
-                    lineHeight: 1.7, resize: 'vertical', outline: 'none',
-                  }} />
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
-                  <button style={{ padding: '6px 14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'transparent', fontSize: 12, color: 'var(--text-tertiary)', cursor: 'pointer' }}>预览合成 Prompt</button>
-                  <button style={{ padding: '6px 14px', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--accent)', fontSize: 12, color: '#FAF8F4', cursor: 'pointer', fontWeight: 500 }}>保存</button>
-                </div>
-              </div>
-            )}
-          </Card>
-        ))}
-      </Stack>
     </div>
   );
 }
@@ -753,68 +662,36 @@ export function ModelSettings({ onBack }) {
 // 4. 微信桥接
 // ═══════════════════════════════════════════
 export function WeChatSettings({ onBack }) {
-  const [connected, setConnected] = useState(false);
-  const [showQR, setShowQR] = useState(false);
-
   return (
     <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px 88px' }}>
-      <SubPageHeader onBack={onBack} title="微信桥接" subtitle="通过 iLink API 连接微信，让 Connie 也在微信陪你" />
+      <SubPageHeader onBack={onBack} title="微信桥接" subtitle="让 Connie 在微信里也保持同一段关系" />
 
       <Card padding="lg" style={{ marginBottom: 16 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{
-            width: 40, height: 40, borderRadius: 10, background: connected ? '#07C160' : 'var(--border)',
+            width: 40, height: 40, borderRadius: 10, background: 'var(--accent-subtle)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.5">
-              <path d="M8.5 10a1 1 0 1 0 0-2 1 1 0 0 0 0 2zM15.5 10a1 1 0 1 0 0-2 1 1 0 0 0 0 2z" fill="#fff"/>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.5" aria-hidden="true">
+              <path d="M8.5 10a1 1 0 1 0 0-2 1 1 0 0 0 0 2zM15.5 10a1 1 0 1 0 0-2 1 1 0 0 0 0 2z" fill="var(--accent)"/>
               <path d="M9 16c1.5 1 4.5 1 6 0"/>
               <path d="M12 2C6.48 2 2 6.04 2 11c0 2.76 1.36 5.22 3.5 6.83V22l3.63-2A11.2 11.2 0 0 0 12 20c5.52 0 10-3.58 10-8s-4.48-9-10-9z"/>
             </svg>
           </div>
-          <div>
-            <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-primary)' }}>
-              {connected ? '已连接' : '未连接'}
+          <div style={{ flex: 1 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-primary)' }}>尚未开放</div>
+              <Pill tone="neutral">规划中</Pill>
             </div>
-            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 1 }}>
-              {connected ? 'Connie · Token 有效至 2026-06-01' : '扫码登录后 Connie 可以在微信找你'}
-            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 3 }}>当前没有可用的扫码登录或连接状态</div>
           </div>
         </div>
-
-        {!connected && (
-          <button onClick={() => { setShowQR(true); setTimeout(() => setConnected(true), 2000); }}
-            style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', border: 'none', background: '#07C160', fontSize: 13, color: '#fff', cursor: 'pointer', fontWeight: 500 }}>
-            {showQR ? '等待扫码…' : '开始扫码登录'}
-          </button>
-        )}
-
-        {showQR && !connected && (
-          <div style={{ marginTop: 16, textAlign: 'center' }}>
-            <div style={{
-              width: 160, height: 160, margin: '0 auto', borderRadius: 8,
-              background: 'var(--bg-secondary)', border: '1px solid var(--border-light)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 11, color: 'var(--text-tertiary)',
-            }}>二维码占位</div>
-            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 8 }}>有效期 5 分钟</div>
-          </div>
-        )}
-
-        {connected && (
-          <div style={{ marginTop: 4 }}>
-            <SettingRow label="断开连接">
-              <button onClick={() => { setConnected(false); setShowQR(false); }}
-                style={{ padding: '5px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--danger)', background: 'transparent', fontSize: 12, color: 'var(--danger)', cursor: 'pointer' }}>断开</button>
-            </SettingRow>
-          </div>
-        )}
       </Card>
 
       <Card padding="md">
         <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.8 }}>
-          <strong>工作原理</strong><br/>
-          微信消息通过 iLink API 桥接到 Remoire 后端，Connie 使用同一套记忆和 Prompt 在微信回复。微信回复风格由「微信回复 Prompt」控制，更短更自然。
+          <strong>开放前会完成</strong><br/>
+          正式接入需要真实的微信授权、令牌续期、撤销连接和失败反馈。完成这些安全闭环前，Remoire 不会用占位二维码模拟成功。
         </div>
       </Card>
     </div>
@@ -825,29 +702,22 @@ export function WeChatSettings({ onBack }) {
 // 5. MCP 配置
 // ═══════════════════════════════════════════
 export function MCPSettings({ onBack }) {
-  const [enabled, setEnabled] = useState(true);
-  const [copied, setCopied] = useState(false);
-  const mcpUrl = 'https://your-domain.com/mcp';
+  const mcpUrl = `${window.location.origin}/mcp`;
 
   return (
     <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px 88px' }}>
-      <SubPageHeader onBack={onBack} title="MCP 跨平台同步" subtitle="在 Claude.ai 新对话中自动恢复记忆" />
+      <SubPageHeader onBack={onBack} title="MCP 跨平台同步" subtitle="让支持 MCP 的 AI 客户端访问同一套记忆" />
 
-      <SettingRow label="启用 MCP 服务">
-        <SettingsToggle on={enabled} onChange={setEnabled} />
-      </SettingRow>
-
-      {enabled && (
-        <Stack gap="md" style={{ marginTop: 16 }}>
+      <Stack gap="md">
           <Card padding="md">
-            <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-primary)', marginBottom: 8 }}>MCP Server URL</div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input readOnly value={mcpUrl}
-                style={{ flex: 1, padding: '8px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontSize: 12, fontFamily: 'monospace' }} />
-              <button onClick={() => { navigator.clipboard?.writeText(mcpUrl); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
-                style={{ padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--bg-elevated)', fontSize: 12, color: 'var(--text-secondary)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                {copied ? '已复制' : '复制'}
-              </button>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 8 }}>
+              <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-primary)' }}>MCP Server URL</div>
+              <Pill tone="warning">安全配置中</Pill>
+            </div>
+            <input readOnly value={mcpUrl} aria-label="MCP Server URL"
+              style={{ width: '100%', minHeight: 44, padding: '8px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontSize: 12, fontFamily: 'monospace' }} />
+            <div style={{ marginTop: 8, fontSize: 11, lineHeight: 1.6, color: 'var(--text-tertiary)' }}>
+              独立 Bearer 鉴权完成端到端验收后才会开放复制与连接指引，避免把私人记忆暴露给未认证客户端。
             </div>
           </Card>
 
@@ -872,8 +742,7 @@ export function MCPSettings({ onBack }) {
               <strong>不共享</strong>：平行空间上下文、未确认候选记忆、完整思考策略
             </div>
           </Card>
-        </Stack>
-      )}
+      </Stack>
     </div>
   );
 }
@@ -882,126 +751,21 @@ export function MCPSettings({ onBack }) {
 // 6. 导入历史对话
 // ═══════════════════════════════════════════
 export function ImportSettings({ onBack }) {
-  const [step, setStep] = useState('idle'); // idle | uploading | extracting | review | done
-  const [progress, setProgress] = useState(0);
-  const [candidates, setCandidates] = useState([
-    { id: 1, text: '静儿想去蒙特利尔读书', type: 'unresolved', checked: true },
-    { id: 2, text: '静儿的法语水平大约 B1', type: 'fact', checked: true },
-    { id: 3, text: '上周因为法语听力崩溃了一次', type: 'event', checked: true },
-    { id: 4, text: '静儿喜欢猫', type: 'fact', checked: false },
-    { id: 5, text: '约好了一起看星空', type: 'unresolved', checked: true },
-  ]);
-
-  function startUpload() {
-    setStep('uploading');
-    setProgress(0);
-    const iv = setInterval(() => {
-      setProgress(p => {
-        if (p >= 100) { clearInterval(iv); setTimeout(() => { setStep('extracting'); startExtract(); }, 300); return 100; }
-        return p + 8;
-      });
-    }, 100);
-  }
-
-  function startExtract() {
-    setProgress(0);
-    const iv = setInterval(() => {
-      setProgress(p => {
-        if (p >= 100) { clearInterval(iv); setTimeout(() => setStep('review'), 300); return 100; }
-        return p + 5;
-      });
-    }, 100);
-  }
-
-  function toggleCandidate(id) {
-    setCandidates(c => c.map(x => x.id === id ? { ...x, checked: !x.checked } : x));
-  }
-
-  const TYPE_LABELS = { fact: '事实', event: '事件', unresolved: '未完成' };
-
   return (
     <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px 88px' }}>
       <SubPageHeader onBack={onBack} title="导入历史对话" subtitle="上传 Claude 导出的 JSON，把你们的前史带回来" />
-
-      {step === 'idle' && (
-        <Card padding="lg" style={{ textAlign: 'center' }}>
-          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5" style={{ margin: '0 auto 12px' }}>
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
-          </svg>
-          <div style={{ fontSize: 14, color: 'var(--text-primary)', marginBottom: 4 }}>选择 JSON 文件</div>
-          <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 16, lineHeight: 1.6 }}>
-            从 Claude.ai 设置中导出对话历史
-          </div>
-          <button onClick={startUpload}
-            style={{ padding: '10px 24px', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--accent)', fontSize: 13, color: '#FAF8F4', cursor: 'pointer', fontWeight: 500 }}>
-            选择文件
-          </button>
-        </Card>
-      )}
-
-      {(step === 'uploading' || step === 'extracting') && (
-        <Card padding="lg">
-          <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-primary)', marginBottom: 4 }}>
-            {step === 'uploading' ? '解析对话中…' : '提取记忆候选…'}
-          </div>
-          <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 12 }}>
-            {step === 'uploading' ? '正在解析对话结构并写入数据库' : '正在从历史对话中提取记忆'}
-          </div>
-          <div style={{ background: 'var(--border-light)', borderRadius: 4, height: 6, overflow: 'hidden' }}>
-            <div style={{ height: '100%', background: 'var(--accent)', borderRadius: 4, width: `${progress}%`, transition: 'width 0.1s' }} />
-          </div>
-          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 6, textAlign: 'right' }}>{Math.round(progress)}%</div>
-        </Card>
-      )}
-
-      {step === 'review' && (
-        <>
-          <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12, lineHeight: 1.6 }}>
-            从历史对话中提取了 <strong>{candidates.length}</strong> 条记忆候选，请确认：
-          </div>
-          <Stack gap="xs">
-            {candidates.map(c => (
-              <div key={c.id} onClick={() => toggleCandidate(c.id)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px',
-                  background: 'var(--bg-elevated)', border: '1px solid var(--border-light)',
-                  borderRadius: 'var(--radius-sm)', cursor: 'pointer',
-                }}>
-                <div style={{
-                  width: 18, height: 18, borderRadius: 4, flexShrink: 0,
-                  border: c.checked ? 'none' : '1.5px solid var(--border)',
-                  background: c.checked ? 'var(--accent)' : 'transparent',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}>
-                  {c.checked && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3"><path d="M5 13l4 4L19 7"/></svg>}
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, color: 'var(--text-primary)' }}>{c.text}</div>
-                </div>
-                <Pill tone="neutral">{TYPE_LABELS[c.type] || c.type}</Pill>
-              </div>
-            ))}
-          </Stack>
-          <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-            <button onClick={() => { setCandidates(c => c.map(x => ({ ...x, checked: true }))); }}
-              style={{ flex: 1, padding: '8px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'transparent', fontSize: 12, color: 'var(--text-secondary)', cursor: 'pointer' }}>全选</button>
-            <button onClick={() => setStep('done')}
-              style={{ flex: 2, padding: '8px', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--accent)', fontSize: 12, color: '#FAF8F4', cursor: 'pointer', fontWeight: 500 }}>
-              确认导入 ({candidates.filter(c => c.checked).length} 条)
-            </button>
-          </div>
-        </>
-      )}
-
-      {step === 'done' && (
-        <Card padding="lg" style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: 28, marginBottom: 8 }}>✓</div>
-          <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-primary)', marginBottom: 4 }}>导入完成</div>
-          <div style={{ fontSize: 12, color: 'var(--text-tertiary)', lineHeight: 1.6 }}>
-            {candidates.filter(c => c.checked).length} 条记忆已写入，Connie 现在记得你们的前史了
-          </div>
-        </Card>
-      )}
+      <Card padding="lg" elevated={false} style={{ borderStyle: 'dashed' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+          <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-primary)' }}>导入能力尚未开放</div>
+          <Pill tone="neutral">规划中</Pill>
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.8 }}>
+          正式版本会先在本地校验文件格式与大小，再把提取结果放进“记忆候选”，由你逐条确认后才写入正式记忆库。
+        </div>
+        <div style={{ marginTop: 10, fontSize: 11, color: 'var(--text-tertiary)', lineHeight: 1.7 }}>
+          在解析、候选审核和失败恢复真正接通前，这里不会播放虚假的上传进度，也不会声称示例内容已经写入。
+        </div>
+      </Card>
     </div>
   );
 }
@@ -1284,45 +1048,19 @@ export function DatesSettings({ onBack }) {
 // 9. 导出数据
 // ═══════════════════════════════════════════
 export function ExportSettings({ onBack }) {
-  const [exporting, setExporting] = useState(null);
-
-  function doExport(type) {
-    setExporting(type);
-    setTimeout(() => setExporting(null), 1500);
-  }
-
   return (
     <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px 88px' }}>
       <SubPageHeader onBack={onBack} title="导出数据" subtitle="下载你的数据备份" />
 
-      <Stack gap="sm">
-        {[
-          { id: 'all', label: '全部数据', desc: '对话、记忆、日记、提醒、设置', icon: 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3' },
-          { id: 'chat', label: '聊天记录', desc: '所有对话历史（JSON）', icon: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z' },
-          { id: 'memory', label: '记忆库', desc: '所有正式记忆（JSON）', icon: 'M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z' },
-          { id: 'diary', label: '日记', desc: '两人所有日记（Markdown）', icon: 'M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2zM22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z' },
-        ].map(item => (
-          <Card key={item.id} padding="md" onClick={() => doExport(item.id)} style={{ cursor: 'pointer' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div style={{
-                width: 36, height: 36, borderRadius: 8, background: 'var(--accent-subtle)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-              }}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.5"><path d={item.icon}/></svg>
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)' }}>{item.label}</div>
-                <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 1 }}>{item.desc}</div>
-              </div>
-              {exporting === item.id ? (
-                <span style={{ fontSize: 11, color: 'var(--success)' }}>下载中…</span>
-              ) : (
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
-              )}
-            </div>
-          </Card>
-        ))}
-      </Stack>
+      <Card padding="lg" elevated={false} style={{ borderStyle: 'dashed' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+          <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-primary)' }}>应用内导出尚未开放</div>
+          <Pill tone="neutral">规划中</Pill>
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.8 }}>
+          当前服务器每天都会生成经过完整性校验的数据库备份，但网页端还没有安全的下载流程。下载权限、脱敏和文件校验完成前，这里不会模拟“下载中”。
+        </div>
+      </Card>
     </div>
   );
 }
