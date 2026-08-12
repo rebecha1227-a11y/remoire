@@ -669,9 +669,10 @@ async def execute_tool(name: str, arguments: dict) -> str:
             return "没有找到这篇日记。"
         if not diary.get("locked"):
             return "这篇日记没有上锁，直接用 read_jinger_diary 就能看。"
-        if diary.get("pin") and pin == diary["pin"]:
+        verified = await diary_interaction_service.verify_diary_pin(diary_id, pin)
+        if verified:
             _unlock_attempts.pop(diary_id, None)
-            return f"密码正确！解锁成功 🎉\n\n【{diary['title']}】\n{diary['content']}"
+            return f"密码正确！解锁成功 🎉\n\n【{verified['title']}】\n{verified['content']}"
         _unlock_attempts[diary_id] = attempts + 1
         remaining = MAX_UNLOCK_ATTEMPTS - attempts - 1
         if remaining > 0:

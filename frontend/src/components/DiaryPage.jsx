@@ -130,7 +130,7 @@ function mapDiaryEntry(entry) {
 
 
 // ── PinPad ──
-function PinPad({ title, subtitle, onComplete, onCancel, errorKey }) {
+function PinPad({ title, subtitle, onComplete, onCancel, errorKey, busy = false }) {
   const [digits, setDigits] = useState([]);
   const [shaking, setShaking] = useState(false);
 
@@ -149,7 +149,7 @@ function PinPad({ title, subtitle, onComplete, onCancel, errorKey }) {
   }, [errorKey]);
 
   function press(d) {
-    if (digits.length >= 4) return;
+    if (busy || digits.length >= 4) return;
     const next = [...digits, d];
     setDigits(next);
     if (next.length === 4) {
@@ -191,12 +191,12 @@ function PinPad({ title, subtitle, onComplete, onCancel, errorKey }) {
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, width: '100%', maxWidth: 220 }}>
         {keys.map((k, i) => k === null ? <div key={i} /> : (
-          <button key={i} onClick={() => k === 'del' ? del() : press(k)} style={{
+          <button key={i} disabled={busy} onClick={() => k === 'del' ? del() : press(k)} style={{
             height: 56, borderRadius: 12,
             background: k === 'del' ? 'transparent' : 'var(--bg-elevated)',
             border: k === 'del' ? 'none' : '1px solid var(--border-light)',
             fontSize: k === 'del' ? 20 : 22,
-            color: 'var(--text-primary)', cursor: 'pointer',
+            color: 'var(--text-primary)', cursor: busy ? 'wait' : 'pointer', opacity: busy ? 0.55 : 1,
             fontFamily: 'var(--font-body)', fontWeight: 300,
           }}>
             {k === 'del' ? '⌫' : k}
@@ -704,9 +704,11 @@ function DiaryMessageBoard({ entry, author, lockedConnie, onAddInteraction, onDe
 }
 
 // ── Content Page ──
-function ContentPage({ entry, author, onAddInteraction, onDeleteInteraction }) {
+function ContentPage({ entry, author, onAddInteraction, onDeleteInteraction, onUnlock }) {
   const [pinUnlocked, setPinUnlocked] = useState(false);
   const [pinErrorKey, setPinErrorKey] = useState(0);
+  const [pinStatus, setPinStatus] = useState('');
+  const [unlocking, setUnlocking] = useState(false);
   const scrollRef = useRef(null);
   useTouchScroll(scrollRef);
 
@@ -720,10 +722,21 @@ function ContentPage({ entry, author, onAddInteraction, onDeleteInteraction }) {
       <div style={{ position: 'relative', width: '100%', height: '100%', background: bgColor }}>
         <PinPad
           title="输入密码"
-          subtitle="这篇日记已上锁"
-          onComplete={(p) => {
-            if (p === (entry.pin || '1234')) { setPinUnlocked(true); }
-            else { setPinErrorKey(k => k + 1); }
+          subtitle={pinStatus || '这篇日记已上锁，正文只会在验证成功后读取'}
+          busy={unlocking}
+          onComplete={async (pin) => {
+            setUnlocking(true);
+            setPinStatus('正在验证…');
+            try {
+              await onUnlock(entry.id, pin);
+              setPinUnlocked(true);
+              setPinStatus('');
+            } catch (error) {
+              setPinStatus(error.message || '密码不正确');
+              setPinErrorKey(key => key + 1);
+            } finally {
+              setUnlocking(false);
+            }
           }}
           errorKey={pinErrorKey}
         />
@@ -793,7 +806,7 @@ function ContentPage({ entry, author, onAddInteraction, onDeleteInteraction }) {
 }
 
 // ── Open Book Component (3D flip, only renders nearby pages) ──
-function OpenBook({ author, entries, onClose, onAddInteraction, onDeleteInteraction }) {
+function OpenBook({ author, entries, onClose, onAddInteraction, onDeleteInteraction, onUnlock }) {
   const isConnie = author === 'connie';
   const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
   const totalPages = entries.length + 1;
@@ -902,7 +915,7 @@ function OpenBook({ author, entries, onClose, onAddInteraction, onDeleteInteract
                   }}>
                     {pageIdx === 0 ?
                       <TOCPage entries={entries} author={author} onSelect={(i) => flipToPage(i + 1)} /> :
-                      <ContentPage entry={entries[pageIdx - 1]} author={author} onAddInteraction={onAddInteraction} onDeleteInteraction={onDeleteInteraction} />
+                      <ContentPage entry={entries[pageIdx - 1]} author={author} onAddInteraction={onAddInteraction} onDeleteInteraction={onDeleteInteraction} onUnlock={onUnlock} />
                     }
                   </div>
                   <div className="diary-page-back" style={{
@@ -1138,6 +1151,18 @@ export default function DiaryPage({ tweaks, nav, active }) {
     updateEntry(diaryId, entry => ({ ...entry, interactions: data.data.items }));
   }
 
+  async function unlockEntry(diaryId, pin) {
+    const response = await apiJsonFetch(`/diary/${diaryId}/verify-pin`, {
+      method: 'POST',
+      body: JSON.stringify({ pin }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.ok || !data.data?.content) {
+      throw new Error(apiErrorMessage(data, '密码验证失败，请稍后再试。'));
+    }
+    updateEntry(diaryId, entry => ({ ...entry, body: data.data.content }));
+  }
+
 
 
   return (
@@ -1153,7 +1178,8 @@ export default function DiaryPage({ tweaks, nav, active }) {
           entries={openBook === 'connie' ? connieDiary : jingerDiary}
           onClose={() => setOpenBook(null)}
           onAddInteraction={addInteraction}
-          onDeleteInteraction={deleteInteraction} />
+          onDeleteInteraction={deleteInteraction}
+          onUnlock={unlockEntry} />
       }
       {writing &&
         <WritingEditor onSave={saveEntry} onCancel={() => setWriting(false)} />

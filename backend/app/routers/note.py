@@ -1,5 +1,6 @@
-from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, ConfigDict
+from typing import Literal
 from app.auth import verify_token
 from app.services import note_service
 
@@ -13,17 +14,26 @@ async def get_unread(_=Depends(verify_token)):
 
 
 class ReadRequest(BaseModel):
-    action: str = "dismiss"
+    model_config = ConfigDict(extra="forbid")
+    action: Literal["dismiss", "keep"] = "dismiss"
 
 
 @router.post("/{note_id}/read")
 async def mark_read(note_id: str, req: ReadRequest, _=Depends(verify_token)):
-    await note_service.mark_read(note_id, req.action)
+    try:
+        await note_service.mark_read(note_id, req.action)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     return {"ok": True}
 
 
 @router.get("")
-async def list_notes(kept_only: bool = False, limit: int = 20, page: int = 1, _=Depends(verify_token)):
+async def list_notes(
+    kept_only: bool = False,
+    limit: int = Query(20, ge=1, le=100),
+    page: int = Query(1, ge=1, le=10000),
+    _=Depends(verify_token),
+):
     offset = (page - 1) * limit
     notes = await note_service.list_notes(kept_only=kept_only, limit=limit, offset=offset)
     return {"ok": True, "data": {"notes": notes}}

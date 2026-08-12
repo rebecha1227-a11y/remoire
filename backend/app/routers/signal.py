@@ -1,8 +1,9 @@
 import uuid
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter
-from fastapi import Depends
-from pydantic import BaseModel
+from fastapi import Depends, Query
+from pydantic import BaseModel, ConfigDict, Field
+from typing import Literal
 from app.auth import verify_token
 from app.database import get_db
 
@@ -12,19 +13,21 @@ BJ_TZ = timezone(timedelta(hours=8))
 
 
 class AppEventRequest(BaseModel):
-    app_name: str
-    event_type: str = "auto"
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    app_name: str = Field(min_length=1, max_length=120)
+    event_type: Literal["auto", "open", "close"] = "auto"
 
 
 class DeviceSnapshotRequest(BaseModel):
-    latitude: float | None = None
-    longitude: float | None = None
-    city: str | None = None
-    district: str | None = None
-    weather: str | None = None
-    battery_level: int | None = None
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    latitude: float | None = Field(default=None, ge=-90, le=90)
+    longitude: float | None = Field(default=None, ge=-180, le=180)
+    city: str | None = Field(default=None, max_length=120)
+    district: str | None = Field(default=None, max_length=120)
+    weather: str | None = Field(default=None, max_length=120)
+    battery_level: int | None = Field(default=None, ge=0, le=100)
     battery_charging: bool | None = None
-    steps: int | None = None
+    steps: int | None = Field(default=None, ge=0, le=1000000)
 
 
 @router.post("/app-event")
@@ -79,7 +82,7 @@ async def report_device_snapshot(req: DeviceSnapshotRequest, _=Depends(verify_to
 
 
 @router.get("/recent-activity")
-async def get_recent_activity(hours: int = 6, _=Depends(verify_token)):
+async def get_recent_activity(hours: int = Query(6, ge=1, le=168), _=Depends(verify_token)):
     since = (datetime.now(BJ_TZ) - timedelta(hours=hours)).isoformat()
     async with get_db() as db:
         async with db.execute(

@@ -3,9 +3,15 @@ import uuid
 from datetime import datetime
 from sqlite3 import IntegrityError
 from app.database import get_db
+from app.services.diary_pin import hash_pin
 
 
-async def list_diaries(author: str = "connie", limit: int = 50, offset: int = 0) -> list[dict]:
+async def list_diaries(
+    author: str = "connie",
+    limit: int = 50,
+    offset: int = 0,
+    include_locked_content: bool = True,
+) -> list[dict]:
     async with get_db() as db:
         async with db.execute(
             """SELECT id, title, content, author, source, locked, pin, created_at, updated_at
@@ -21,11 +27,11 @@ async def list_diaries(author: str = "connie", limit: int = 50, offset: int = 0)
         {
             "id": r["id"],
             "title": r["title"],
-            "content": r["content"],
+            "content": r["content"] if include_locked_content or not bool(r["locked"]) else "",
             "author": r["author"],
             "source": r["source"],
             "locked": bool(r["locked"]),
-            "pin": r["pin"],
+            "pin": None,
             "created_at": r["created_at"],
             "updated_at": r["updated_at"],
         }
@@ -46,13 +52,15 @@ async def create_diary(
     diary_id = str(uuid.uuid4())
     now = created_at or datetime.utcnow().isoformat()
     meta_json = json.dumps(meta, ensure_ascii=False) if meta else None
+    pin_hash = hash_pin(pin) if locked else None
 
     async with get_db() as db:
         try:
             await db.execute(
-                """INSERT INTO diary_entries (id, title, content, author, source, meta_json, locked, pin, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (diary_id, title, content, author, source, meta_json, int(locked), pin, now, now),
+                """INSERT INTO diary_entries
+                   (id, title, content, author, source, meta_json, locked, pin, pin_hash, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)""",
+                (diary_id, title, content, author, source, meta_json, int(locked), pin_hash, now, now),
             )
             await db.commit()
         except IntegrityError:
@@ -75,7 +83,7 @@ async def create_diary(
                 "author": row["author"],
                 "source": row["source"],
                 "locked": bool(row["locked"]),
-                "pin": row["pin"],
+                "pin": None,
                 "created_at": row["created_at"],
                 "updated_at": row["updated_at"],
             }
@@ -87,7 +95,7 @@ async def create_diary(
         "author": author,
         "source": source,
         "locked": locked,
-        "pin": pin,
+        "pin": None,
         "created_at": now,
         "updated_at": now,
     }

@@ -6,6 +6,7 @@ from pathlib import Path
 from app.database import get_db
 from app.llm import call_llm
 from app.services import memory_service, model_settings_service
+from app.services.diary_pin import hash_pin, verify_pin as verify_pin_hash
 
 
 logger = logging.getLogger(__name__)
@@ -20,7 +21,7 @@ def _load_prompt(filename: str) -> str:
 async def get_diary(diary_id: str) -> dict | None:
     async with get_db() as db:
         async with db.execute(
-            """SELECT id, title, content, author, source, locked, pin, created_at, updated_at
+            """SELECT id, title, content, author, source, locked, pin_hash, created_at, updated_at
                FROM diary_entries WHERE id = ?""",
             (diary_id,),
         ) as cur:
@@ -34,7 +35,7 @@ async def get_diary(diary_id: str) -> dict | None:
         "author": row["author"],
         "source": row["source"],
         "locked": bool(row["locked"]),
-        "pin": row["pin"],
+        "pin_hash": row["pin_hash"],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }
@@ -54,10 +55,24 @@ async def list_interactions(diary_id: str) -> list[dict]:
     return [_row_to_interaction(row) for row in rows]
 
 
-async def delete_interaction(interaction_id: str) -> bool:
+async def delete_interaction(
+    interaction_id: str,
+    *,
+    diary_id: str | None = None,
+    actor: str | None = None,
+) -> bool:
+    clauses = ["id = ?"]
+    params = [interaction_id]
+    if diary_id is not None:
+        clauses.append("diary_id = ?")
+        params.append(diary_id)
+    if actor is not None:
+        clauses.append("actor = ?")
+        params.append(actor)
     async with get_db() as db:
         cur = await db.execute(
-            "DELETE FROM diary_interactions WHERE id = ?", (interaction_id,)
+            f"DELETE FROM diary_interactions WHERE {' AND '.join(clauses)}",
+            tuple(params),
         )
         await db.commit()
         return cur.rowcount > 0
@@ -97,10 +112,11 @@ async def create_interaction(
 
 async def set_diary_lock(diary_id: str, locked: bool, pin: str | None = None, actor: str = "connie") -> dict | None:
     now = datetime.utcnow().isoformat()
+    pin_hash = hash_pin(pin) if locked and pin else None
     async with get_db() as db:
         await db.execute(
-            "UPDATE diary_entries SET locked = ?, pin = ?, updated_at = ? WHERE id = ?",
-            (int(locked), pin, now, diary_id),
+            "UPDATE diary_entries SET locked = ?, pin = NULL, pin_hash = ?, updated_at = ? WHERE id = ?",
+            (int(locked), pin_hash, now, diary_id),
         )
         await db.commit()
     diary = await get_diary(diary_id)
@@ -112,6 +128,17 @@ async def set_diary_lock(diary_id: str, locked: bool, pin: str | None = None, ac
             content="上锁了这篇日记" if locked else "解锁了这篇日记",
         )
     return diary
+
+
+async def verify_diary_pin(diary_id: str, pin: str) -> dict | None:
+    diary = await get_diary(diary_id)
+    if not diary or diary.get("author") != "jinger" or not diary.get("locked"):
+        return None
+    if not verify_pin_hash(pin, diary.get("pin_hash")):
+        return None
+    public = dict(diary)
+    public.pop("pin_hash", None)
+    return public
 
 
 async def respond_unlock(diary_id: str, grant: bool, note: str | None = None) -> dict | None:

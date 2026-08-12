@@ -145,6 +145,8 @@ async def _validated_public_base(base_url: str) -> dict:
     parsed = urlparse(base_url)
     if parsed.scheme != "https" or not parsed.hostname:
         raise UnsafeBaseUrlError("拉取模型列表只允许使用 https 地址")
+    if parsed.username or parsed.password or parsed.query or parsed.fragment:
+        raise UnsafeBaseUrlError("API Base URL 不能包含账号、密码、查询参数或片段")
 
     host = parsed.hostname.lower()
     if host == "localhost" or host.endswith(".localhost"):

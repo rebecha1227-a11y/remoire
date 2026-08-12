@@ -6,6 +6,7 @@ import asyncio
 import base64
 import hashlib
 import hmac
+import ipaddress
 import secrets
 import time
 from collections import defaultdict, deque
@@ -69,8 +70,19 @@ def verify_password(password: str, encoded: str) -> bool:
 
 
 def _client_key(request: Request) -> str:
-    forwarded = request.headers.get("x-forwarded-for", "").split(",", 1)[0].strip()
-    return forwarded or (request.client.host if request.client else "unknown")
+    peer = request.client.host if request.client else "unknown"
+    try:
+        trusted_proxy = ipaddress.ip_address(peer).is_loopback
+    except ValueError:
+        trusted_proxy = False
+    if trusted_proxy:
+        forwarded = request.headers.get("x-forwarded-for", "").split(",", 1)[0].strip()
+        if forwarded:
+            try:
+                return str(ipaddress.ip_address(forwarded))
+            except ValueError:
+                pass
+    return peer
 
 
 def login_is_rate_limited(request: Request) -> bool:

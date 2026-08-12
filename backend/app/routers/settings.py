@@ -1,40 +1,47 @@
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from datetime import datetime, timezone, timedelta
 
 from app.auth import verify_token
 from app.database import get_db
 from app.services import model_settings_service
+import json
+import logging
 
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
+logger = logging.getLogger(__name__)
 
 
 class PresetCreateRequest(BaseModel):
-    nickname: str
-    provider: str | None = "openai-compatible"
-    api_key: str
-    base_url: str
-    model_name: str
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    nickname: str = Field(min_length=1, max_length=100)
+    provider: str | None = Field(default="openai-compatible", max_length=100)
+    api_key: str = Field(min_length=1, max_length=4096)
+    base_url: str = Field(min_length=1, max_length=2048)
+    model_name: str = Field(min_length=1, max_length=256)
 
 
 class PresetUpdateRequest(BaseModel):
-    nickname: str | None = None
-    provider: str | None = None
-    api_key: str | None = None
-    base_url: str | None = None
-    model_name: str | None = None
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    nickname: str | None = Field(default=None, min_length=1, max_length=100)
+    provider: str | None = Field(default=None, min_length=1, max_length=100)
+    api_key: str | None = Field(default=None, min_length=1, max_length=4096)
+    base_url: str | None = Field(default=None, min_length=1, max_length=2048)
+    model_name: str | None = Field(default=None, min_length=1, max_length=256)
 
 
 class SlotUpdateRequest(BaseModel):
-    preset_id: str | None = None
+    model_config = ConfigDict(extra="forbid")
+    preset_id: str | None = Field(default=None, max_length=100)
     extended_thinking: bool | None = None
 
 
 class ModelProbeRequest(BaseModel):
-    api_key: str
-    base_url: str
-    model_name: str | None = None
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    api_key: str = Field(min_length=1, max_length=4096)
+    base_url: str = Field(min_length=1, max_length=2048)
+    model_name: str | None = Field(default=None, min_length=1, max_length=256)
 
 
 @router.get("/model-presets")
@@ -79,8 +86,9 @@ async def list_models_for_preset(preset_id: str, _=Depends(verify_token)):
         raise HTTPException(status_code=404, detail=str(exc))
     except model_settings_service.UnsafeBaseUrlError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"拉取模型列表失败：{exc}")
+    except Exception:
+        logger.exception("saved model list request failed preset_id=%s", preset_id)
+        raise HTTPException(status_code=502, detail="拉取模型列表失败，请检查接口地址和密钥")
 
 
 @router.post("/model-presets/models")
@@ -93,8 +101,9 @@ async def list_models_for_config(req: ModelProbeRequest, _=Depends(verify_token)
         return {"ok": True, "data": models}
     except model_settings_service.UnsafeBaseUrlError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"拉取模型列表失败：{exc}")
+    except Exception:
+        logger.exception("draft model list request failed")
+        raise HTTPException(status_code=502, detail="拉取模型列表失败，请检查接口地址和密钥")
 
 
 @router.post("/model-presets/test")
@@ -110,8 +119,9 @@ async def test_model_config(req: ModelProbeRequest, _=Depends(verify_token)):
         return {"ok": True, "data": result}
     except model_settings_service.UnsafeBaseUrlError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"模型检测失败：{exc}")
+    except Exception:
+        logger.exception("draft model probe failed")
+        raise HTTPException(status_code=502, detail="模型检测失败，请检查接口地址、密钥和模型名称")
 
 
 @router.post("/model-presets/{preset_id}/test")
@@ -123,8 +133,9 @@ async def test_saved_model_config(preset_id: str, _=Depends(verify_token)):
         raise HTTPException(status_code=404, detail=str(exc))
     except model_settings_service.UnsafeBaseUrlError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"模型检测失败：{exc}")
+    except Exception:
+        logger.exception("saved model probe failed preset_id=%s", preset_id)
+        raise HTTPException(status_code=502, detail="模型检测失败，请检查接口地址、密钥和模型名称")
 
 
 @router.get("/slots")
@@ -146,17 +157,32 @@ async def update_model_slot(slot: str, req: SlotUpdateRequest, _=Depends(verify_
 # ── 主动消息设置 ──
 
 class ProactiveSettingsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     enabled: bool | None = None
-    start_hour: int | None = None
-    end_hour: int | None = None
+    start_hour: int | None = Field(default=None, ge=0, le=23)
+    end_hour: int | None = Field(default=None, ge=0, le=23)
     allow_night: bool | None = None
-    max_daily: int | None = None
-    cooldown_minutes: int | None = None
-    max_burst: int | None = None
-    max_rounds: int | None = None
-    round_interval_minutes: int | None = None
+    max_daily: int | None = Field(default=None, ge=1, le=20)
+    cooldown_minutes: int | None = Field(default=None, ge=5, le=1440)
+    max_burst: int | None = Field(default=None, ge=1, le=20)
+    max_rounds: int | None = Field(default=None, ge=1, le=10)
+    round_interval_minutes: int | None = Field(default=None, ge=5, le=1440)
     end_on_reply: bool | None = None
-    types_json: str | None = None
+    types_json: str | None = Field(default=None, max_length=500)
+
+    @field_validator("types_json")
+    @classmethod
+    def validate_types_json(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError as exc:
+            raise ValueError("消息类型配置不是有效 JSON") from exc
+        allowed = {"care", "reminder", "followup", "special"}
+        if not isinstance(parsed, dict) or set(parsed) - allowed or any(type(item) is not bool for item in parsed.values()):
+            raise ValueError("消息类型配置包含无效字段")
+        return json.dumps(parsed, ensure_ascii=False, separators=(",", ":"))
 
 
 BJ_TZ = timezone(timedelta(hours=8))

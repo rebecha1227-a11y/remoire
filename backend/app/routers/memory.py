@@ -1,47 +1,53 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from datetime import date
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from app.auth import verify_token
 from app.services import memory_service
 
 router = APIRouter(prefix="/api/memory", tags=["memory"])
+Tag = Annotated[str, Field(min_length=1, max_length=100)]
 
 
 class AcceptRequest(BaseModel):
-    content: str | None = None
-    memory_type: str | None = None
-    tags: list[str] | None = None
-    layer: str | None = None
-    event_date: str | None = None
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    content: str | None = Field(default=None, min_length=1, max_length=2000)
+    memory_type: Literal["fact", "event", "unresolved", "date", "consciousness"] | None = None
+    tags: list[Tag] | None = Field(default=None, max_length=20)
+    layer: Literal["core", "long", "short", "consciousness"] | None = None
+    event_date: date | None = None
 
 
 class UpdateRequest(BaseModel):
-    content: str | None = None
-    tags: list[str] | None = None
-    layer: str | None = None
-    memory_type: str | None = None
-    event_date: str | None = None
-    event_time: str | None = None
-    valence: float | None = None
-    arousal: float | None = None
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    content: str | None = Field(default=None, min_length=1, max_length=2000)
+    tags: list[Tag] | None = Field(default=None, max_length=20)
+    layer: Literal["core", "long", "short", "consciousness"] | None = None
+    memory_type: Literal["fact", "event", "unresolved", "date", "consciousness"] | None = None
+    event_date: date | None = None
+    event_time: str | None = Field(default=None, max_length=32)
+    valence: float | None = Field(default=None, ge=0.0, le=1.0)
+    arousal: float | None = Field(default=None, ge=0.0, le=1.0)
     unresolved: bool | None = None
     pinned: bool | None = None
 
 
 class MoveLayerRequest(BaseModel):
-    target_layer: str
+    model_config = ConfigDict(extra="forbid")
+    target_layer: Literal["core", "long", "short", "consciousness"]
 
 
 class RecallRequest(BaseModel):
-    query: str
-    limit: int = 5
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    query: str = Field(min_length=1, max_length=2000)
+    limit: int = Field(default=5, ge=1, le=20)
 
 
 class CreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     content: str = Field(min_length=1, max_length=2000)
-    tags: list[str] = Field(default_factory=list, max_length=20)
+    tags: list[Tag] = Field(default_factory=list, max_length=20)
     layer: Literal["core", "long", "short", "consciousness"] = "long"
     memory_type: Literal["fact", "event", "unresolved", "date", "consciousness"] = "fact"
     event_date: date | None = None
@@ -55,9 +61,9 @@ class CreateRequest(BaseModel):
 
 @router.get("/candidates")
 async def get_candidates(
-    status: str = Query("pending"),
-    limit: int = Query(20),
-    offset: int = Query(0),
+    status: Literal["pending", "accepted", "rejected"] = Query("pending"),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0, le=100000),
     _=Depends(verify_token),
 ):
     candidates = await memory_service.list_candidates(status=status, limit=limit, offset=offset)
@@ -73,7 +79,7 @@ async def accept_candidate(candidate_id: str, req: AcceptRequest = None, _=Depen
             memory_type=req.memory_type if req else None,
             tags=req.tags if req else None,
             layer=req.layer if req else None,
-            event_date=req.event_date if req else None,
+            event_date=req.event_date.isoformat() if req and req.event_date else None,
         )
         return {"ok": True, "data": result}
     except ValueError as e:
@@ -99,8 +105,8 @@ async def get_stats(_=Depends(verify_token)):
 
 @router.get("/heatmap")
 async def get_heatmap(
-    year: int = Query(...),
-    month: int = Query(...),
+    year: int = Query(..., ge=2000, le=2100),
+    month: int = Query(..., ge=1, le=12),
     _=Depends(verify_token),
 ):
     data = await memory_service.get_heatmap(year, month)
@@ -128,20 +134,21 @@ async def create_memory(req: CreateRequest, _=Depends(verify_token)):
 
 @router.get("")
 async def get_memories(
-    limit: int = Query(50),
-    offset: int = Query(0),
-    search: str | None = Query(None),
-    layer: str | None = Query(None),
-    memory_type: str | None = Query(None),
-    date_from: str | None = Query(None),
-    date_to: str | None = Query(None),
-    sort_by: str = Query("created_at"),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0, le=100000),
+    search: str | None = Query(None, max_length=200),
+    layer: Literal["core", "long", "short", "consciousness"] | None = Query(None),
+    memory_type: Literal["fact", "event", "unresolved", "date", "consciousness"] | None = Query(None),
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
+    sort_by: Literal["created_at", "weight"] = Query("created_at"),
     _=Depends(verify_token),
 ):
     result = await memory_service.list_memories(
         limit=limit, offset=offset, search=search,
         layer=layer, memory_type=memory_type,
-        date_from=date_from, date_to=date_to,
+        date_from=date_from.isoformat() if date_from else None,
+        date_to=date_to.isoformat() if date_to else None,
         sort_by=sort_by,
     )
     return {"ok": True, "data": result}
@@ -177,7 +184,7 @@ async def update_memory(memory_id: str, req: UpdateRequest, _=Depends(verify_tok
         if "memory_type" in fields:
             kwargs["memory_type"] = req.memory_type
         if "event_date" in fields:
-            kwargs["event_date"] = req.event_date
+            kwargs["event_date"] = req.event_date.isoformat() if req.event_date else None
         else:
             kwargs["event_date"] = ...
         if "event_time" in fields:

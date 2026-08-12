@@ -91,8 +91,8 @@ async def create_reminder(content: str, remind_at: str, conversation_id: str | N
     now = datetime.utcnow().isoformat()
     async with get_db() as db:
         await db.execute(
-            "INSERT INTO reminders (id, content, remind_at, status, conversation_id, created_at) VALUES (?, ?, ?, 'pending', ?, ?)",
-            (rid, content, remind_at, conversation_id, now),
+            "INSERT INTO reminders (id, content, remind_at, urgent, status, conversation_id, created_at) VALUES (?, ?, ?, ?, 'pending', ?, ?)",
+            (rid, content, remind_at, int(urgent), conversation_id, now),
         )
         await db.commit()
     return {"id": rid, "content": content, "remind_at": remind_at, "urgent": urgent, "status": "pending"}

@@ -1,5 +1,7 @@
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+from typing import Literal
+from datetime import date, datetime
 from app.auth import verify_token
 from app.services import reminder_service
 
@@ -7,15 +9,23 @@ router = APIRouter(prefix="/api/reminder", tags=["reminder"])
 
 
 class CreateRequest(BaseModel):
-    content: str
-    remind_at: str
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    content: str = Field(min_length=1, max_length=1000)
+    remind_at: str = Field(pattern=r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$")
     urgent: bool = False
+
+    @field_validator("remind_at")
+    @classmethod
+    def _validate_remind_at(cls, value: str) -> str:
+        datetime.strptime(value, "%Y-%m-%d %H:%M")
+        return value
 
 
 @router.get("")
 async def get_reminders(
-    status: str | None = Query("pending"),
-    limit: int = Query(20),
+    status: Literal["pending", "done", "dismissed"] | None = Query("pending"),
+    limit: int = Query(20, ge=1, le=200),
     _=Depends(verify_token),
 ):
     items = await reminder_service.list_reminders(status=status, limit=limit)
@@ -32,7 +42,7 @@ async def get_today(
 
 @router.get("/upcoming")
 async def get_upcoming(
-    days: int = Query(7),
+    days: int = Query(7, ge=1, le=365),
     _=Depends(verify_token),
 ):
     items = await reminder_service.get_upcoming_reminders(days=days)
@@ -41,10 +51,10 @@ async def get_upcoming(
 
 @router.get("/date/{date_str}")
 async def get_by_date(
-    date_str: str,
+    date_str: date,
     _=Depends(verify_token),
 ):
-    items = await reminder_service.get_reminders_for_date(date_str)
+    items = await reminder_service.get_reminders_for_date(date_str.isoformat())
     return {"ok": True, "data": items}
 
 

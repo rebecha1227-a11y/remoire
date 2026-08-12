@@ -95,6 +95,7 @@ async def init_db():
                 id TEXT PRIMARY KEY,
                 content TEXT NOT NULL,
                 remind_at TEXT NOT NULL,
+                urgent INTEGER NOT NULL DEFAULT 0,
                 status TEXT NOT NULL DEFAULT 'pending',
                 conversation_id TEXT REFERENCES conversations(id),
                 created_at TEXT NOT NULL
@@ -118,6 +119,7 @@ async def init_db():
                 meta_json TEXT,
                 locked INTEGER NOT NULL DEFAULT 0,
                 pin TEXT,
+                pin_hash TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
@@ -359,6 +361,7 @@ async def init_db():
             "ALTER TABLE diary_entries ADD COLUMN meta_json TEXT",
             "ALTER TABLE diary_entries ADD COLUMN locked INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE diary_entries ADD COLUMN pin TEXT",
+            "ALTER TABLE diary_entries ADD COLUMN pin_hash TEXT",
             "ALTER TABLE diary_interactions ADD COLUMN seen_by_connie INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE diary_interactions ADD COLUMN seen_by_jinger INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE messages ADD COLUMN image TEXT",
@@ -384,6 +387,7 @@ async def init_db():
             "ALTER TABLE memory_candidates ADD COLUMN proposed_arousal REAL DEFAULT 0.0",
             "ALTER TABLE memory_candidates ADD COLUMN proposed_unresolved INTEGER DEFAULT 0",
             "ALTER TABLE push_subscriptions ADD COLUMN display_name TEXT DEFAULT 'Connie'",
+            "ALTER TABLE reminders ADD COLUMN urgent INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE proactive_message_settings ADD COLUMN start_hour INTEGER NOT NULL DEFAULT 9",
             "ALTER TABLE proactive_message_settings ADD COLUMN end_hour INTEGER NOT NULL DEFAULT 23",
             "ALTER TABLE proactive_message_settings ADD COLUMN allow_night INTEGER NOT NULL DEFAULT 0",
@@ -399,6 +403,17 @@ async def init_db():
                 await db.execute(col_sql)
             except Exception:
                 pass
+        # Upgrade legacy recoverable PINs before the application starts serving.
+        from app.services.diary_pin import hash_pin
+        async with db.execute(
+            "SELECT id, pin FROM diary_entries WHERE pin IS NOT NULL AND pin <> '' AND pin_hash IS NULL"
+        ) as cursor:
+            legacy_pins = await cursor.fetchall()
+        for row in legacy_pins:
+            await db.execute(
+                "UPDATE diary_entries SET pin_hash = ?, pin = NULL WHERE id = ?",
+                (hash_pin(row["pin"]), row["id"]),
+            )
         await db.execute("""
             CREATE UNIQUE INDEX IF NOT EXISTS idx_diary_entries_auto_day
                 ON diary_entries(author, source, json_extract(meta_json, '$.date_key'))

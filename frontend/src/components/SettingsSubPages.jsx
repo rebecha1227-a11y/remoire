@@ -84,9 +84,12 @@ export function ProactiveSettings({ onBack }) {
   const [status, setStatus] = useState('正在读取设置…');
 
   useEffect(() => {
-    apiFetch('/settings/proactive').then(res => {
-      if (res?.ok && res.data) {
-        const d = res.data;
+    apiFetch('/settings/proactive').then(async response => {
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok || !payload.data) {
+        throw new Error(apiErrorMessage(payload, '设置加载失败'));
+      }
+      const d = payload.data;
         setCfg(c => ({
           ...c,
           enabled: d.enabled ?? true,
@@ -102,7 +105,6 @@ export function ProactiveSettings({ onBack }) {
           types: d.types ?? c.types,
         }));
         setStatus('');
-      }
     }).catch(() => setStatus('设置加载失败，请稍后重试。'));
   }, []);
 
@@ -112,14 +114,18 @@ export function ProactiveSettings({ onBack }) {
       method: 'PUT',
       body: JSON.stringify(patch),
       });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(apiErrorMessage(payload, '设置保存失败'));
       setStatus('已保存');
+      return true;
     } catch {
       setStatus('保存失败，请稍后重试。');
+      return false;
     }
   };
 
   const set = (k, v) => {
+    const previous = cfg[k];
     setCfg(c => ({ ...c, [k]: v }));
     const keyMap = {
       enabled: 'enabled', allowNight: 'allow_night',
@@ -127,19 +133,20 @@ export function ProactiveSettings({ onBack }) {
       maxBurst: 'max_burst', maxRounds: 'max_rounds',
       roundInterval: 'round_interval_minutes', endOnReply: 'end_on_reply',
     };
-    if (k === 'startTime') {
-      save({ start_hour: parseInt(v.split(':')[0], 10) });
-    } else if (k === 'endTime') {
-      save({ end_hour: parseInt(v.split(':')[0], 10) });
-    } else if (keyMap[k] !== undefined) {
-      save({ [keyMap[k]]: v });
-    }
+    let patch;
+    if (k === 'startTime') patch = { start_hour: parseInt(v.split(':')[0], 10) };
+    else if (k === 'endTime') patch = { end_hour: parseInt(v.split(':')[0], 10) };
+    else if (keyMap[k] !== undefined) patch = { [keyMap[k]]: v };
+    if (patch) void save(patch).then(saved => {
+      if (!saved) setCfg(current => current[k] === v ? { ...current, [k]: previous } : current);
+    });
   };
   const setType = (k) => {
-    setCfg(c => {
-      const newTypes = { ...c.types, [k]: !c.types[k] };
-      save({ types_json: JSON.stringify(newTypes) });
-      return { ...c, types: newTypes };
+    const previous = cfg.types;
+    const next = { ...previous, [k]: !previous[k] };
+    setCfg(current => ({ ...current, types: next }));
+    void save({ types_json: JSON.stringify(next) }).then(saved => {
+      if (!saved) setCfg(current => current.types === next ? { ...current, types: previous } : current);
     });
   };
 

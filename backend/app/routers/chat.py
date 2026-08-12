@@ -2,7 +2,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from app.auth import verify_token
 from app.services.chat_service import get_or_create_conversation, get_history, search_messages, stream_chat, debug_prompt
 from app.services.image_storage import MAX_ENCODED_IMAGE_CHARS, decode_image
@@ -11,6 +11,7 @@ import json
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 class SendRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     message: str = Field(min_length=1, max_length=20_000)
     conversation_id: str | None = Field(default=None, max_length=64)
     image: str | None = Field(default=None, max_length=MAX_ENCODED_IMAGE_CHARS)

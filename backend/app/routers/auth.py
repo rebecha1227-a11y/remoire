@@ -1,7 +1,7 @@
 import hmac
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app import config
 from app.auth import (
@@ -20,6 +20,7 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
 class LoginRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     username: str = Field(min_length=1, max_length=100)
     password: str = Field(min_length=1, max_length=500)
 

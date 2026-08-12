@@ -4,9 +4,10 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
+from starlette.requests import Request
 
 from app import config, database
-from app.auth import make_password_hash, verify_mcp_token, verify_password, verify_token
+from app.auth import _client_key, make_password_hash, verify_mcp_token, verify_password, verify_token
 from app.database import init_db
 from app.routers import auth as auth_router
 from app.routers import autonomous as autonomous_router
@@ -141,6 +142,22 @@ class AuthTests(unittest.TestCase):
         self.login()
         self.assertEqual(self.client.get("/api/autonomous/logs").status_code, 200)
         self.assertEqual(self.client.get("/api/autonomous/dates").status_code, 200)
+
+    def test_forwarded_ip_is_trusted_only_from_loopback_proxy(self):
+        def request_for(peer: str, forwarded: str) -> Request:
+            return Request({
+                "type": "http",
+                "method": "POST",
+                "path": "/api/auth/login",
+                "headers": [(b"x-forwarded-for", forwarded.encode("ascii"))],
+                "client": (peer, 1234),
+                "scheme": "https",
+                "server": ("remoire.cc", 443),
+                "query_string": b"",
+            })
+
+        self.assertEqual(_client_key(request_for("127.0.0.1", "203.0.113.7")), "203.0.113.7")
+        self.assertEqual(_client_key(request_for("198.51.100.4", "203.0.113.7")), "198.51.100.4")
 
 
 if __name__ == "__main__":
