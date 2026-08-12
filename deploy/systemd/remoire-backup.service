@@ -1,0 +1,22 @@
+[Unit]
+Description=Create and verify a Remoire database backup
+Documentation=https://github.com/rebecha1227-a11y/remoire
+After=remoire.service
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/opt/remoire/backend
+ExecStart=/opt/remoire/backend/venv/bin/python /opt/remoire/backend/scripts/backup_database.py --database /opt/remoire/backend/data/remoire.db --backup-dir /root/backups --retention-days 30
+UMask=0077
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/root/backups /opt/remoire/backend/data
+
+[Install]
+WantedBy=multi-user.target

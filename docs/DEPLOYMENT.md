@@ -6,6 +6,8 @@
 > 这份指南假设你从未部署过后端服务，只用过 GitHub Pages。
 > 每一步都会解释"为什么"，不会丢给你一行命令就跑。
 
+> **生产环境提示**：本文保留 `/opt/our-nest` 作为通用搭建示例。Remoire 当前生产环境使用 `/opt/remoire`、`remoire.service`、`remoire-mcp.service` 和 Streamable HTTP `/mcp`。维护现有生产环境时，以 [OPERATIONS.md](./OPERATIONS.md) 为准。
+
 ---
 
 ## 一、整体架构（先理解再动手）
@@ -590,23 +592,21 @@ ollama pull nomic-embed-text
 
 ## 十二、自动备份
 
-### 设置每日自动备份
+生产环境使用仓库内置的 `backup_database.py` 和 systemd timer。它不依赖服务器安装 `sqlite3` 命令行，并会验证完整性、生成 SHA-256、原子发布与保留 30 天。
 
 ```bash
-crontab -e
+install -d -m 755 /opt/remoire/backend/scripts
+install -m 755 backend/scripts/backup_database.py /opt/remoire/backend/scripts/
+install -m 644 deploy/systemd/remoire-backup.service /etc/systemd/system/
+install -m 644 deploy/systemd/remoire-backup.timer /etc/systemd/system/
+systemctl daemon-reload
+systemd-analyze verify /etc/systemd/system/remoire-backup.service \
+  /etc/systemd/system/remoire-backup.timer
+systemctl enable --now remoire-backup.timer
+systemctl start remoire-backup.service
 ```
 
-在打开的编辑器里添加两行：
-
-```cron
-# 每天凌晨 4 点备份数据库
-0 4 * * * sqlite3 /opt/our-nest/backend/data/remoire.db ".backup '/root/backups/remoire-$(date +\%Y\%m\%d).db'"
-
-# 每天凌晨 5 点清理 30 天前的旧备份
-0 5 * * * find /root/backups -name "remoire-*.db" -mtime +30 -delete
-```
-
-为什么用 `sqlite3 ".backup"` 而不是直接 `cp`：Remoire 使用 SQLite WAL mode，运行中可能同时存在 `.db`、`.db-wal`、`.db-shm`。`.backup` 能生成一致的数据库快照，适合在线备份。
+为什么不能直接 `cp`：Remoire 使用 SQLite WAL mode，运行中可能同时存在 `.db`、`.db-wal`、`.db-shm`。SQLite 在线备份 API 才能生成一致快照。
 
 ### 手动备份到你自己的电脑
 
@@ -615,7 +615,7 @@ crontab -e
 scp root@你的VPS_IP:/root/backups/remoire-最近日期.db ~/Downloads/remoire-backup.db
 ```
 
-建议每周手动备份一次到本地，以防万一。
+建议每周下载一份到本地或另一家存储服务，以防 VPS 整盘失效。完整恢复演练见 [OPERATIONS.md](./OPERATIONS.md)。
 
 ## 十三、日常维护
 

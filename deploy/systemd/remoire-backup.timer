@@ -1,0 +1,12 @@
+[Unit]
+Description=Run the verified Remoire database backup every day
+
+[Timer]
+OnCalendar=*-*-* 04:00:00 Asia/Shanghai
+Persistent=true
+AccuracySec=1min
+RandomizedDelaySec=5min
+Unit=remoire-backup.service
+
+[Install]
+WantedBy=timers.target

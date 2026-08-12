@@ -756,20 +756,21 @@ backend/migrations/
 
 ## 七、备份策略
 
-```bash
-# 每天凌晨 4 点自动备份（cron）
-0 4 * * * sqlite3 /opt/our-nest/backend/data/remoire.db ".backup '/root/backups/remoire-$(date +\%Y\%m\%d).db'"
+生产环境使用 `backend/scripts/backup_database.py` 与 `remoire-backup.timer`，每天北京时间 04:00 创建在线一致性快照，执行 `PRAGMA quick_check`，生成 SHA-256，并保留最近 30 天。
 
-# 保留最近 30 天备份，自动清理旧的
-0 5 * * * find /root/backups -name "remoire-*.db" -mtime +30 -delete
+```bash
+systemctl start remoire-backup.service
+systemctl list-timers remoire-backup.timer --no-pager
+journalctl -u remoire-backup.service -n 10 --no-pager
 ```
 
 手动备份到本地电脑：
 ```bash
-scp root@你的VPS:/root/backups/remoire-最近日期.db ~/Downloads/remoire-backup.db
+scp root@你的VPS:/root/backups/remoire-YYYYMMDDTHHMMSSZ.db ~/Downloads/
+scp root@你的VPS:/root/backups/remoire-YYYYMMDDTHHMMSSZ.db.sha256 ~/Downloads/
 ```
 
-Remoire 使用 SQLite WAL mode，运行中备份不要直接 `cp` 主 `.db` 文件。优先使用 `sqlite3 ".backup"` 生成一致快照。
+Remoire 使用 SQLite WAL mode，运行中备份不要直接 `cp` 主 `.db` 文件。恢复与演练步骤见 `docs/OPERATIONS.md`。
 
 ---
 
