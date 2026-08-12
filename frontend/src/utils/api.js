@@ -54,3 +54,11 @@ export function apiJsonFetch(path, options = {}) {
     },
   });
 }
+
+export function apiErrorMessage(payload, fallback = '请求未能完成') {
+  if (typeof payload?.error?.message === 'string' && payload.error.message.trim()) return payload.error.message;
+  if (typeof payload?.error === 'string' && payload.error.trim()) return payload.error;
+  if (typeof payload?.detail?.message === 'string' && payload.detail.message.trim()) return payload.detail.message;
+  if (typeof payload?.detail === 'string' && payload.detail.trim()) return payload.detail;
+  return fallback;
+}

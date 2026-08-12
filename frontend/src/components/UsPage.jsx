@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { SectionLabel, Stack } from './primitives';
 import RoomShell from './RoomShell';
 import MemoryPalace from './MemoryPalace';
-import { apiFetch, apiJsonFetch } from '../utils/api';
+import { apiErrorMessage, apiFetch, apiJsonFetch } from '../utils/api';
 
 const DEFAULT_SPECIAL_DATES = {
   '01-01': '元旦',
@@ -258,7 +258,7 @@ export default function UsPage({ tweaks = {}, nav }) {
     try {
       const res = await apiJsonFetch(`/reminder/${id}/done`, { method: 'POST', body: '{}' });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.ok) throw new Error(data.detail || data.error || '提醒更新失败');
+      if (!res.ok || !data.ok) throw new Error(apiErrorMessage(data, '提醒更新失败'));
       setReminders(r => r.map(x => x.id === id ? { ...x, status: 'done' } : x));
       setTodayReminders(r => r.map(x => x.id === id ? { ...x, status: 'done' } : x));
       if (selectedDay) handleDaySelect(selectedDay);
@@ -272,7 +272,7 @@ export default function UsPage({ tweaks = {}, nav }) {
     try {
       const res = await apiJsonFetch(`/reminder/${id}/dismiss`, { method: 'POST', body: '{}' });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.ok) throw new Error(data.detail || data.error || '提醒忽略失败');
+      if (!res.ok || !data.ok) throw new Error(apiErrorMessage(data, '提醒忽略失败'));
       setReminders(r => r.filter(x => x.id !== id));
       setTodayReminders(r => r.filter(x => x.id !== id));
       if (selectedDay) handleDaySelect(selectedDay);

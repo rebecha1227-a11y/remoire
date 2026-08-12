@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Pill, Stack } from './primitives';
-import { apiFetch, apiJsonFetch } from '../utils/api';
+import { apiErrorMessage, apiFetch, apiJsonFetch } from '../utils/api';
 
 const LAYER_META = {
   core:          { label: '核心', desc: '关系基石', color: '#C47A5A' },
@@ -29,10 +29,6 @@ function InlineStatus({ message, onRetry }) {
       )}
     </div>
   );
-}
-
-function responseError(data, fallback) {
-  return data?.error?.message || data?.detail || fallback;
 }
 
 function BackButton({ onClick }) {
@@ -490,7 +486,7 @@ function LayerDetail({ layer, onBack }) {
       const res = await apiFetch(`/memory?${params}`);
       const data = await res.json();
       if (currentRequest !== requestId.current) return;
-      if (!res.ok || !data.ok) throw new Error(responseError(data, '记忆加载失败'));
+      if (!res.ok || !data.ok) throw new Error(apiErrorMessage(data, '记忆加载失败'));
       const items = Array.isArray(data.data?.items) ? data.data.items : [];
       setMemories(previous => append ? [...previous, ...items] : items);
       setTotal(Number(data.data?.total) || 0);
@@ -521,7 +517,7 @@ function LayerDetail({ layer, onBack }) {
         setMemories(items => items.map(item => item.id === id ? data.data : item));
         return true;
       }
-      setError(responseError(data, '保存失败，请重试'));
+      setError(apiErrorMessage(data, '保存失败，请重试'));
     } catch (editError) {
       setError(editError.message || '保存失败，请重试');
     }
@@ -534,7 +530,7 @@ function LayerDetail({ layer, onBack }) {
         method: 'POST', body: JSON.stringify({ target_layer: target }),
       });
       const data = await res.json();
-      if (!res.ok || !data.ok) throw new Error(responseError(data, '移动失败，请重试'));
+      if (!res.ok || !data.ok) throw new Error(apiErrorMessage(data, '移动失败，请重试'));
       setMemories(m => m.filter(x => x.id !== id));
       setTotal(value => Math.max(0, value - 1));
     } catch (moveError) {
@@ -549,7 +545,7 @@ function LayerDetail({ layer, onBack }) {
       if (data.ok) {
         setMemories(items => items.map(item => item.id === id ? data.data : item));
       } else {
-        setError(responseError(data, '标记失败，请重试'));
+        setError(apiErrorMessage(data, '标记失败，请重试'));
       }
     } catch (resolveError) {
       setError(resolveError.message || '标记失败，请重试');
@@ -561,7 +557,7 @@ function LayerDetail({ layer, onBack }) {
     try {
       const res = await apiFetch(`/memory/${id}`, { method: 'DELETE' });
       const data = await res.json();
-      if (!res.ok || !data.ok) throw new Error(responseError(data, '删除失败，请重试'));
+      if (!res.ok || !data.ok) throw new Error(apiErrorMessage(data, '删除失败，请重试'));
       setMemories(m => m.filter(x => x.id !== id));
       setTotal(value => Math.max(0, value - 1));
     } catch (deleteError) {
@@ -689,7 +685,7 @@ function DayMemories({ year, month, day, onBack }) {
       });
       const res = await apiFetch(`/memory?${params}`);
       const data = await res.json();
-      if (!res.ok || !data.ok) throw new Error(responseError(data, '这一天的记忆加载失败'));
+      if (!res.ok || !data.ok) throw new Error(apiErrorMessage(data, '这一天的记忆加载失败'));
       const items = Array.isArray(data.data?.items) ? data.data.items : [];
       setMemories(previous => append ? [...previous, ...items] : items);
       setTotal(Number(data.data?.total) || 0);
@@ -773,8 +769,8 @@ export default function MemoryPalace({ onBack }) {
         ]);
         const sd = await statsRes.json();
         const cd = await candRes.json();
-        if (!statsRes.ok || !sd.ok) throw new Error(responseError(sd, '记忆统计加载失败'));
-        if (!candRes.ok || !cd.ok) throw new Error(responseError(cd, '候选记忆加载失败'));
+        if (!statsRes.ok || !sd.ok) throw new Error(apiErrorMessage(sd, '记忆统计加载失败'));
+        if (!candRes.ok || !cd.ok) throw new Error(apiErrorMessage(cd, '候选记忆加载失败'));
         setStats(sd.data);
         if (Array.isArray(cd.data)) setCandidates(cd.data);
       } catch (loadError) {
@@ -852,7 +848,7 @@ export default function MemoryPalace({ onBack }) {
         const sd = await statsRes.json();
         if (statsRes.ok && sd.ok) setStats(sd.data);
       } else {
-        setHomeError(responseError(data, '候选记忆接受失败'));
+        setHomeError(apiErrorMessage(data, '候选记忆接受失败'));
       }
     } catch (acceptError) {
       setHomeError(acceptError.message || '候选记忆接受失败');
@@ -868,7 +864,7 @@ export default function MemoryPalace({ onBack }) {
       const res = await apiFetch(`/memory/candidates/${id}/reject`, { method: 'POST' });
       const data = await res.json();
       if (res.ok && data.ok) setCandidates(c => c.filter(x => x.id !== id));
-      else setHomeError(responseError(data, '候选记忆拒绝失败'));
+      else setHomeError(apiErrorMessage(data, '候选记忆拒绝失败'));
     } catch (rejectError) {
       setHomeError(rejectError.message || '候选记忆拒绝失败');
     } finally {

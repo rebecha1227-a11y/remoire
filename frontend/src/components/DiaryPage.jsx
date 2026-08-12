@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { SectionLabel } from "./primitives";
-import { apiFetch, apiJsonFetch } from "../utils/api";
+import { apiErrorMessage, apiFetch, apiJsonFetch } from "../utils/api";
 import RoomShell from './RoomShell';
 
 
@@ -1126,7 +1126,7 @@ export default function DiaryPage({ tweaks, nav, active }) {
       });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.ok || !data.data) {
-      throw new Error(data.detail || data.error || '日记没有保存成功，文字仍保留在这里。');
+      throw new Error(apiErrorMessage(data, '日记没有保存成功，文字仍保留在这里。'));
     }
     setJingerDiary(prev => [mapDiaryEntry(data.data), ...prev]);
     setWriting(false);

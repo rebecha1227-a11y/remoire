@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useState } from 'react';
 import { LockKeyhole } from 'lucide-react';
-import { apiFetch, apiJsonFetch } from '../utils/api.js';
+import { apiErrorMessage, apiFetch, apiJsonFetch } from '../utils/api.js';
 import './AuthGate.css';
 
 
@@ -23,7 +23,7 @@ function LoginScreen({ onAuthenticated }) {
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        setError(payload.error?.message || payload.detail || '暂时无法登录，请稍后再试。');
+        setError(apiErrorMessage(payload, '暂时无法登录，请稍后再试。'));
         return;
       }
       setPassword('');

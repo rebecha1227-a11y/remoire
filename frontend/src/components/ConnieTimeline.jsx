@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { apiFetch } from "../utils/api";
+import { apiErrorMessage, apiFetch } from "../utils/api";
 
 function toBJ(raw) {
   const d = new Date(raw.endsWith('Z') || raw.includes('+') ? raw : raw + '+08:00');
@@ -219,7 +219,7 @@ export default function ConnieTimeline({ onBack }) {
     apiFetch(`/autonomous/dates?month=${calendarMonth}`)
       .then(async r => {
         const data = await r.json().catch(() => ({}));
-        if (!r.ok || !data.ok) throw new Error(data.detail || data.error || '活动日期加载失败');
+        if (!r.ok || !data.ok) throw new Error(apiErrorMessage(data, '活动日期加载失败'));
         setActiveDates(data.data || []);
       })
       .catch(err => setError(err.message || '活动日期加载失败'));
@@ -232,7 +232,7 @@ export default function ConnieTimeline({ onBack }) {
     apiFetch(`/autonomous/logs?date=${selectedDate}`)
       .then(async r => {
         const data = await r.json().catch(() => ({}));
-        if (!r.ok || !data.ok) throw new Error(data.detail || data.error || '生活日志加载失败');
+        if (!r.ok || !data.ok) throw new Error(apiErrorMessage(data, '生活日志加载失败'));
         setLogs(data.data || []);
       })
       .catch(err => {

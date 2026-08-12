@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Card, Pill, SectionLabel, Stack } from "./primitives";
 import { SettingsToggle, SettingRow, SettingsSectionTitle, SubPageHeader, setTweakVal } from "./settingsShared";
-import { apiFetch, apiJsonFetch } from "../utils/api";
+import { apiErrorMessage, apiFetch, apiJsonFetch } from "../utils/api";
 
 function GlassSelect({ value, onChange, options, placeholder = '请选择', style }) {
   const [open, setOpen] = useState(false);
@@ -83,7 +83,7 @@ export function ProactiveSettings({ onBack }) {
   const [status, setStatus] = useState('正在读取设置…');
 
   useEffect(() => {
-    apiFetch('/api/settings/proactive').then(res => {
+    apiFetch('/settings/proactive').then(res => {
       if (res?.ok && res.data) {
         const d = res.data;
         setCfg(c => ({
@@ -107,7 +107,7 @@ export function ProactiveSettings({ onBack }) {
 
   const save = async (patch) => {
     try {
-      const response = await apiJsonFetch('/api/settings/proactive', {
+      const response = await apiJsonFetch('/settings/proactive', {
       method: 'PUT',
       body: JSON.stringify(patch),
       });
@@ -285,7 +285,7 @@ export function ModelSettings({ onBack }) {
   async function readJson(res) {
     const json = await res.json().catch(() => ({}));
     if (!res.ok || json.ok === false) {
-      throw new Error(json.detail || json.error || `请求失败：${res.status}`);
+      throw new Error(apiErrorMessage(json, `请求失败：${res.status}`));
     }
     return json;
   }
@@ -954,7 +954,7 @@ export function DatesSettings({ onBack }) {
       try {
         const res = await apiFetch('/memory?memory_type=date&limit=50');
         const data = await res.json();
-        if (!res.ok || !data.ok) throw new Error(data.detail || data.error || '特殊日期加载失败');
+        if (!res.ok || !data.ok) throw new Error(apiErrorMessage(data, '特殊日期加载失败'));
         setDates((data.data?.items || []).map(m => ({
           id: m.id,
           date: m.event_date ? m.event_date.slice(5, 10) : '',
@@ -999,7 +999,7 @@ export function DatesSettings({ onBack }) {
         }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.ok) throw new Error(data.detail || data.error || '保存失败');
+      if (!res.ok || !data.ok) throw new Error(apiErrorMessage(data, '保存失败'));
       const memory = data.data.memory;
       setDates(current => [...current, { id: memory.id, date: monthDay, title }]
         .sort((a, b) => a.date.localeCompare(b.date)));
@@ -1020,7 +1020,7 @@ export function DatesSettings({ onBack }) {
     try {
       const res = await apiFetch(`/memory/${item.id}`, { method: 'DELETE' });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.ok) throw new Error(data.detail || data.error || '删除失败');
+      if (!res.ok || !data.ok) throw new Error(apiErrorMessage(data, '删除失败'));
       setDates(current => current.filter(date => date.id !== item.id));
       setStatus('已从记忆库删除。');
     } catch (error) {
@@ -1409,7 +1409,7 @@ export function NoteHistorySettings({ onBack }) {
       try {
         const res = await apiFetch('/note?limit=50');
         const data = await res.json();
-        if (!res.ok || !data.ok) throw new Error(data.detail || data.error || '小纸条加载失败');
+        if (!res.ok || !data.ok) throw new Error(apiErrorMessage(data, '小纸条加载失败'));
         setNotes(data.data?.notes || []);
       } catch (loadError) {
         setError(loadError.message || '小纸条加载失败，请稍后重试。');
@@ -1477,7 +1477,7 @@ export function MemoryCandidatesSettings({ onBack }) {
     try {
       const res = await apiFetch('/memory/candidates?status=pending&limit=50');
       const data = await res.json();
-      if (!res.ok || !data.ok) throw new Error(data.detail || data.error || '候选记忆加载失败');
+      if (!res.ok || !data.ok) throw new Error(apiErrorMessage(data, '候选记忆加载失败'));
       setCandidates(Array.isArray(data.data) ? data.data : []);
     } catch (loadError) {
       setError(loadError.message || '候选记忆加载失败，请稍后重试。');
@@ -1497,7 +1497,7 @@ export function MemoryCandidatesSettings({ onBack }) {
         body: '{}',
       });
       const data = await res.json();
-      if (!res.ok || !data.ok) throw new Error(data.detail || data.error || '候选记忆确认失败');
+      if (!res.ok || !data.ok) throw new Error(apiErrorMessage(data, '候选记忆确认失败'));
       setCandidates(c => c.filter(x => x.id !== id));
     } catch (actionError) {
       setError(actionError.message || '候选记忆确认失败，请稍后重试。');
@@ -1512,7 +1512,7 @@ export function MemoryCandidatesSettings({ onBack }) {
     try {
       const res = await apiFetch(`/memory/candidates/${id}/reject`, { method: 'POST' });
       const data = await res.json();
-      if (!res.ok || !data.ok) throw new Error(data.detail || data.error || '候选记忆忽略失败');
+      if (!res.ok || !data.ok) throw new Error(apiErrorMessage(data, '候选记忆忽略失败'));
       setCandidates(c => c.filter(x => x.id !== id));
     } catch (actionError) {
       setError(actionError.message || '候选记忆忽略失败，请稍后重试。');
