@@ -12,11 +12,11 @@ import './styles/room.css';
 const TWEAK_STORAGE_KEY = 'remoire_tweaks';
 
 const FONT_SLOTS = {
-  Chat: { cssVar: '--font-chat', family: 'RemoireCustomChat', fallback: "'Manrope', 'LXGW WenKai', 'Helvetica Neue', sans-serif" },
-  Note: { cssVar: '--font-note', family: 'RemoireCustomNote', fallback: "'ShouShuTi', 'JustAnotherHand', 'Caveat', cursive" },
-  Diary: { cssVar: '--font-diary', family: 'RemoireCustomDiary', fallback: "'ShouShuTi', 'JustAnotherHand', cursive" },
-  Read: { cssVar: '--font-read', family: 'RemoireCustomRead', fallback: "'Caveat', 'JustAnotherHand', cursive" },
-  Parallel: { cssVar: '--font-parallel', family: 'RemoireCustomParallel', fallback: "'Petrona', 'LXGW WenKai', Georgia, serif" },
+  Chat: { cssVar: '--font-chat', family: 'RemoireCustomChat', fallback: "'Instrument Sans', 'PingFang SC', 'Helvetica Neue', sans-serif" },
+  Note: { cssVar: '--font-note', family: 'RemoireCustomNote', fallback: "'Cormorant Garamond', 'Songti SC', Georgia, serif" },
+  Diary: { cssVar: '--font-diary', family: 'RemoireCustomDiary', fallback: "'Cormorant Garamond', 'Songti SC', Georgia, serif" },
+  Read: { cssVar: '--font-read', family: 'RemoireCustomRead', fallback: "'Instrument Sans', 'PingFang SC', 'Helvetica Neue', sans-serif" },
+  Parallel: { cssVar: '--font-parallel', family: 'RemoireCustomParallel', fallback: "'Cormorant Garamond', 'Songti SC', Georgia, serif" },
 };
 
 function loadTweaks() {

@@ -66,11 +66,11 @@ export default function SettingsPage({ tweaks, nav }) {
           backdropFilter: 'blur(9px) saturate(1.15)',
           WebkitBackdropFilter: 'blur(9px) saturate(1.15)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontFamily: "'Noto Serif SC', 'Cormorant Garamond', serif",
+          fontFamily: "var(--font-display)",
           fontSize: 22, color: 'var(--ink-accent)', fontWeight: 500,
         }}>C</div>
         <div>
-          <div style={{ fontFamily: "'Noto Serif SC', 'Cormorant Garamond', serif", fontSize: 20, fontWeight: 500, color: 'var(--ink)' }}>我们的小窝</div>
+          <div style={{ fontFamily: "var(--font-display)", fontSize: 20, fontWeight: 500, color: 'var(--ink)' }}>我们的小窝</div>
           <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: 2 }}>Connie × 静儿 · 第 {getDayCount()} 天</div>
         </div>
       </div>

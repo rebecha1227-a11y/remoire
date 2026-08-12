@@ -1,29 +1,12 @@
 /* ── Design Tokens · Our Nest ── */
-/* Display: Petrona (人文衬线) · Body: Manrope (温暖几何无衬线) · 中文: LXGW WenKai (霞鹜文楷，开源温暖手写感) */
-@import url('https://fonts.googleapis.com/css2?family=Petrona:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&family=Manrope:wght@400;500;600;700&family=Caveat:wght@400;500&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&family=Noto+Serif+SC:wght@200;300;400;500;600&family=Spectral:ital,wght@0,300;0,400;1,300&display=swap');
-@import url('https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css');
+/* Project type system: Cormorant Garamond (display) + Instrument Sans (body UI). */
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap');
 
-@font-face {
-  font-family: 'ShouShuTi';
-  src: url('/fonts/ShouShuTi.ttf') format('truetype');
-  font-weight: normal;
-  font-style: normal;
-}
-@font-face {
-  font-family: 'JustAnotherHand';
-  src: url('/fonts/JustAnotherHand.ttf') format('truetype');
-  font-weight: normal;
-  font-style: normal;
-}
-
-/* Handwriting stack: English first, Chinese fallback */
 .font-hand {
-  font-family: 'JustAnotherHand', 'ShouShuTi', 'Caveat', cursive;
+  font-family: var(--font-display);
 }
-/* Chinese-primary stack */
 .font-hand-zh {
-  font-family: 'ShouShuTi', 'JustAnotherHand', 'Caveat', cursive;
+  font-family: var(--font-body);
 }
 
 :root {
@@ -82,15 +65,15 @@
   --text-2xl:  2rem;
 
   /* Type roles — 大类用 display/body，专项 slot 用各自的字 */
-  --font-display:  'Petrona', 'LXGW WenKai', Georgia, serif;
-  --font-body:     'Manrope', 'LXGW WenKai', 'Helvetica Neue', sans-serif;
+  --font-display:  'Cormorant Garamond', 'Songti SC', Georgia, serif;
+  --font-body:     'Instrument Sans', 'PingFang SC', 'Helvetica Neue', sans-serif;
 
   /* Font slots — overridden by JS when user uploads custom .ttf */
-  --font-chat:     'Manrope', 'LXGW WenKai', 'Helvetica Neue', sans-serif;
-  --font-note:     'ShouShuTi', 'JustAnotherHand', 'Caveat', cursive;
-  --font-diary:    'ShouShuTi', 'JustAnotherHand', cursive;
-  --font-read:     'Caveat', 'JustAnotherHand', cursive;
-  --font-parallel: 'Petrona', 'LXGW WenKai', Georgia, serif;
+  --font-chat:     'Instrument Sans', 'PingFang SC', 'Helvetica Neue', sans-serif;
+  --font-note:     'Cormorant Garamond', 'Songti SC', Georgia, serif;
+  --font-diary:    'Cormorant Garamond', 'Songti SC', Georgia, serif;
+  --font-read:     'Instrument Sans', 'PingFang SC', 'Helvetica Neue', sans-serif;
+  --font-parallel: 'Cormorant Garamond', 'Songti SC', Georgia, serif;
 
   /* Tweakable params (overridden by JS) */
   --tweak-font-scale:   1;
@@ -181,9 +164,8 @@ body {
   to   { opacity: 1; transform: translateY(0); }
 }
 @keyframes bubble-in {
-  0%   { opacity: 0; transform: scale(0.5); }
-  70%  { transform: scale(1.05); }
-  100% { opacity: 1; transform: scale(1); }
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 @keyframes note-in {
   from { opacity: 0; transform: translateY(-16px); }

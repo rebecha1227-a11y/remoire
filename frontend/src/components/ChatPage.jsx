@@ -732,7 +732,7 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
       position: 'relative', overflow: 'hidden',
       display: 'flex', flexDirection: 'column',
       background: palette.navBg,
-      fontFamily: "'Noto Serif SC', 'Cormorant Garamond', Georgia, serif",
+      fontFamily: "var(--font-display)",
       color: palette.ink,
     }}>
       {/* Background */}
@@ -837,8 +837,8 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
         };
         const noteActions = (
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 14, marginTop: 8 }}>
-            <button onClick={dismissNote} style={{ background: 'none', border: 'none', fontSize: 12, color: 'var(--ink-soft)', cursor: 'pointer', fontFamily: "'Noto Serif SC', serif" }}>知道了</button>
-            <button onClick={keepNote} style={{ background: 'none', border: 'none', fontSize: 12, color: 'var(--ink-accent)', cursor: 'pointer', fontFamily: "'Noto Serif SC', serif", borderBottom: '1px solid var(--ink-accent)' }}>留着</button>
+            <button onClick={dismissNote} style={{ background: 'none', border: 'none', fontSize: 12, color: 'var(--ink-soft)', cursor: 'pointer', fontFamily: "var(--font-body)" }}>知道了</button>
+            <button onClick={keepNote} style={{ background: 'none', border: 'none', fontSize: 12, color: 'var(--ink-accent)', cursor: 'pointer', fontFamily: "var(--font-body)", borderBottom: '1px solid var(--ink-accent)' }}>留着</button>
           </div>
         );
         const noteLabel = <div style={{ fontStyle: 'italic', fontSize: 11, color: 'var(--ink-soft)', marginBottom: 6, letterSpacing: '0.08em' }}>✦ Connie 留了一张纸条</div>;
@@ -865,7 +865,7 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
                 backdropFilter: 'blur(12px) saturate(1.2)', WebkitBackdropFilter: 'blur(12px) saturate(1.2)',
                 border: '1px solid rgba(255,240,220,0.18)', borderRadius: 4,
                 padding: '12px 14px', transform: 'rotate(-0.4deg)',
-                color: 'var(--ink)', fontFamily: "var(--font-note), 'Noto Serif SC', serif", fontSize: 14, lineHeight: 1.7,
+                color: 'var(--ink)', fontFamily: "var(--font-note)", fontSize: 14, lineHeight: 1.7,
               }}>
                 {noteLabel}
                 <div>{noteData.content}</div>
@@ -884,7 +884,7 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
               borderRadius: 16,
               border: '1px solid rgba(255,240,220,0.20)',
               boxShadow: '0 4px 16px -6px rgba(120,70,30,0.10), inset 0 1px 0 rgba(255,250,235,0.30)',
-              color: 'var(--ink)', fontFamily: "var(--font-note), 'Noto Serif SC', serif", fontSize: 14, lineHeight: 1.7,
+              color: 'var(--ink)', fontFamily: "var(--font-note)", fontSize: 14, lineHeight: 1.7,
             }}>
               <div style={{
                 position: 'absolute', inset: 0, borderRadius: 16, overflow: 'hidden', pointerEvents: 'none',
@@ -912,7 +912,7 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
               borderRadius: 3, padding: '12px 14px',
               clipPath: 'polygon(0 0, 100% 0, 100% 88%, 98% 91%, 95% 88%, 92% 92%, 88% 88%, 85% 91%, 80% 88%, 75% 92%, 70% 88%, 65% 91%, 60% 88%, 55% 92%, 50% 88%, 45% 91%, 40% 88%, 35% 92%, 30% 88%, 25% 91%, 20% 88%, 15% 92%, 10% 88%, 5% 91%, 2% 88%, 0 92%)',
               transform: 'rotate(-0.4deg)',
-              color: 'var(--ink)', fontFamily: "var(--font-note), 'Noto Serif SC', serif", fontSize: 14, lineHeight: 1.7,
+              color: 'var(--ink)', fontFamily: "var(--font-note)", fontSize: 14, lineHeight: 1.7,
             }}>
               {noteLabel}
               <div>{noteData.content}</div>
@@ -934,7 +934,7 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
                 backdropFilter: 'blur(10px) saturate(1.15)', WebkitBackdropFilter: 'blur(10px) saturate(1.15)',
                 border: '1px solid rgba(255,240,220,0.15)', borderRadius: 4,
                 padding: '12px 14px', transform: 'rotate(-0.4deg)',
-                color: 'var(--ink)', fontFamily: "var(--font-note), 'Noto Serif SC', serif", fontSize: 14, lineHeight: 1.7,
+                color: 'var(--ink)', fontFamily: "var(--font-note)", fontSize: 14, lineHeight: 1.7,
               }}>
                 {noteLabel}
                 <div>{noteData.content}</div>

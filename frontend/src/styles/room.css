@@ -95,7 +95,7 @@
 }
 .r-name {
   background: transparent; border: none; cursor: pointer;
-  font-family: 'Noto Serif SC', 'Cormorant Garamond', serif;
+  font-family: var(--font-display);
   font-size: 22px; font-weight: 500;
   color: var(--ink); letter-spacing: 0.06em;
   padding: 0 2px; transition: opacity 240ms;
@@ -106,13 +106,13 @@
   background: transparent; border: none;
   border-bottom: 1px solid var(--ink-faint);
   outline: none; text-align: center;
-  font-family: 'Noto Serif SC', serif;
+  font-family: var(--font-body);
   font-size: 22px; font-weight: 400;
   color: var(--ink); letter-spacing: 0.06em;
   padding: 0 2px; width: 60%;
 }
 .r-state {
-  font-family: 'Cormorant Garamond', 'Noto Serif SC', serif;
+  font-family: var(--font-display);
   font-style: italic; font-size: 13px; font-weight: 400;
   color: var(--ink-soft); letter-spacing: 0.08em;
   text-shadow: 0 1px 2px var(--warm-shadow, rgba(60,30,10,0.18));
@@ -167,7 +167,7 @@
 }
 .r-search-input {
   flex: 1; background: transparent; border: none; outline: none;
-  font-family: 'Noto Serif SC', serif;
+  font-family: var(--font-body);
   font-size: 14px; color: var(--ink);
 }
 .r-search-input::placeholder { color: var(--ink-faint); }
@@ -191,7 +191,7 @@
 .r-search-empty {
   padding: 20px; text-align: center;
   font-size: 13px; color: var(--ink-soft);
-  font-family: 'Noto Serif SC', serif;
+  font-family: var(--font-body);
 }
 .r-search-item {
   padding: 10px 12px;
@@ -201,12 +201,12 @@
 .r-search-item:hover { background: rgba(255,250,235,0.08); }
 .r-search-item-role {
   font-size: 11px; color: var(--ink-accent);
-  font-family: 'Noto Serif SC', serif;
+  font-family: var(--font-body);
   letter-spacing: 0.06em; margin-bottom: 2px;
 }
 .r-search-item-text {
   font-size: 14px; color: var(--ink);
-  font-family: 'Noto Serif SC', serif;
+  font-family: var(--font-body);
   line-height: 1.5;
   display: -webkit-box; -webkit-line-clamp: 2;
   -webkit-box-orient: vertical; overflow: hidden;
@@ -254,7 +254,7 @@
   position: relative;
   padding: 9px 16px;
   border-radius: 20px;
-  font-family: 'Noto Serif SC', 'Cormorant Garamond', serif;
+  font-family: var(--font-display);
   font-size: 15px; font-weight: 400;
   line-height: 1.6; letter-spacing: 0.02em;
   backdrop-filter: blur(9px) saturate(1.15);
@@ -309,7 +309,7 @@
 /* ── Meta ── */
 .r-meta {
   display: flex; align-items: center; gap: 8px;
-  font-family: 'Cormorant Garamond', 'Spectral', serif;
+  font-family: var(--font-display);
   font-style: italic; font-size: 10.5px;
   color: var(--ink-soft); letter-spacing: 0.1em;
   padding: 0 4px;
@@ -337,7 +337,7 @@
   border-radius: 14px;
   background: rgba(0,0,0,0.04);
   border: 1px dashed var(--ink-faint);
-  font-family: 'Noto Serif SC', serif;
+  font-family: var(--font-body);
   font-style: italic; font-size: 12px; font-weight: 300;
   line-height: 1.75; color: var(--ink-soft);
   letter-spacing: 0.04em;
@@ -412,7 +412,7 @@
   box-shadow: inset 0 1px 0 var(--ai-edge);
   cursor: pointer; display: flex; flex-direction: column;
   align-items: center; gap: 4px;
-  font-family: 'Noto Serif SC', serif;
+  font-family: var(--font-body);
   color: var(--ink-soft);
 }
 .r-action-glyph { font-size: 18px; opacity: 0.7; }
@@ -455,7 +455,7 @@
   height: 36px; padding: 0 10px;
   border-radius: 18px; background: transparent; border: none;
   color: var(--ink-soft); cursor: pointer;
-  font-family: 'Noto Serif SC', serif;
+  font-family: var(--font-body);
   font-size: 12px; letter-spacing: 0.06em;
   flex-shrink: 0; position: relative;
   transition: all 280ms cubic-bezier(0.16,1,0.3,1);
@@ -518,7 +518,7 @@
   text-align: left; padding: 10px 12px;
   border-radius: 12px;
   transition: background 200ms;
-  font-family: 'Noto Serif SC', serif;
+  font-family: var(--font-body);
   color: var(--ink-on-sheet);
 }
 .r-mode-row:hover { background: rgba(255,250,235,0.12); }
@@ -531,7 +531,7 @@
   flex: 1;
   background: transparent; border: none; outline: none;
   resize: none;
-  font-family: 'Noto Serif SC', 'Cormorant Garamond', serif;
+  font-family: var(--font-display);
   font-size: 15px; font-weight: 400;
   color: var(--ink);
   padding: 8px 4px;
@@ -569,7 +569,7 @@
   background: transparent; border: none; cursor: pointer;
   display: flex; flex-direction: column; align-items: center; gap: 2px;
   padding: 5px 4px;
-  font-family: 'Noto Serif SC', serif;
+  font-family: var(--font-body);
   color: var(--ink-soft);
   transition: color 240ms, transform 240ms;
 }
@@ -623,21 +623,21 @@
 }
 .r-sheet-title {
   text-align: center;
-  font-family: 'Noto Serif SC', serif;
+  font-family: var(--font-body);
   font-size: 17px; font-weight: 500; color: var(--ink);
   letter-spacing: 0.16em;
   margin-bottom: 22px;
 }
 .r-sheet-section { margin-bottom: 22px; }
 .r-sheet-label {
-  font-family: 'Cormorant Garamond', 'Noto Serif SC', serif;
+  font-family: var(--font-display);
   font-style: italic; font-size: 11px;
   color: var(--ink-faint);
   letter-spacing: 0.18em; text-transform: uppercase;
   margin-bottom: 10px;
 }
 .r-sheet-hint {
-  font-family: 'Noto Serif SC', serif;
+  font-family: var(--font-body);
   font-size: 11.5px; color: var(--ink-soft);
   margin-top: 6px; letter-spacing: 0.04em;
   font-style: italic;
@@ -653,7 +653,7 @@
   border: 1px dashed var(--ink-on-sheet);
   display: flex; align-items: center; justify-content: center;
   color: var(--ink-on-sheet);
-  font-family: 'Noto Serif SC', serif; font-size: 11px;
+  font-family: var(--font-body); font-size: 11px;
   letter-spacing: 0.08em;
   cursor: pointer; flex-shrink: 0;
   box-shadow:
@@ -673,7 +673,7 @@
   background: transparent; border: none;
   border-bottom: 1px solid var(--nav-border);
   outline: none;
-  font-family: 'Noto Serif SC', serif;
+  font-family: var(--font-body);
   font-size: 16px; color: var(--ink-on-sheet);
   padding: 6px 0; letter-spacing: 0.04em;
 }
@@ -686,7 +686,7 @@
   background: rgba(255,250,235,0.14);
   border: 1px solid var(--nav-border);
   color: var(--ink-on-sheet);
-  font-family: 'Noto Serif SC', serif;
+  font-family: var(--font-body);
   font-size: 12px; letter-spacing: 0.08em;
   cursor: pointer;
   backdrop-filter: blur(8px) saturate(1.15);
@@ -726,7 +726,7 @@
   background: rgba(255,250,235,0.12);
   border: 1px solid var(--nav-border);
   color: var(--ink-on-sheet);
-  font-family: 'Noto Serif SC', serif;
+  font-family: var(--font-body);
   font-size: 14px; letter-spacing: 0.12em;
   cursor: pointer; margin-top: 10px;
   transition: all 280ms;
@@ -761,7 +761,7 @@
   50%      { transform: scaleY(1.2); }
 }
 .r-voice-hint {
-  font-family: 'Cormorant Garamond', 'Noto Serif SC', serif;
+  font-family: var(--font-display);
   font-style: italic; font-size: 13px;
   color: #F2BC80; letter-spacing: 0.12em;
 }

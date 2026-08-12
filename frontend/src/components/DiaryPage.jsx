@@ -360,7 +360,7 @@ function PinkCover({ onClick, customCover }) {
         <div style={{
           position: 'absolute', bottom: 12, left: 0, right: 0, textAlign: 'center'
         }}>
-          <div style={{ color: 'rgba(255,255,255,0.9)', letterSpacing: 1, fontSize: "13px", fontFamily: "\"Josefin Sans\"", textShadow: '0 1px 4px rgba(0,0,0,0.4)' }}>Jinger's Diary</div>
+          <div style={{ color: 'rgba(255,255,255,0.9)', letterSpacing: 1, fontSize: "13px", fontFamily: "var(--font-display)", textShadow: '0 1px 4px rgba(40,33,28,0.4)' }}>Jinger's Diary</div>
         </div>
         <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 6, background: 'linear-gradient(90deg, rgba(0,0,0,0.08), transparent)', pointerEvents: 'none' }} />
       </div>);
@@ -422,7 +422,7 @@ function PinkCover({ onClick, customCover }) {
         display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
         padding: '8px 12px'
       }}>
-        <div style={{ color: '#8B5E6B', letterSpacing: 1, textAlign: "center", fontSize: "13px", fontFamily: "JustAnotherHand" }}>Jinger's Diary</div>
+        <div style={{ color: '#8B5E6B', letterSpacing: 1, textAlign: "center", fontSize: "13px", fontFamily: "var(--font-diary)" }}>Jinger's Diary</div>
         <div style={{ width: '70%', height: 1, background: 'rgba(140,80,100,0.25)', margin: '4px 0' }} />
         <div style={{ width: '50%', height: 1, background: 'rgba(140,80,100,0.2)' }} />
         {/* Ribbon */}
@@ -450,7 +450,7 @@ function BlueCover({ onClick, customCover }) {
         <div style={{
           position: 'absolute', bottom: 12, left: 0, right: 0, textAlign: 'center'
         }}>
-          <div style={{ color: 'rgba(255,255,255,0.9)', letterSpacing: 1, fontSize: "13px", fontFamily: "\"Josefin Sans\"", textShadow: '0 1px 4px rgba(0,0,0,0.4)' }}>Connie's Diary</div>
+          <div style={{ color: 'rgba(255,255,255,0.9)', letterSpacing: 1, fontSize: "13px", fontFamily: "var(--font-display)", textShadow: '0 1px 4px rgba(40,33,28,0.4)' }}>Connie's Diary</div>
         </div>
         <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 6, background: 'linear-gradient(90deg, rgba(0,0,0,0.1), transparent)', pointerEvents: 'none' }} />
       </div>);
@@ -510,7 +510,7 @@ function BlueCover({ onClick, customCover }) {
         display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
         padding: '8px 12px'
       }}>
-        <div style={{ color: 'rgba(255,255,255,0.8)', letterSpacing: 1, fontSize: "13px", textAlign: "center", fontFamily: "JustAnotherHand" }}>Connie's Diary</div>
+        <div style={{ color: 'rgba(255,255,255,0.8)', letterSpacing: 1, fontSize: "13px", textAlign: "center", fontFamily: "var(--font-diary)" }}>Connie's Diary</div>
         <div style={{ width: '70%', height: 1, background: 'rgba(255,255,255,0.2)', margin: '4px 0' }} />
         <div style={{ width: '50%', height: 1, background: 'rgba(255,255,255,0.15)' }} />
       </div>

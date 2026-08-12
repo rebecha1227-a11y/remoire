@@ -140,7 +140,7 @@ export default function RoomShell({ children, nav }) {
       width: '100%', flex: 1, minHeight: 0,
       position: 'relative', overflow: 'hidden',
       display: 'flex', flexDirection: 'column',
-      fontFamily: "'Noto Serif SC', 'Cormorant Garamond', Georgia, serif",
+      fontFamily: "var(--font-display)",
       color: palette.ink,
     }}>
       <div className="r-bg" style={chatBgImage ? {

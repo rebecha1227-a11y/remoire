@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Pill, Stack } from './primitives';
 import { apiFetch, apiJsonFetch } from '../utils/api';
 
@@ -10,12 +10,36 @@ const LAYER_META = {
 };
 
 const TYPE_LABELS = { fact: '事实', event: '事件', unresolved: '未完成', date: '日期' };
+const PAGE_SIZE = 50;
+
+function InlineStatus({ message, onRetry }) {
+  if (!message) return null;
+  return (
+    <div role="alert" className="r-glass" style={{
+      marginBottom: 12, padding: '10px 12px', color: 'var(--ink)', fontSize: 12,
+      display: 'flex', alignItems: 'center', gap: 10,
+    }}>
+      <span style={{ flex: 1 }}>{message}</span>
+      {onRetry && (
+        <button type="button" onClick={onRetry} style={{
+          minHeight: 44, padding: '8px 12px', borderRadius: 8,
+          border: '1px solid rgba(124,99,80,0.2)', background: 'transparent',
+          color: 'var(--ink-accent)', cursor: 'pointer', fontFamily: 'var(--font-body)',
+        }}>重试</button>
+      )}
+    </div>
+  );
+}
+
+function responseError(data, fallback) {
+  return data?.error?.message || data?.detail || fallback;
+}
 
 function BackButton({ onClick }) {
   return (
     <button onClick={onClick} style={{
       display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none',
-      cursor: 'pointer', padding: '4px 0', marginBottom: 12, color: 'var(--ink-soft)',
+      cursor: 'pointer', padding: '8px 4px', minHeight: 44, marginBottom: 8, color: 'var(--ink-soft)',
       fontSize: 14, fontFamily: 'var(--font-body)',
     }}>
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M15 18l-6-6 6-6"/></svg>
@@ -39,11 +63,12 @@ function LayerCard({ layer, count, onClick }) {
     consciousness: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={meta.color} strokeWidth="1.5"><path d="M21 12a8 8 0 0 1-11.5 7.2L4 21l1.5-4.5A8 8 0 1 1 21 12z"/></svg>,
   };
   return (
-    <div className="r-glass" onClick={onClick} style={{
+    <button type="button" className="r-glass" onClick={onClick} aria-label={`${meta.label}记忆，${count} 条`} style={{
       position: 'relative', cursor: 'pointer',
       display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
       padding: '18px 12px', minHeight: 100, textAlign: 'center',
-      transition: 'opacity 0.15s',
+      transition: 'opacity 0.15s', width: '100%', fontFamily: 'var(--font-body)',
+      border: '1px solid var(--nav-border, rgba(124,99,80,0.12))',
     }}>
       {icons[layer]}
       <div style={{ fontSize: 22, fontWeight: 400, color: 'var(--ink)', marginTop: 8, fontFamily: 'var(--font-display)' }}>
@@ -51,7 +76,7 @@ function LayerCard({ layer, count, onClick }) {
       </div>
       <div style={{ fontSize: 13, color: 'var(--ink)', marginTop: 2, fontWeight: 500 }}>{meta.label}</div>
       <div style={{ fontSize: 11, color: 'var(--ink-soft)', marginTop: 1 }}>{meta.desc}</div>
-    </div>
+    </button>
   );
 }
 
@@ -103,17 +128,19 @@ function MonthGrid({ heatmap, year, month, onDayClick }) {
           const count = d ? (heatmap[d] || 0) : 0;
           const isToday = year === today.year && month === today.month && d === today.day;
           return (
-            <div key={i} onClick={() => d && onDayClick(year, month, d)} style={{
-              aspectRatio: '1', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            <button key={i} type="button" onClick={() => d && onDayClick(year, month, d)} disabled={!d}
+              aria-label={d ? `${year}年${month}月${d}日，${count} 条记忆${isToday ? '，今天' : ''}` : undefined} style={{
+              minHeight: 44, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center',
               fontSize: 12, cursor: d ? 'pointer' : 'default',
               color: count > 0 ? '#FAF8F4' : d ? 'var(--ink-soft)' : 'transparent',
               background: d ? heatColor(count, maxCount) : 'transparent',
               boxShadow: isToday ? 'inset 0 0 0 1.5px var(--ink-accent)' : 'none',
               fontWeight: isToday ? 600 : 400,
               transition: 'background 0.2s',
+              border: 0, fontFamily: 'var(--font-body)', padding: 0,
             }}>
               {d || ''}
-            </div>
+            </button>
           );
         })}
       </div>
@@ -164,7 +191,7 @@ function QuarterGrid({ quarterData, onDayClick }) {
           {weeks.map((_, wi) => {
             const lbl = monthLabels.find(m => m.col === wi);
             return (
-              <div key={wi} style={{ width: 11, fontSize: 10, color: 'var(--ink-faint)', textAlign: 'left', overflow: 'visible', whiteSpace: 'nowrap' }}>
+              <div key={wi} style={{ width: 44, fontSize: 10, color: 'var(--ink-faint)', textAlign: 'left', overflow: 'visible', whiteSpace: 'nowrap' }}>
                 {lbl ? lbl.label : ''}
               </div>
             );
@@ -177,14 +204,16 @@ function QuarterGrid({ quarterData, onDayClick }) {
             </div>
             {weeks.map((week, wi) => {
               const cell = week[row];
-              if (!cell) return <div key={wi} style={{ width: 11, height: 11, borderRadius: 2 }} />;
+              if (!cell) return <div key={wi} style={{ width: 44, height: 44, borderRadius: 5 }} />;
               const isToday = cell.year === today.year && cell.month === today.month && cell.d === today.day;
               return (
-                <div key={wi} onClick={() => onDayClick(cell.year, cell.month, cell.d)} style={{
-                  width: 11, height: 11, borderRadius: 2, cursor: 'pointer',
+                <button key={wi} type="button" onClick={() => onDayClick(cell.year, cell.month, cell.d)}
+                  aria-label={`${cell.year}年${cell.month}月${cell.d}日，${cell.count} 条记忆`} style={{
+                  width: 44, height: 44, borderRadius: 5, cursor: 'pointer',
                   background: heatColor(cell.count, maxCount),
                   boxShadow: isToday ? 'inset 0 0 0 1.5px var(--ink-accent)' : 'none',
                   transition: 'background 0.2s',
+                  border: 0, padding: 0,
                 }} title={`${cell.month}/${cell.d}: ${cell.count} 条`} />
               );
             })}
@@ -205,7 +234,7 @@ function HeatmapCalendar({ heatmapData, quarterData, viewMode, setViewMode, year
         </div>
         <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
           <button onClick={() => setViewMode(viewMode === 'month' ? 'quarter' : 'month')} style={{
-            padding: '4px 10px', borderRadius: 14, border: '1px solid rgba(0,0,0,0.06)',
+            minHeight: 44, padding: '8px 12px', borderRadius: 14, border: '1px solid rgba(0,0,0,0.06)',
             background: 'transparent', fontSize: 11, color: 'var(--ink-soft)',
             cursor: 'pointer', fontFamily: 'var(--font-body)',
           }}>{viewMode === 'month' ? '季度' : '月'}</button>
@@ -240,7 +269,7 @@ function HeatmapCalendar({ heatmapData, quarterData, viewMode, setViewMode, year
   );
 }
 
-function CandidateReview({ candidates, onAccept, onReject }) {
+function CandidateReview({ candidates, onAccept, onReject, busyId }) {
   if (candidates.length === 0) return null;
   return (
     <div className="r-glass" style={{ position: 'relative' }}>
@@ -270,16 +299,18 @@ function CandidateReview({ candidates, onAccept, onReject }) {
                 {c.layer && LAYER_META[c.layer]?.label} · {TYPE_LABELS[c.memory_type] || c.memory_type}
                 {c.confidence != null && ` · ${Math.round(c.confidence * 100)}%`}
               </span>
-              <button onClick={() => onReject(c.id)} style={{
-                padding: '5px 12px', borderRadius: 8,
+              <button onClick={() => onReject(c.id)} disabled={busyId === c.id} style={{
+                minHeight: 44, padding: '8px 12px', borderRadius: 8,
                 border: '1px solid rgba(0,0,0,0.08)', background: 'transparent',
-                fontSize: 12, color: 'var(--ink-soft)', cursor: 'pointer', fontFamily: 'var(--font-body)',
+                fontSize: 12, color: 'var(--ink-soft)', cursor: busyId === c.id ? 'default' : 'pointer',
+                fontFamily: 'var(--font-body)', opacity: busyId === c.id ? 0.6 : 1,
               }}>不要</button>
-              <button onClick={() => onAccept(c.id)} style={{
-                padding: '5px 12px', borderRadius: 8,
+              <button onClick={() => onAccept(c.id)} disabled={busyId === c.id} style={{
+                minHeight: 44, padding: '8px 12px', borderRadius: 8,
                 border: 'none', background: 'var(--ink-accent)',
-                fontSize: 12, color: '#FAF8F4', cursor: 'pointer', fontWeight: 500, fontFamily: 'var(--font-body)',
-              }}>记住</button>
+                fontSize: 12, color: '#FAF8F4', cursor: busyId === c.id ? 'default' : 'pointer',
+                fontWeight: 500, fontFamily: 'var(--font-body)', opacity: busyId === c.id ? 0.6 : 1,
+              }}>{busyId === c.id ? '处理中…' : '记住'}</button>
             </div>
           </div>
         ))}
@@ -326,7 +357,19 @@ function MemoryItem({ mem, onEdit, onDelete, onMove, onResolve }) {
       padding: '12px 0',
       borderBottom: '1px solid rgba(0,0,0,0.06)',
     }}>
-      <div onClick={() => !editing && setExpanded(!expanded)} style={{ cursor: editing ? 'default' : 'pointer' }}>
+      <div
+        onClick={() => !editing && setExpanded(!expanded)}
+        onKeyDown={event => {
+          if (!editing && (event.key === 'Enter' || event.key === ' ')) {
+            event.preventDefault();
+            setExpanded(!expanded);
+          }
+        }}
+        role={editing ? undefined : 'button'}
+        tabIndex={editing ? undefined : 0}
+        aria-expanded={editing ? undefined : expanded}
+        style={{ cursor: editing ? 'default' : 'pointer', borderRadius: 8 }}
+      >
         {editing ? (
           <textarea
             value={editContent}
@@ -336,7 +379,7 @@ function MemoryItem({ mem, onEdit, onDelete, onMove, onResolve }) {
               width: '100%', minHeight: 80, border: '1px solid rgba(0,0,0,0.1)',
               borderRadius: 8, padding: '8px 10px', fontSize: 14, color: 'var(--ink)',
               lineHeight: 1.6, fontFamily: 'var(--font-body)', background: 'rgba(0,0,0,0.02)',
-              outline: 'none', resize: 'vertical', boxSizing: 'border-box',
+              resize: 'vertical', boxSizing: 'border-box',
             }}
             autoFocus
           />
@@ -355,12 +398,12 @@ function MemoryItem({ mem, onEdit, onDelete, onMove, onResolve }) {
       {editing && (
         <div style={{ marginTop: 10, display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <button onClick={() => { setEditing(false); setEditContent(mem.content); }} style={{
-            padding: '5px 14px', borderRadius: 8, border: '1px solid rgba(0,0,0,0.08)',
+            minHeight: 44, padding: '8px 14px', borderRadius: 8, border: '1px solid rgba(0,0,0,0.08)',
             background: 'transparent', fontSize: 12, color: 'var(--ink-soft)',
             cursor: 'pointer', fontFamily: 'var(--font-body)',
           }}>取消</button>
           <button onClick={handleSave} disabled={saving} style={{
-            padding: '5px 14px', borderRadius: 8, border: 'none',
+            minHeight: 44, padding: '8px 14px', borderRadius: 8, border: 'none',
             background: 'var(--ink-accent)', fontSize: 12, color: '#FAF8F4',
             cursor: saving ? 'default' : 'pointer', fontWeight: 500,
             fontFamily: 'var(--font-body)', opacity: saving ? 0.6 : 1,
@@ -386,26 +429,26 @@ function MemoryItem({ mem, onEdit, onDelete, onMove, onResolve }) {
           </span>
           <div style={{ flex: 1 }} />
           <button onClick={() => { setEditing(true); setEditContent(mem.content); }} style={{
-            padding: '4px 10px', borderRadius: 6, border: '1px solid rgba(0,0,0,0.08)',
+            minHeight: 44, padding: '8px 10px', borderRadius: 6, border: '1px solid rgba(0,0,0,0.08)',
             background: 'transparent', fontSize: 11, color: 'var(--ink-accent)',
             cursor: 'pointer', fontFamily: 'var(--font-body)',
           }}>编辑</button>
           {mem.unresolved && (
             <button onClick={() => onResolve(mem.id)} style={{
-              padding: '4px 10px', borderRadius: 6, border: '1px solid rgba(122,158,126,0.35)',
+              minHeight: 44, padding: '8px 10px', borderRadius: 6, border: '1px solid rgba(122,158,126,0.35)',
               background: 'transparent', fontSize: 11, color: 'var(--success)',
               cursor: 'pointer', fontFamily: 'var(--font-body)',
             }}>标记已解决</button>
           )}
           {Object.keys(LAYER_META).filter(l => l !== mem.layer).map(l => (
             <button key={l} onClick={() => onMove(mem.id, l)} style={{
-              padding: '4px 10px', borderRadius: 6, border: '1px solid rgba(0,0,0,0.08)',
+              minHeight: 44, padding: '8px 10px', borderRadius: 6, border: '1px solid rgba(0,0,0,0.08)',
               background: 'transparent', fontSize: 11, color: 'var(--ink-soft)',
               cursor: 'pointer', fontFamily: 'var(--font-body)',
             }}>→ {LAYER_META[l].label}</button>
           ))}
           <button onClick={() => onDelete(mem.id)} style={{
-            padding: '4px 10px', borderRadius: 6, border: '1px solid rgba(200,80,80,0.2)',
+            minHeight: 44, padding: '8px 10px', borderRadius: 6, border: '1px solid rgba(200,80,80,0.2)',
             background: 'transparent', fontSize: 11, color: '#c85050',
             cursor: 'pointer', fontFamily: 'var(--font-body)',
           }}>删除</button>
@@ -419,27 +462,54 @@ function MemoryItem({ mem, onEdit, onDelete, onMove, onResolve }) {
 function LayerDetail({ layer, onBack }) {
   const meta = LAYER_META[layer];
   const [memories, setMemories] = useState([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState('');
+  const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState(null);
   const [sortBy, setSortBy] = useState('created_at');
+  const requestId = useRef(0);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    const params = new URLSearchParams({ layer, sort_by: sortBy, limit: '100' });
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSearch(searchInput.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [searchInput]);
+
+  const load = useCallback(async (offset = 0) => {
+    const currentRequest = ++requestId.current;
+    const append = offset > 0;
+    if (append) setLoadingMore(true);
+    else setLoading(true);
+    setError('');
+    const params = new URLSearchParams({ layer, sort_by: sortBy, limit: String(PAGE_SIZE), offset: String(offset) });
     if (search) params.set('search', search);
     if (typeFilter) params.set('memory_type', typeFilter);
     try {
       const res = await apiFetch(`/memory?${params}`);
       const data = await res.json();
-      setMemories(data.ok ? (data.data?.items || []) : []);
-    } catch (e) {
-      setMemories([]);
+      if (currentRequest !== requestId.current) return;
+      if (!res.ok || !data.ok) throw new Error(responseError(data, '记忆加载失败'));
+      const items = Array.isArray(data.data?.items) ? data.data.items : [];
+      setMemories(previous => append ? [...previous, ...items] : items);
+      setTotal(Number(data.data?.total) || 0);
+    } catch (loadError) {
+      if (currentRequest !== requestId.current) return;
+      if (!append) {
+        setMemories([]);
+        setTotal(0);
+      }
+      setError(loadError.message || '记忆加载失败');
+    } finally {
+      if (currentRequest === requestId.current) {
+        setLoading(false);
+        setLoadingMore(false);
+      }
     }
-    setLoading(false);
   }, [layer, search, typeFilter, sortBy]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(0); }, [load]);
 
   async function handleEdit(id, updates) {
     try {
@@ -447,21 +517,29 @@ function LayerDetail({ layer, onBack }) {
         method: 'PUT', body: JSON.stringify(updates),
       });
       const data = await res.json();
-      if (data.ok) {
-        setMemories(m => m.map(x => x.id === id ? { ...x, ...updates } : x));
+      if (res.ok && data.ok) {
+        setMemories(items => items.map(item => item.id === id ? data.data : item));
         return true;
       }
-    } catch (e) {}
+      setError(responseError(data, '保存失败，请重试'));
+    } catch (editError) {
+      setError(editError.message || '保存失败，请重试');
+    }
     return false;
   }
 
   async function handleMove(id, target) {
     try {
-      await apiJsonFetch(`/memory/${id}/move`, {
+      const res = await apiJsonFetch(`/memory/${id}/move`, {
         method: 'POST', body: JSON.stringify({ target_layer: target }),
       });
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(responseError(data, '移动失败，请重试'));
       setMemories(m => m.filter(x => x.id !== id));
-    } catch (e) {}
+      setTotal(value => Math.max(0, value - 1));
+    } catch (moveError) {
+      setError(moveError.message || '移动失败，请重试');
+    }
   }
 
   async function handleResolve(id) {
@@ -470,15 +548,25 @@ function LayerDetail({ layer, onBack }) {
       const data = await res.json();
       if (data.ok) {
         setMemories(items => items.map(item => item.id === id ? data.data : item));
+      } else {
+        setError(responseError(data, '标记失败，请重试'));
       }
-    } catch (e) {}
+    } catch (resolveError) {
+      setError(resolveError.message || '标记失败，请重试');
+    }
   }
 
   async function handleDelete(id) {
+    if (!window.confirm('确认删除这条记忆？此操作无法撤销。')) return;
     try {
-      await apiFetch(`/memory/${id}`, { method: 'DELETE' });
+      const res = await apiFetch(`/memory/${id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(responseError(data, '删除失败，请重试'));
       setMemories(m => m.filter(x => x.id !== id));
-    } catch (e) {}
+      setTotal(value => Math.max(0, value - 1));
+    } catch (deleteError) {
+      setError(deleteError.message || '删除失败，请重试');
+    }
   }
 
   const typeOptions = ['fact', 'event', 'unresolved', 'date'];
@@ -495,32 +583,33 @@ function LayerDetail({ layer, onBack }) {
         </div>
         <div>
           <div style={{ fontSize: 18, fontWeight: 500, color: 'var(--ink)', fontFamily: 'var(--font-display)' }}>{meta.label}记忆</div>
-          <div style={{ fontSize: 12, color: 'var(--ink-soft)' }}>{meta.desc} · {memories.length} 条</div>
+          <div style={{ fontSize: 12, color: 'var(--ink-soft)' }}>{meta.desc} · {total} 条</div>
         </div>
       </div>
 
       <div className="r-glass" style={{ position: 'relative', marginBottom: 12 }}>
         <input
-          type="text" value={search} onChange={e => setSearch(e.target.value)}
+          type="search" value={searchInput} onChange={e => setSearchInput(e.target.value)}
           placeholder="搜索记忆…"
+          aria-label={`搜索${meta.label}记忆`}
           style={{
-            width: '100%', border: 'none', background: 'transparent', outline: 'none',
+            width: '100%', minHeight: 44, border: 'none', background: 'transparent',
             fontSize: 14, color: 'var(--ink)', fontFamily: 'var(--font-body)',
-            padding: 0,
+            padding: '0 2px',
           }}
         />
       </div>
 
       <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
         <button onClick={() => setTypeFilter(null)} style={{
-          padding: '5px 12px', borderRadius: 20, border: 'none', cursor: 'pointer',
+          minHeight: 44, padding: '8px 12px', borderRadius: 20, border: 'none', cursor: 'pointer',
           fontSize: 12, fontFamily: 'var(--font-body)',
           background: !typeFilter ? 'var(--ink-accent)' : 'rgba(0,0,0,0.04)',
           color: !typeFilter ? '#FAF8F4' : 'var(--ink-soft)',
         }}>全部</button>
         {typeOptions.map(t => (
           <button key={t} onClick={() => setTypeFilter(typeFilter === t ? null : t)} style={{
-            padding: '5px 12px', borderRadius: 20, border: 'none', cursor: 'pointer',
+            minHeight: 44, padding: '8px 12px', borderRadius: 20, border: 'none', cursor: 'pointer',
             fontSize: 12, fontFamily: 'var(--font-body)',
             background: typeFilter === t ? 'var(--ink-accent)' : 'rgba(0,0,0,0.04)',
             color: typeFilter === t ? '#FAF8F4' : 'var(--ink-soft)',
@@ -528,40 +617,54 @@ function LayerDetail({ layer, onBack }) {
         ))}
         <div style={{ flex: 1 }} />
         <button onClick={() => setSortBy(s => s === 'created_at' ? 'weight' : 'created_at')} style={{
-          padding: '5px 10px', borderRadius: 20, border: '1px solid rgba(0,0,0,0.06)',
+          minHeight: 44, padding: '8px 10px', borderRadius: 20, border: '1px solid rgba(0,0,0,0.06)',
           background: 'transparent', fontSize: 11, color: 'var(--ink-soft)',
           cursor: 'pointer', fontFamily: 'var(--font-body)',
         }}>{sortBy === 'created_at' ? '切换按权重' : '切换按时间'}</button>
       </div>
+
+      <InlineStatus message={error} onRetry={() => load(0)} />
 
       {loading ? (
         <div style={{ textAlign: 'center', padding: 40, color: 'var(--ink-faint)', fontSize: 13 }}>加载中…</div>
       ) : memories.length === 0 ? (
         <div className="r-glass" style={{ position: 'relative', textAlign: 'center', padding: '30px 16px' }}>
           <div style={{ fontSize: 13, color: 'var(--ink-faint)' }}>
-            {typeFilter || search ? `没有符合条件的记忆` : '这里还没有记忆'}
+            {typeFilter || search ? '没有符合条件的记忆' : '这里还没有记忆'}
           </div>
           {typeFilter && (
             <button onClick={() => setTypeFilter(null)} style={{
-              marginTop: 10, padding: '5px 14px', borderRadius: 20, border: '1px solid rgba(0,0,0,0.08)',
+              marginTop: 10, minHeight: 44, padding: '8px 14px', borderRadius: 20, border: '1px solid rgba(0,0,0,0.08)',
               background: 'transparent', fontSize: 12, color: 'var(--ink-soft)',
               cursor: 'pointer', fontFamily: 'var(--font-body)',
             }}>清除筛选</button>
           )}
         </div>
       ) : (
-        <div className="r-glass" style={{ position: 'relative' }}>
-          {memories.map(m => (
-            <MemoryItem
-              key={m.id}
-              mem={m}
-              onEdit={handleEdit}
-              onMove={handleMove}
-              onDelete={handleDelete}
-              onResolve={handleResolve}
-            />
-          ))}
-        </div>
+        <>
+          <div className="r-glass" style={{ position: 'relative' }}>
+            {memories.map(m => (
+              <MemoryItem
+                key={m.id}
+                mem={m}
+                onEdit={handleEdit}
+                onMove={handleMove}
+                onDelete={handleDelete}
+                onResolve={handleResolve}
+              />
+            ))}
+          </div>
+          {memories.length < total && (
+            <button type="button" onClick={() => load(memories.length)} disabled={loadingMore} style={{
+              width: '100%', minHeight: 44, marginTop: 12, padding: '10px 14px', borderRadius: 10,
+              border: '1px solid rgba(124,99,80,0.16)', background: 'transparent',
+              color: 'var(--ink-accent)', cursor: loadingMore ? 'default' : 'pointer',
+              fontFamily: 'var(--font-body)', opacity: loadingMore ? 0.65 : 1,
+            }}>
+              {loadingMore ? '加载中…' : `继续加载（已显示 ${memories.length} / ${total}）`}
+            </button>
+          )}
+        </>
       )}
     </div>
   );
@@ -569,19 +672,36 @@ function LayerDetail({ layer, onBack }) {
 
 function DayMemories({ year, month, day, onBack }) {
   const [memories, setMemories] = useState([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState('');
   const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await apiFetch(`/memory?date_from=${dateStr}&date_to=${dateStr}&limit=100`);
-        const data = await res.json();
-        if (data.ok) setMemories(data.data?.items || []);
-      } catch (e) {}
+  const load = useCallback(async (offset = 0) => {
+    const append = offset > 0;
+    if (append) setLoadingMore(true);
+    else setLoading(true);
+    setError('');
+    try {
+      const params = new URLSearchParams({
+        date_from: dateStr, date_to: dateStr, limit: String(PAGE_SIZE), offset: String(offset),
+      });
+      const res = await apiFetch(`/memory?${params}`);
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(responseError(data, '这一天的记忆加载失败'));
+      const items = Array.isArray(data.data?.items) ? data.data.items : [];
+      setMemories(previous => append ? [...previous, ...items] : items);
+      setTotal(Number(data.data?.total) || 0);
+    } catch (loadError) {
+      setError(loadError.message || '这一天的记忆加载失败');
+    } finally {
       setLoading(false);
-    })();
+      setLoadingMore(false);
+    }
   }, [dateStr]);
+
+  useEffect(() => { load(0); }, [load]);
 
   return (
     <div>
@@ -589,6 +709,7 @@ function DayMemories({ year, month, day, onBack }) {
       <div style={{ fontSize: 16, fontWeight: 500, color: 'var(--ink)', marginBottom: 14, fontFamily: 'var(--font-display)' }}>
         {month} 月 {day} 日的记忆
       </div>
+      <InlineStatus message={error} onRetry={() => load(0)} />
       {loading ? (
         <div style={{ textAlign: 'center', padding: 40, color: 'var(--ink-faint)', fontSize: 13 }}>加载中…</div>
       ) : memories.length === 0 ? (
@@ -596,22 +717,31 @@ function DayMemories({ year, month, day, onBack }) {
           <div style={{ fontSize: 13, color: 'var(--ink-faint)' }}>这一天没有记忆</div>
         </div>
       ) : (
-        <div className="r-glass" style={{ position: 'relative' }}>
-          {memories.map(m => {
-            const rawT = m.tags || m.tags_json;
-            const tags = Array.isArray(rawT) ? rawT :
-              (typeof rawT === 'string' ? (() => { try { return JSON.parse(rawT); } catch { return []; } })() : []);
-            return (
-              <div key={m.id} style={{ padding: '10px 0', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
-                <div style={{ fontSize: 14, color: 'var(--ink)', lineHeight: 1.6 }}>{m.content}</div>
-                <div style={{ display: 'flex', gap: 4, marginTop: 4, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <Pill tone="neutral">{LAYER_META[m.layer]?.label || m.layer}</Pill>
-                  {tags.map((t, i) => <Pill key={i} tone="neutral">{t}</Pill>)}
+        <>
+          <div className="r-glass" style={{ position: 'relative' }}>
+            {memories.map(m => {
+              const rawT = m.tags || m.tags_json;
+              const tags = Array.isArray(rawT) ? rawT :
+                (typeof rawT === 'string' ? (() => { try { return JSON.parse(rawT); } catch { return []; } })() : []);
+              return (
+                <div key={m.id} style={{ padding: '10px 0', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
+                  <div style={{ fontSize: 14, color: 'var(--ink)', lineHeight: 1.6 }}>{m.content}</div>
+                  <div style={{ display: 'flex', gap: 4, marginTop: 4, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <Pill tone="neutral">{LAYER_META[m.layer]?.label || m.layer}</Pill>
+                    {tags.map((t, i) => <Pill key={i} tone="neutral">{t}</Pill>)}
+                  </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+          {memories.length < total && (
+            <button type="button" onClick={() => load(memories.length)} disabled={loadingMore} style={{
+              width: '100%', minHeight: 44, marginTop: 12, borderRadius: 10,
+              border: '1px solid rgba(124,99,80,0.16)', background: 'transparent',
+              color: 'var(--ink-accent)', fontFamily: 'var(--font-body)',
+            }}>{loadingMore ? '加载中…' : `继续加载（${memories.length} / ${total}）`}</button>
+          )}
+        </>
       )}
     </div>
   );
@@ -626,6 +756,8 @@ export default function MemoryPalace({ onBack }) {
   const [heatViewMode, setHeatViewMode] = useState('month');
   const [selectedLayer, setSelectedLayer] = useState(null);
   const [selectedDay, setSelectedDay] = useState(null);
+  const [homeError, setHomeError] = useState('');
+  const [candidateBusyId, setCandidateBusyId] = useState(null);
 
   const bj = getBJDate();
   const [calYear, setCalYear] = useState(bj.year);
@@ -633,6 +765,7 @@ export default function MemoryPalace({ onBack }) {
 
   useEffect(() => {
     (async () => {
+      setHomeError('');
       try {
         const [statsRes, candRes] = await Promise.all([
           apiFetch('/memory/stats'),
@@ -640,9 +773,13 @@ export default function MemoryPalace({ onBack }) {
         ]);
         const sd = await statsRes.json();
         const cd = await candRes.json();
-        if (sd.ok) setStats(sd.data);
-        if (cd.ok && Array.isArray(cd.data)) setCandidates(cd.data);
-      } catch (e) {}
+        if (!statsRes.ok || !sd.ok) throw new Error(responseError(sd, '记忆统计加载失败'));
+        if (!candRes.ok || !cd.ok) throw new Error(responseError(cd, '候选记忆加载失败'));
+        setStats(sd.data);
+        if (Array.isArray(cd.data)) setCandidates(cd.data);
+      } catch (loadError) {
+        setHomeError(loadError.message || '记忆宫殿加载失败');
+      }
     })();
   }, []);
 
@@ -699,24 +836,39 @@ export default function MemoryPalace({ onBack }) {
   }
 
   async function acceptCandidate(id) {
+    setCandidateBusyId(id);
+    setHomeError('');
     try {
       const res = await apiJsonFetch(`/memory/candidates/${id}/accept`, { method: 'POST', body: '{}' });
       const data = await res.json();
-      if (data.ok) {
+      if (res.ok && data.ok) {
         setCandidates(c => c.filter(x => x.id !== id));
         const statsRes = await apiFetch('/memory/stats');
         const sd = await statsRes.json();
-        if (sd.ok) setStats(sd.data);
+        if (statsRes.ok && sd.ok) setStats(sd.data);
+      } else {
+        setHomeError(responseError(data, '候选记忆接受失败'));
       }
-    } catch (e) {}
+    } catch (acceptError) {
+      setHomeError(acceptError.message || '候选记忆接受失败');
+    } finally {
+      setCandidateBusyId(null);
+    }
   }
 
   async function rejectCandidate(id) {
+    setCandidateBusyId(id);
+    setHomeError('');
     try {
       const res = await apiFetch(`/memory/candidates/${id}/reject`, { method: 'POST' });
       const data = await res.json();
-      if (data.ok) setCandidates(c => c.filter(x => x.id !== id));
-    } catch (e) {}
+      if (res.ok && data.ok) setCandidates(c => c.filter(x => x.id !== id));
+      else setHomeError(responseError(data, '候选记忆拒绝失败'));
+    } catch (rejectError) {
+      setHomeError(rejectError.message || '候选记忆拒绝失败');
+    } finally {
+      setCandidateBusyId(null);
+    }
   }
 
   if (view === 'layer' && selectedLayer) {
@@ -730,7 +882,7 @@ export default function MemoryPalace({ onBack }) {
   if (view === 'day' && selectedDay) {
     return (
       <div style={{ padding: '16px 14px 16px' }}>
-        <DayMemories year={calYear} month={calMonth} day={selectedDay} onBack={() => { setView('home'); setSelectedDay(null); }} />
+        <DayMemories year={selectedDay.year} month={selectedDay.month} day={selectedDay.day} onBack={() => { setView('home'); setSelectedDay(null); }} />
       </div>
     );
   }
@@ -740,6 +892,8 @@ export default function MemoryPalace({ onBack }) {
   return (
     <div style={{ padding: '16px 14px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
       <BackButton onClick={onBack} />
+
+      <InlineStatus message={homeError} />
 
       <div style={{ textAlign: 'center', marginBottom: 4 }}>
         <div style={{ fontSize: 28, fontWeight: 300, color: 'var(--ink)', fontFamily: 'var(--font-display)', letterSpacing: 0.5 }}>
@@ -760,10 +914,10 @@ export default function MemoryPalace({ onBack }) {
         viewMode={heatViewMode} setViewMode={setHeatViewMode}
         year={calYear} month={calMonth}
         onChangeMonth={changeMonth}
-        onDayClick={(y, m, d) => { setCalYear(y); setCalMonth(m); setSelectedDay(d); setView('day'); }}
+        onDayClick={(y, m, d) => { setSelectedDay({ year: y, month: m, day: d }); setView('day'); }}
       />
 
-      <CandidateReview candidates={candidates} onAccept={acceptCandidate} onReject={rejectCandidate} />
+      <CandidateReview candidates={candidates} onAccept={acceptCandidate} onReject={rejectCandidate} busyId={candidateBusyId} />
     </div>
   );
 }
