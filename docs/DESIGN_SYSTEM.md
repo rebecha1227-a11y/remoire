@@ -228,41 +228,33 @@ RoomShell 支持叠加天气效果（通过 `localStorage` 的 `remoire_weather`
 ### 3.1 字体选型
 
 ```css
-/* Display — Petrona，可变字重的人文主义衬线，温暖书卷气，用于标题、日记正文、关系计时器数字 */
-font-family: var(--font-display); /* 'Petrona', 'LXGW WenKai', Georgia, serif */
+/* Display — Cormorant Garamond，用于标题、日记正文与关系计时器数字 */
+font-family: var(--font-display); /* 'Cormorant Garamond', 'Songti SC', Georgia, serif */
 
-/* Body UI — Manrope，温暖几何无衬线，圆润但不卡通，用于所有 UI 文字、消息气泡、按钮、导航标签 */
-font-family: var(--font-body); /* 'Manrope', 'LXGW WenKai', 'Helvetica Neue', sans-serif */
+/* Body UI — Instrument Sans，用于 UI、消息气泡、按钮与导航标签 */
+font-family: var(--font-body); /* 'Instrument Sans', 'PingFang SC', 'Helvetica Neue', sans-serif */
 
-/* 中文 — LXGW WenKai 霞鹜文楷，开源免费、温暖、带手写感但完全可读 */
-/* 已作为 fallback 写入 --font-display 和 --font-body，不需要单独设置 */
-
-/* Handwriting — 手写体，用于便签留言、日记页的涂鸦和补充说明 */
-/* 中文 ShouShuTi 手书体（本地）；英文 JustAnotherHand（本地）/ Caveat（Google Fonts） */
-font-family: var(--font-note); /* 'ShouShuTi', 'JustAnotherHand', 'Caveat', cursive */
+/* 中文 fallback 使用系统可用的宋体 / 苹方，不再随应用分发超大的旧字体文件。 */
 
 /* 各场景字体变量（可在设置页上传自定义字体覆盖） */
 --font-chat:     /* 同 --font-body，聊天界面 */
---font-note:     /* 'ShouShuTi', 'JustAnotherHand', 'Caveat', cursive · 小纸条 */
---font-diary:    /* 'ShouShuTi', 'JustAnotherHand', cursive · 日记 */
---font-read:     /* 'Caveat', 'JustAnotherHand', cursive · 共读批注 */
+--font-note:     /* 同 --font-display · 小纸条 */
+--font-diary:    /* 同 --font-display · 日记 */
+--font-read:     /* 同 --font-body · 共读批注 */
 --font-parallel: /* 同 --font-display · 平行空间 */
 
-/* Mono — 等宽，仅用于技术型内容如 API Key 输入框（可选） */
-font-family: 'JetBrains Mono', monospace;
+/* Mono — 仅用于技术型内容如 API Key 输入框，使用系统等宽字体。 */
+font-family: monospace;
 ```
 
 ### 3.2 引入方式
 
 ```html
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Petrona:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&family=Manrope:wght@400;500;600;700&family=Caveat:wght@400;500&display=swap" rel="stylesheet">
-<!-- 中文：LXGW WenKai 霞鹜文楷，jsdelivr CDN -->
-<link href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
 ```
 
-**为什么不用 Cormorant Garamond / Instrument Sans？**
-这两个字体在 impeccable 的「不要再选」清单里——所有想做"文艺/温暖品牌"的项目都默认选它们，反而失去辨识度。Petrona + Manrope + LXGW WenKai 的组合既保留温暖书卷气，又给 Remoire 一张自己的脸。
+生产前端只维护这一组字体角色。用户在设置页上传的自定义字体只保存在本机浏览器中，不会改变服务端资源，也不会把旧字体打进部署包。
 
 ### 3.3 字阶
 
