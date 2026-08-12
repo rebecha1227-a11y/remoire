@@ -1,7 +1,7 @@
 import json
 import tempfile
 import unittest
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -32,7 +32,7 @@ class MemoryIntegrityTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(stored["unresolved"])
 
     async def test_resolve_preserves_history_and_is_not_reactivated(self):
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         async with get_db() as db:
             await db.execute(
                 """INSERT INTO memories
@@ -49,7 +49,7 @@ class MemoryIntegrityTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse((await memory_service.get_memory("task"))["unresolved"])
 
     async def test_one_time_migration_repairs_legacy_inconsistency(self):
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         async with get_db() as db:
             await db.execute(
                 "DELETE FROM schema_migrations WHERE version = '2026-08-12-unresolved-invariant'"
@@ -69,7 +69,7 @@ class MemoryIntegrityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(by_flag["memory_type"], "unresolved")
 
     async def test_content_edit_never_keeps_stale_embedding(self):
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         async with get_db() as db:
             await db.execute(
                 """INSERT INTO memories
@@ -88,7 +88,7 @@ class MemoryIntegrityTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(row["embedding"])
 
     async def test_candidate_accept_preserves_affect_and_active_state(self):
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         async with get_db() as db:
             await db.execute(
                 """INSERT INTO memory_candidates
@@ -125,7 +125,7 @@ class MemoryIntegrityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(skipped), 2)
 
     async def test_digest_transaction_merges_metadata_and_rewires_links(self):
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         async with get_db() as db:
             await db.execute(
                 """INSERT INTO memories
@@ -161,7 +161,7 @@ class MemoryIntegrityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((link["source_id"], link["target_id"]), ("keep", "related"))
 
     async def test_recall_has_no_random_or_recent_fallback(self):
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         async with get_db() as db:
             await db.execute(
                 """INSERT INTO memories
@@ -174,7 +174,7 @@ class MemoryIntegrityTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(await memory_service.recall("蒙特利尔留学", limit=5), [])
 
     async def test_recall_uses_calibrated_semantic_floor(self):
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         high = json.dumps([0.8, 0.6]).encode()
         low = json.dumps([0.69, (1 - 0.69**2) ** 0.5]).encode()
         async with get_db() as db:
@@ -209,9 +209,17 @@ class MemoryIntegrityTests(unittest.IsolatedAsyncioTestCase):
             )).fetchone()
         self.assertEqual(row["trigger_count"], 1)
         self.assertEqual(row["updated_at"], original)
+        async with get_db() as db:
+            logs = await (await db.execute(
+                "SELECT query_hash, keyword_hits, result_count FROM memory_recall_logs ORDER BY created_at"
+            )).fetchall()
+        self.assertEqual(len(logs), 2)
+        self.assertNotEqual(logs[0]["query_hash"], "热拿铁")
+        self.assertEqual(logs[0]["keyword_hits"], 1)
+        self.assertEqual(logs[0]["result_count"], 1)
 
     async def test_write_time_association_does_not_count_as_recall(self):
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         async with get_db() as db:
             await db.execute(
                 """INSERT INTO memories
@@ -242,7 +250,7 @@ class MemoryIntegrityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([item["memory"]["id"] for item in selected], ["a", "c"])
 
     async def test_related_memories_are_bidirectional_and_ranked(self):
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         async with get_db() as db:
             await db.execute(
                 """INSERT INTO memories (id, content, tags_json, layer, memory_type, created_at, updated_at)

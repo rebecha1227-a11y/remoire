@@ -81,7 +81,12 @@ https://{your-domain}/api
 // 失败
 {
   "ok": false,
-  "error": "错误描述"
+  "data": null,
+  "error": {
+    "code": "validation_error",
+    "message": "请求参数不正确",
+    "request_id": "用于日志定位的请求 ID"
+  }
 }
 
 // 分页列表

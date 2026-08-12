@@ -342,6 +342,10 @@ async def decay_memories():
                     """DELETE FROM memory_links WHERE source_id NOT IN (SELECT id FROM memories)
                        OR target_id NOT IN (SELECT id FROM memories)"""
                 )
+            await db.execute(
+                "DELETE FROM memory_recall_logs WHERE created_at < datetime(?, '-90 days')",
+                (now_str,),
+            )
             await db.commit()
         logger.info("记忆衰减完成：降级 %d 条过期长期记忆，清理 %d 条过期短期记忆", demoted.rowcount, expired.rowcount)
     except Exception as e:

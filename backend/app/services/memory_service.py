@@ -2,7 +2,9 @@ import uuid
 import json
 import math
 import asyncio
-from datetime import datetime, timedelta
+import hashlib
+import time
+from datetime import datetime, timedelta, timezone
 from app.database import get_db
 from app.llm import call_llm, get_embedding, get_embeddings_batch
 from app.config import EMBEDDING_API_BASE, EMBEDDING_API_KEY, EMBEDDING_MODEL_ID
@@ -12,6 +14,14 @@ from pathlib import Path
 PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 LAYERS = ("core", "long", "short", "consciousness")
 MEMORY_TYPES = ("fact", "event", "unresolved", "date", "consciousness")
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def _utc_now_iso() -> str:
+    return _utc_now().isoformat()
 
 
 def _cosine_similarity(a: list[float], b: list[float]) -> float:
@@ -124,7 +134,7 @@ async def extract_candidates(conversation_id: str, messages: list[dict]) -> list
             })
         else:
             cid = str(uuid.uuid4())
-            now = datetime.utcnow().isoformat()
+            now = _utc_now_iso()
             async with get_db() as db:
                 await db.execute(
                     """INSERT INTO memory_candidates
@@ -225,10 +235,10 @@ async def accept_candidate(candidate_id: str, content: str | None = None,
             raise ValueError("与已有记忆重复")
 
         mem_id = str(uuid.uuid4())
-        now = datetime.utcnow().isoformat()
+        now = _utc_now_iso()
         decay_rate = _decay_rate_for_layer(final_layer)
         expires_at = (
-            (datetime.utcnow() + timedelta(days=30)).isoformat()
+            (_utc_now() + timedelta(days=30)).isoformat()
             if final_layer == "short" and not final_unresolved else None
         )
         embedding = await _generate_embedding(final_content)
@@ -267,7 +277,7 @@ async def accept_candidate(candidate_id: str, content: str | None = None,
                        DO UPDATE SET weight = MAX(memory_links.weight, excluded.weight)""",
                     (
                         str(uuid.uuid4()), mem_id, item["id"],
-                        item.get("relevance_score", 0.5), datetime.utcnow().isoformat(),
+                        item.get("relevance_score", 0.5), _utc_now_iso(),
                     ),
                 )
             await db.commit()
@@ -401,6 +411,7 @@ async def recall(query: str, limit: int = 5) -> list[dict]:
     limit = max(1, min(int(limit), 20))
     if not query:
         return []
+    started = time.perf_counter()
     async with get_db() as db:
         async with db.execute("SELECT * FROM memories ORDER BY created_at DESC") as cur:
             all_memories = await cur.fetchall()
@@ -470,7 +481,7 @@ async def recall(query: str, limit: int = 5) -> list[dict]:
     results = _diversify_results(scored[: max(limit * 4, limit)], limit)
 
     if results:
-        now = datetime.utcnow().isoformat()
+        now = _utc_now_iso()
         async with get_db() as db:
             for item in results:
                 if item["score"] > 0.05:
@@ -479,7 +490,7 @@ async def recall(query: str, limit: int = 5) -> list[dict]:
                     eligible_trigger = True
                     if last_triggered:
                         try:
-                            eligible_trigger = datetime.utcnow() - datetime.fromisoformat(last_triggered) >= timedelta(hours=6)
+                            eligible_trigger = _utc_now() - datetime.fromisoformat(last_triggered) >= timedelta(hours=6)
                         except ValueError:
                             eligible_trigger = True
                     if not eligible_trigger:
@@ -502,7 +513,7 @@ async def recall(query: str, limit: int = 5) -> list[dict]:
                         _digest_logger.info("auto-promote: %s → long (triggered %d times)", mem["id"][:8], new_trigger)
             await db.commit()
 
-    return [
+    response = [
         {
             "id": item["memory"]["id"],
             "content": item["memory"]["content"],
@@ -511,6 +522,22 @@ async def recall(query: str, limit: int = 5) -> list[dict]:
         }
         for item in results
     ]
+    try:
+        async with get_db() as db:
+            await db.execute(
+                """INSERT INTO memory_recall_logs
+                   (id, query_hash, keyword_hits, semantic_hits, result_count, latency_ms, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    str(uuid.uuid4()), hashlib.sha256(query.encode("utf-8")).hexdigest(),
+                    len(keyword_scores), len(semantic_scores), len(response),
+                    round((time.perf_counter() - started) * 1000, 2), _utc_now_iso(),
+                ),
+            )
+            await db.commit()
+    except Exception as error:
+        _digest_logger.warning("recall metrics write failed: %s", error)
+    return response
 
 
 def _keyword_search_score(query: str, mem_content: str, mem_tags: list[str]) -> float:
@@ -611,11 +638,11 @@ async def create_memory(content: str, tags: list[str] | None = None,
         return {"memory": {"id": None, "content": content, "tags": tags, "duplicate": True}, "associated": []}
 
     mem_id = str(uuid.uuid4())
-    now = datetime.utcnow().isoformat()
+    now = _utc_now_iso()
 
     decay_rate = _decay_rate_for_layer(layer)
     expires_at = (
-        (datetime.utcnow() + timedelta(days=30)).isoformat()
+        (_utc_now() + timedelta(days=30)).isoformat()
         if layer == "short" and not unresolved else None
     )
 
@@ -642,7 +669,7 @@ async def create_memory(content: str, tags: list[str] | None = None,
         async with get_db() as db:
             for a in associated:
                 link_id = str(uuid.uuid4())
-                now2 = datetime.utcnow().isoformat()
+                now2 = _utc_now_iso()
                 await db.execute(
                     """INSERT INTO memory_links
                        (id, source_id, target_id, link_type, weight, created_at)
@@ -810,7 +837,7 @@ async def update_memory(memory_id: str, content: str | None = None, tags: list[s
         if not row:
             raise ValueError("记忆不存在")
 
-        now = datetime.utcnow().isoformat()
+        now = _utc_now_iso()
         updates = {"updated_at": now}
 
         if content is not None:
@@ -879,7 +906,7 @@ async def resolve_memory(memory_id: str) -> dict:
             raise ValueError("这条记忆不是未完成事项")
         await db.execute(
             "UPDATE memories SET memory_type = 'unresolved', unresolved = 0, updated_at = ? WHERE id = ?",
-            (datetime.utcnow().isoformat(), memory_id),
+            (_utc_now_iso(), memory_id),
         )
         await db.commit()
     return await get_memory(memory_id)
@@ -1034,7 +1061,7 @@ async def _apply_digest_pairs(pairs: list[dict]) -> int:
                        arousal = MAX(arousal, ?), trigger_count = trigger_count + ?, updated_at = ?
                        WHERE id = ?""",
                     (json.dumps(tags, ensure_ascii=False), deleted["weight"] or 0, deleted["arousal"] or 0,
-                     deleted["trigger_count"] or 0, datetime.utcnow().isoformat(), keep_id),
+                     deleted["trigger_count"] or 0, _utc_now_iso(), keep_id),
                 )
                 async with db.execute(
                     "SELECT source_id, target_id, link_type, weight, description, created_at FROM memory_links WHERE source_id = ? OR target_id = ?",
@@ -1086,7 +1113,7 @@ async def _run_digest_locked():
     total_deleted = 0
     run_id = str(uuid.uuid4())
     proposed_log, applied_log, skipped_log = [], [], []
-    now = datetime.utcnow().isoformat()
+    now = _utc_now_iso()
     async with get_db() as db:
         await db.execute(
             "INSERT INTO memory_digest_runs (id, status, created_at) VALUES (?, 'running', ?)",
@@ -1159,7 +1186,7 @@ async def _run_digest_locked():
             """UPDATE memory_digest_runs SET status = 'completed', proposed_json = ?,
                applied_json = ?, skipped_json = ?, deleted_count = ?, completed_at = ? WHERE id = ?""",
             (json.dumps(proposed_log, ensure_ascii=False), json.dumps(applied_log, ensure_ascii=False),
-             json.dumps(skipped_log, ensure_ascii=False), total_deleted, datetime.utcnow().isoformat(), run_id),
+             json.dumps(skipped_log, ensure_ascii=False), total_deleted, _utc_now_iso(), run_id),
         )
         await db.commit()
     _digest_logger.info("digest: 完成，共安全合并 %d 条重复记忆", total_deleted)
@@ -1281,7 +1308,7 @@ async def backfill_emotions(batch_size: int = 10) -> int:
                         a = max(0.0, min(1.0, float(vals[1])))
                         await db.execute(
                             "UPDATE memories SET valence = ?, arousal = ?, updated_at = ? WHERE id = ?",
-                            (v, a, datetime.utcnow().isoformat(), mid),
+                            (v, a, _utc_now_iso(), mid),
                         )
                         total += 1
                 await db.commit()

@@ -23,7 +23,7 @@ function LoginScreen({ onAuthenticated }) {
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        setError(payload.detail || '暂时无法登录，请稍后再试。');
+        setError(payload.error?.message || payload.detail || '暂时无法登录，请稍后再试。');
         return;
       }
       setPassword('');

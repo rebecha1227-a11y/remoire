@@ -1,4 +1,6 @@
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from contextlib import asynccontextmanager
@@ -12,8 +14,14 @@ from app.routers import auth, chat, memory, diary, note, settings, reminder, pus
 from app.scheduler.jobs import connie_auto_diary, catchup_missed_diary, generate_breath_state, decay_memories, digest_memories
 from app.services.nudge_service import run_autonomous_check
 from app.services.weather_service import fetch_and_cache as fetch_weather
+import logging
+import re
+import time
+import uuid
 
 scheduler = AsyncIOScheduler()
+logger = logging.getLogger("remoire.http")
+_SAFE_REQUEST_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 
 def _schedule_next_autonomous():
@@ -97,7 +105,17 @@ app.add_middleware(
 
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
+    incoming_id = request.headers.get("x-request-id", "")
+    request_id = incoming_id if _SAFE_REQUEST_ID.fullmatch(incoming_id) else str(uuid.uuid4())
+    request.state.request_id = request_id
+    started = time.perf_counter()
     response = await call_next(request)
+    duration_ms = round((time.perf_counter() - started) * 1000, 2)
+    logger.info(
+        "request_id=%s method=%s path=%s status=%s duration_ms=%.2f",
+        request_id, request.method, request.url.path, response.status_code, duration_ms,
+    )
+    response.headers["X-Request-ID"] = request_id
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "no-referrer"
@@ -106,6 +124,39 @@ async def security_headers(request: Request, call_next):
     if request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https":
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
+
+
+def _error_response(request: Request, status_code: int, code: str, message: str, headers=None):
+    return JSONResponse(
+        status_code=status_code,
+        headers=headers,
+        content={
+            "ok": False,
+            "data": None,
+            "error": {
+                "code": code,
+                "message": message,
+                "request_id": getattr(request.state, "request_id", None),
+            },
+        },
+    )
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    message = exc.detail if isinstance(exc.detail, str) else "请求未能完成"
+    return _error_response(request, exc.status_code, f"http_{exc.status_code}", message, exc.headers)
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, _exc: RequestValidationError):
+    return _error_response(request, 422, "validation_error", "请求参数不正确")
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    logger.exception("request_id=%s unhandled_error", getattr(request.state, "request_id", None), exc_info=exc)
+    return _error_response(request, 500, "internal_error", "服务暂时出了点问题")
 
 app.include_router(auth.router)
 app.include_router(chat.router)
@@ -121,6 +172,24 @@ app.include_router(autonomous.router)
 @app.get("/")
 async def root():
     return {"ok": True, "message": "Remoire 后端运行中 🌸"}
+
+
+@app.get("/api/health/live")
+async def health_live():
+    return {"ok": True, "data": {"status": "alive"}, "error": None}
+
+
+@app.get("/api/health/ready")
+async def health_ready():
+    from app.database import get_db
+    try:
+        async with get_db() as db:
+            row = await (await db.execute("SELECT 1")).fetchone()
+        if not row:
+            raise RuntimeError("database probe returned no row")
+    except Exception:
+        raise HTTPException(status_code=503, detail="数据库尚未就绪")
+    return {"ok": True, "data": {"status": "ready"}, "error": None}
 
 @app.get("/api/weather")
 async def get_weather(_=Depends(verify_token)):

@@ -232,6 +232,16 @@ async def init_db():
                 completed_at TEXT
             );
 
+            CREATE TABLE IF NOT EXISTS memory_recall_logs (
+                id TEXT PRIMARY KEY,
+                query_hash TEXT NOT NULL,
+                keyword_hits INTEGER NOT NULL DEFAULT 0,
+                semantic_hits INTEGER NOT NULL DEFAULT 0,
+                result_count INTEGER NOT NULL DEFAULT 0,
+                latency_ms REAL NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
+            );
+
             CREATE INDEX IF NOT EXISTS idx_messages_conversation
                 ON messages(conversation_id, created_at);
             CREATE INDEX IF NOT EXISTS idx_memory_candidates_status
@@ -256,6 +266,8 @@ async def init_db():
                 ON auth_sessions(expires_at);
             CREATE INDEX IF NOT EXISTS idx_memory_digest_runs_created
                 ON memory_digest_runs(created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_memory_recall_logs_created
+                ON memory_recall_logs(created_at DESC);
             CREATE TABLE IF NOT EXISTS weather_cache (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 temp TEXT,
