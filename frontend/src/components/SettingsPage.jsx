@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { Pill } from './primitives';
 import {
-  SettingsToggle, SettingRow, SettingsSectionTitle, SubPageHeader, ChevronRight, setTweakVal,
+  SettingsToggle, SettingRow, SettingsSectionTitle, ChevronRight,
 } from './settingsShared';
+import { setTweakVal } from '../utils/tweaks';
 
 function getDayCount() {
   const start = new Date(2026, 2, 29);
@@ -18,8 +19,6 @@ import {
   NoteHistorySettings, MemoryCandidatesSettings,
 } from './SettingsSubPages';
 import RoomShell from './RoomShell';
-
-export { SettingsToggle, SettingRow, SettingsSectionTitle, SubPageHeader, ChevronRight, setTweakVal };
 
 export default function SettingsPage({ tweaks, nav }) {
   const [panel, setPanel] = useState(null);

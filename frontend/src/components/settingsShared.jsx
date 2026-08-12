@@ -73,17 +73,3 @@ export function SubPageHeader({ onBack, title, subtitle }) {
 export const ChevronRight = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5" style={{ flexShrink: 0 }}><path d="M9 18l6-6-6-6"/></svg>
 );
-
-const TWEAK_STORAGE_KEY = 'remoire_tweaks';
-
-export function setTweakVal(key, val) {
-  try {
-    const current = JSON.parse(window.localStorage.getItem(TWEAK_STORAGE_KEY) || '{}');
-    const next = { ...current, [key]: val };
-    window.localStorage.setItem(TWEAK_STORAGE_KEY, JSON.stringify(next));
-  } catch (error) {
-    console.warn('保存外观设置失败', error);
-  }
-  window.parent.postMessage({ type: '__edit_mode_set_keys', edits: { [key]: val } }, '*');
-  window.dispatchEvent(new CustomEvent('tweak-update', { detail: { [key]: val } }));
-}

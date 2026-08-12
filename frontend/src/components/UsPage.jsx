@@ -176,12 +176,11 @@ function getDayCount() {
   return Math.max(1, Math.floor((today - start) / 86400000) + 1);
 }
 
-export default function UsPage({ tweaks = {}, nav }) {
+export default function UsPage({ nav }) {
   const dayCount = getDayCount();
   const [showPalace, setShowPalace] = useState(false);
   const [memStats, setMemStats] = useState(null);
   const [latestMemory, setLatestMemory] = useState(null);
-  const [reminders, setReminders] = useState([]);
   const [todayReminders, setTodayReminders] = useState([]);
   const [selectedDay, setSelectedDay] = useState(null);
   const [dayReminders, setDayReminders] = useState([]);
@@ -230,7 +229,6 @@ export default function UsPage({ tweaks = {}, nav }) {
       const items = md.ok ? (md.data?.items || []) : [];
       if (items.length > 0) setLatestMemory(items[0]);
       const allReminders = (rd.ok ? (rd.data?.items || []) : []).filter(r => r.status !== 'dismissed');
-      setReminders(allReminders);
       if (td.ok) setTodayReminders(td.data || []);
       const daySet = new Set();
       allReminders.forEach(r => {
@@ -242,7 +240,10 @@ export default function UsPage({ tweaks = {}, nav }) {
     }
   }, []);
 
-  useEffect(() => { loadData(); }, [loadData, showPalace]);
+  useEffect(() => {
+    const timer = window.setTimeout(loadData, 0);
+    return () => window.clearTimeout(timer);
+  }, [loadData, showPalace]);
 
   async function handleDaySelect(day) {
     setSelectedDay(day);
@@ -250,7 +251,7 @@ export default function UsPage({ tweaks = {}, nav }) {
       const res = await apiFetch(`/reminder/date/${day.dateStr}`);
       const data = await res.json();
       setDayReminders(data.ok ? (data.data || []) : []);
-    } catch (e) { setDayReminders([]); }
+    } catch { setDayReminders([]); }
   }
 
   async function toggleDone(id) {
@@ -259,8 +260,8 @@ export default function UsPage({ tweaks = {}, nav }) {
       const res = await apiJsonFetch(`/reminder/${id}/done`, { method: 'POST', body: '{}' });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.ok) throw new Error(apiErrorMessage(data, '提醒更新失败'));
-      setReminders(r => r.map(x => x.id === id ? { ...x, status: 'done' } : x));
       setTodayReminders(r => r.map(x => x.id === id ? { ...x, status: 'done' } : x));
+      await loadData();
       if (selectedDay) handleDaySelect(selectedDay);
     } catch (error) {
       setStatus(error.message || '提醒更新失败，请稍后重试。');
@@ -273,8 +274,8 @@ export default function UsPage({ tweaks = {}, nav }) {
       const res = await apiJsonFetch(`/reminder/${id}/dismiss`, { method: 'POST', body: '{}' });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.ok) throw new Error(apiErrorMessage(data, '提醒忽略失败'));
-      setReminders(r => r.filter(x => x.id !== id));
       setTodayReminders(r => r.filter(x => x.id !== id));
+      await loadData();
       if (selectedDay) handleDaySelect(selectedDay);
     } catch (error) {
       setStatus(error.message || '提醒忽略失败，请稍后重试。');

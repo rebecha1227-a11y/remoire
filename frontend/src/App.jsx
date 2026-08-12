@@ -4,7 +4,8 @@ import UsPage from './components/UsPage.jsx';
 import DiaryPage from './components/DiaryPage.jsx';
 import PlayPage from './components/PlayPage.jsx';
 import SettingsPage from './components/SettingsPage.jsx';
-import { RoomAmbientProvider, useRoomAmbient, useRoomChrome } from './components/RoomShell.jsx';
+import RoomAmbientProvider from './components/RoomAmbientProvider.jsx';
+import { useRoomAmbient, useRoomChrome } from './hooks/useRoomAmbient.js';
 import { apiJsonFetch } from './utils/api.js';
 import './styles/room.css';
 

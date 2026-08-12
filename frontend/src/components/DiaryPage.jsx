@@ -136,10 +136,15 @@ function PinPad({ title, subtitle, onComplete, onCancel, errorKey }) {
 
   useEffect(() => {
     if (errorKey > 0) {
-      setShaking(true);
-      setDigits([]);
-      const t = setTimeout(() => setShaking(false), 400);
-      return () => clearTimeout(t);
+      const startTimer = window.setTimeout(() => {
+        setShaking(true);
+        setDigits([]);
+      }, 0);
+      const stopTimer = window.setTimeout(() => setShaking(false), 400);
+      return () => {
+        window.clearTimeout(startTimer);
+        window.clearTimeout(stopTimer);
+      };
     }
   }, [errorKey]);
 
@@ -391,13 +396,6 @@ function PinkCover({ onClick, customCover }) {
   { x: '50%', y: '75%', w: '50%', h: '25%', bg: '#F0C6D0', pattern: 'dots' }];
 
 
-  function patchBg(p) {
-    if (p.pattern === 'gingham') {
-      return `${p.bg} repeating-linear-gradient(0deg, transparent, transparent 4px, rgba(255,255,255,0.35) 4px, rgba(255,255,255,0.35) 5px) repeating-linear-gradient(90deg, transparent, transparent 4px, rgba(255,255,255,0.35) 4px, rgba(255,255,255,0.35) 5px)`.split(' ').slice(0, 1)[0];
-    }
-    return p.bg;
-  }
-
   return (
     <button type="button" aria-label="打开静儿的日记" onClick={onClick} style={{
       width: '100%', aspectRatio: '3/5', borderRadius: '4px 8px 8px 4px',
@@ -449,6 +447,21 @@ function PinkCover({ onClick, customCover }) {
 
 // ── Blue Star Cover (Connie) ──
 function BlueCover({ onClick, customCover }) {
+  const stars = useMemo(() => {
+    const items = [];
+    for (let i = 0; i < 28; i++) {
+      items.push({
+        x: (i * 37 + 13) % 92 + 4,
+        y: (i * 53 + 7) % 90 + 5,
+        size: 8 + i % 5 * 4,
+        rot: i * 67 % 360,
+        type: i % 3,
+        opacity: 0.5 + i % 4 * 0.15
+      });
+    }
+    return items;
+  }, []);
+
   if (customCover) {
     return (
       <button type="button" aria-label="打开 Connie 的日记" onClick={onClick} style={{
@@ -467,22 +480,6 @@ function BlueCover({ onClick, customCover }) {
       </button>);
 
   }
-  // Generate scattered stars
-  const stars = useMemo(() => {
-    const s = [];
-    for (let i = 0; i < 28; i++) {
-      s.push({
-        x: (i * 37 + 13) % 92 + 4,
-        y: (i * 53 + 7) % 90 + 5,
-        size: 8 + i % 5 * 4,
-        rot: i * 67 % 360,
-        type: i % 3, // 0=dark, 1=gold, 2=white
-        opacity: 0.5 + i % 4 * 0.15
-      });
-    }
-    return s;
-  }, []);
-
   const starColors = ['#5A6878', '#D4C49A', '#E8E2D8'];
 
   return (
@@ -639,7 +636,7 @@ function DiaryMessageBoard({ entry, author, lockedConnie, onAddInteraction, onDe
     try {
       await onAddInteraction(entry.id, type, content);
       setText('');
-    } catch (e) {
+    } catch {
       setError('没送出去。先别关，我把文字留在这里。');
     } finally {
       setSending(false);
@@ -988,22 +985,6 @@ function DiaryFeed({ activities }) {
           paddingLeft: 8, borderLeft: '2px solid rgba(124,99,80,0.15)'
         }}>"{a.msg}"</span>
       </span>);
-
-    return null;
-  }
-
-  function iconFor(a) {
-    if (a.type === 'wrote') return (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={colorMap[a.author]} strokeWidth="1.5"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" /></svg>);
-
-    if (a.type === 'locked') return (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--warning)" strokeWidth="1.5"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>);
-
-    if (a.type === 'comment') return (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={colorMap[a.author]} strokeWidth="1.5"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" /></svg>);
-
-    if (a.type === 'unlock_request' || a.type === 'unlock_granted' || a.type === 'unlock_rejected' || a.type === 'lock_changed') return (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--warning)" strokeWidth="1.5"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 9 1" /></svg>);
 
     return null;
   }

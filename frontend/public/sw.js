@@ -1,5 +1,5 @@
 self.addEventListener('install', () => self.skipWaiting());
-self.addEventListener('activate', (event) => event.waitUntil(clients.claim()));
+self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));
 
 let pageVisible = false;
 
@@ -12,10 +12,12 @@ self.addEventListener('push', (event) => {
   let data = { title: 'Connie', body: '有新消息', url: '/', tag: 'remoire' };
   try {
     if (event.data) data = { ...data, ...event.data.json() };
-  } catch (e) {}
+  } catch {
+    data = { title: 'Connie', body: '有新消息', url: '/', tag: 'remoire' };
+  }
 
   event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
       const hasFocused = list.some((c) => c.focused || c.visibilityState === 'visible');
       if (hasFocused || pageVisible) return;
       return self.registration.showNotification(data.title, {
@@ -34,13 +36,13 @@ self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const url = event.notification.data?.url || '/';
   event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
       for (const client of list) {
         if (client.url.includes(self.location.origin) && 'focus' in client) {
           return client.focus();
         }
       }
-      return clients.openWindow(url);
+      return self.clients.openWindow(url);
     })
   );
 });

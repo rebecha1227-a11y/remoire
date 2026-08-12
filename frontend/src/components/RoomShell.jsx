@@ -1,81 +1,9 @@
-import { createContext, useContext, useState, useEffect } from "react";
+import { useContext } from "react";
 import { PALETTES, currentBand, isDarkBand } from "../utils/ambient";
+import { RoomAmbientContext, readRoomAccentColor } from './roomAmbientContext';
 import Floaters from "./Floaters";
 import { RainLayer, FogLayer } from "./WeatherEffects";
 import "../styles/room.css";
-
-function readAccentColor() {
-  try {
-    const tweaks = JSON.parse(localStorage.getItem('remoire_tweaks') || '{}');
-    return tweaks.accentColor || '';
-  } catch { return ''; }
-}
-
-const RoomAmbientContext = createContext(null);
-
-export function RoomAmbientProvider({ value, children }) {
-  return <RoomAmbientContext.Provider value={value}>{children}</RoomAmbientContext.Provider>;
-}
-
-export function useRoomAmbient() {
-  const [timeOverride, setTimeOverride] = useState(() => localStorage.getItem('remoire_time_override') || 'auto');
-  const [weather, setWeather] = useState(() => localStorage.getItem('remoire_weather') || 'clear');
-  const [deepMode, setDeepMode] = useState(() => !!localStorage.getItem('remoire_deep_mode'));
-  const [chatBgImage, setChatBgImage] = useState(() => localStorage.getItem('remoire_chat_bg') || '');
-  const [accentColor, setAccentColor] = useState(readAccentColor);
-
-  useEffect(() => {
-    function onStorage(e) {
-      if (e.key === 'remoire_time_override') setTimeOverride(e.newValue || 'auto');
-      if (e.key === 'remoire_weather') setWeather(e.newValue || 'clear');
-      if (e.key === 'remoire_deep_mode') setDeepMode(!!e.newValue);
-      if (e.key === 'remoire_chat_bg') setChatBgImage(e.newValue || '');
-      if (e.key === 'remoire_tweaks') setAccentColor(readAccentColor());
-    }
-    function onAmbient(e) {
-      const { key, value } = e.detail || {};
-      if (key === 'remoire_time_override') setTimeOverride(value || 'auto');
-      if (key === 'remoire_weather') setWeather(value || 'clear');
-      if (key === 'remoire_deep_mode') setDeepMode(!!value);
-      if (key === 'remoire_chat_bg') setChatBgImage(value || '');
-    }
-    function onTweak(e) {
-      if (e.detail?.accentColor !== undefined) setAccentColor(e.detail.accentColor || '');
-    }
-    window.addEventListener('storage', onStorage);
-    window.addEventListener('remoire-ambient', onAmbient);
-    window.addEventListener('tweak-update', onTweak);
-    return () => {
-      window.removeEventListener('storage', onStorage);
-      window.removeEventListener('remoire-ambient', onAmbient);
-      window.removeEventListener('tweak-update', onTweak);
-    };
-  }, []);
-
-  const band = timeOverride === 'auto' ? currentBand() : timeOverride;
-  const palette = PALETTES[band];
-  const dark = isDarkBand(band);
-
-  return { band, palette, dark, weather, deepMode, chatBgImage, accentColor };
-}
-
-export function useRoomChrome(palette, chatBgImage) {
-  useEffect(() => {
-    const solidBg = palette.chromeBg || palette.navBg;
-    document.documentElement.style.setProperty('--app-chrome-bg', solidBg);
-    document.documentElement.style.setProperty('--nav-bg', palette.navBg);
-    if (chatBgImage) {
-      document.body.style.background = `${solidBg} url(${chatBgImage}) center / cover no-repeat fixed`;
-    } else {
-      document.body.style.background = palette.bg;
-    }
-    document.documentElement.style.background = solidBg;
-    const root = document.getElementById('root');
-    if (root) root.style.background = 'transparent';
-    const meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute('content', solidBg);
-  }, [palette.chromeBg, palette.navBg, palette.bg, chatBgImage]);
-}
 
 export default function RoomShell({ children, nav }) {
   const ambient = useContext(RoomAmbientContext);
@@ -93,7 +21,7 @@ export default function RoomShell({ children, nav }) {
     weather: 'clear',
     deepMode: false,
     chatBgImage: '',
-    accentColor: readAccentColor(),
+    accentColor: readRoomAccentColor(),
   };
 
   const cssVars = {

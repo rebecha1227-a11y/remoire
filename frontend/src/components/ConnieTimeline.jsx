@@ -215,31 +215,37 @@ export default function ConnieTimeline({ onBack }) {
 
   useEffect(() => {
     if (!calendarMonth) return;
-    setError('');
-    apiFetch(`/autonomous/dates?month=${calendarMonth}`)
-      .then(async r => {
-        const data = await r.json().catch(() => ({}));
-        if (!r.ok || !data.ok) throw new Error(apiErrorMessage(data, '活动日期加载失败'));
-        setActiveDates(data.data || []);
-      })
-      .catch(err => setError(err.message || '活动日期加载失败'));
+    const timer = window.setTimeout(() => {
+      setError('');
+      apiFetch(`/autonomous/dates?month=${calendarMonth}`)
+        .then(async r => {
+          const data = await r.json().catch(() => ({}));
+          if (!r.ok || !data.ok) throw new Error(apiErrorMessage(data, '活动日期加载失败'));
+          setActiveDates(data.data || []);
+        })
+        .catch(err => setError(err.message || '活动日期加载失败'));
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [calendarMonth]);
 
   useEffect(() => {
     if (!selectedDate) return;
-    setLoading(true);
-    setError('');
-    apiFetch(`/autonomous/logs?date=${selectedDate}`)
-      .then(async r => {
-        const data = await r.json().catch(() => ({}));
-        if (!r.ok || !data.ok) throw new Error(apiErrorMessage(data, '生活日志加载失败'));
-        setLogs(data.data || []);
-      })
-      .catch(err => {
-        setLogs([]);
-        setError(err.message || '生活日志加载失败');
-      })
-      .finally(() => setLoading(false));
+    const timer = window.setTimeout(() => {
+      setLoading(true);
+      setError('');
+      apiFetch(`/autonomous/logs?date=${selectedDate}`)
+        .then(async r => {
+          const data = await r.json().catch(() => ({}));
+          if (!r.ok || !data.ok) throw new Error(apiErrorMessage(data, '生活日志加载失败'));
+          setLogs(data.data || []);
+        })
+        .catch(err => {
+          setLogs([]);
+          setError(err.message || '生活日志加载失败');
+        })
+        .finally(() => setLoading(false));
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [selectedDate]);
 
   function handleSelectDate(dateStr) {

@@ -505,7 +505,10 @@ function LayerDetail({ layer, onBack }) {
     }
   }, [layer, search, typeFilter, sortBy]);
 
-  useEffect(() => { load(0); }, [load]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => load(0), 0);
+    return () => window.clearTimeout(timer);
+  }, [load]);
 
   async function handleEdit(id, updates) {
     try {
@@ -697,7 +700,10 @@ function DayMemories({ year, month, day, onBack }) {
     }
   }, [dateStr]);
 
-  useEffect(() => { load(0); }, [load]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => load(0), 0);
+    return () => window.clearTimeout(timer);
+  }, [load]);
 
   return (
     <div>

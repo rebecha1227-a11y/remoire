@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef } from "react";
-import { Card, Pill, SectionLabel, Stack } from "./primitives";
-import { SettingsToggle, SettingRow, SettingsSectionTitle, SubPageHeader, setTweakVal } from "./settingsShared";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { Card, Pill, Stack } from "./primitives";
+import { SettingsToggle, SettingRow, SettingsSectionTitle, SubPageHeader } from "./settingsShared";
+import { setTweakVal } from '../utils/tweaks';
 import { apiErrorMessage, apiFetch, apiJsonFetch } from "../utils/api";
 
 function GlassSelect({ value, onChange, options, placeholder = '请选择', style }) {
@@ -272,25 +273,15 @@ export function ModelSettings({ onBack }) {
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState('');
 
-  useEffect(() => { loadSettings(); }, []);
-
-  useEffect(() => {
-    if (!addOpen || !draft.base_url || (!draft.id && !draft.api_key)) return;
-    const key = `${draft.id || draft.api_key}|${draft.base_url}`;
-    if (key === modelFetchKey) return;
-    const timer = setTimeout(() => fetchDraftModels({ silent: true }), 700);
-    return () => clearTimeout(timer);
-  }, [addOpen, draft.api_key, draft.base_url, draft.id, modelFetchKey]);
-
-  async function readJson(res) {
+  const readJson = useCallback(async (res) => {
     const json = await res.json().catch(() => ({}));
     if (!res.ok || json.ok === false) {
       throw new Error(apiErrorMessage(json, `请求失败：${res.status}`));
     }
     return json;
-  }
+  }, []);
 
-  async function loadSettings() {
+  const loadSettings = useCallback(async () => {
     setLoading(true);
     setStatus('');
     try {
@@ -307,7 +298,7 @@ export function ModelSettings({ onBack }) {
     } finally {
       setLoading(false);
     }
-  }
+  }, [readJson]);
 
   function updateDraft(field, value) {
     setDraft(d => ({ ...d, [field]: value }));
@@ -384,7 +375,7 @@ export function ModelSettings({ onBack }) {
     }
   }
 
-  async function fetchDraftModels({ silent = false } = {}) {
+  const fetchDraftModels = useCallback(async ({ silent = false } = {}) => {
     if ((!draft.id && !draft.api_key) || !draft.base_url) {
       setStatus('请先填写密钥和接口地址。');
       return;
@@ -408,7 +399,20 @@ export function ModelSettings({ onBack }) {
     } finally {
       setFetchingModels(false);
     }
-  }
+  }, [draft.api_key, draft.base_url, draft.id, readJson]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(loadSettings, 0);
+    return () => window.clearTimeout(timer);
+  }, [loadSettings]);
+
+  useEffect(() => {
+    if (!addOpen || !draft.base_url || (!draft.id && !draft.api_key)) return;
+    const key = `${draft.id || draft.api_key}|${draft.base_url}`;
+    if (key === modelFetchKey) return;
+    const timer = window.setTimeout(() => fetchDraftModels({ silent: true }), 700);
+    return () => window.clearTimeout(timer);
+  }, [addOpen, draft.api_key, draft.base_url, draft.id, fetchDraftModels, modelFetchKey]);
 
   async function testDraftModel() {
     if ((!draft.id && !draft.api_key) || !draft.base_url || !draft.model_name) {
@@ -775,12 +779,11 @@ export function ImportSettings({ onBack }) {
 // ═══════════════════════════════════════════
 export function PushSettings({ onBack }) {
   const [enabled, setEnabled] = useState(false);
-  const [permission, setPermission] = useState('default');
+  const [permission, setPermission] = useState(() => ('Notification' in window ? Notification.permission : 'unsupported'));
   const [status, setStatus] = useState('');
   const [testing, setTesting] = useState(false);
 
   useEffect(() => {
-    if ('Notification' in window) setPermission(Notification.permission);
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.getRegistration().then(reg => {
         if (reg) reg.pushManager.getSubscription().then(sub => { if (sub) setEnabled(true); });
@@ -1295,6 +1298,28 @@ export function NoteSettings({ tweaks, onBack }) {
 }
 
 // ── Cover ──
+function DiaryCoverCard({ label, cover, defaultBg, onUpload, onReset }) {
+  return (
+    <Card padding="lg">
+      <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-primary)', marginBottom: 'var(--space-3)' }}>{label}</div>
+      <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
+        <div style={{
+          width: 72, height: 120, borderRadius: '4px 8px 8px 4px', overflow: 'hidden',
+          background: cover ? `url(${cover}) center/cover` : defaultBg,
+          border: '1px solid var(--border-light)', flexShrink: 0,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          {!cover && <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.6)', textAlign: 'center' }}>默认</span>}
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <button onClick={onUpload} style={{ minHeight: 44, background: 'var(--accent)', color: '#FAF8F4', border: 'none', borderRadius: 'var(--radius-sm)', padding: '8px 16px', fontSize: 12, cursor: 'pointer', fontWeight: 500 }}>上传图片</button>
+          {cover && <button onClick={onReset} style={{ minHeight: 44, background: 'transparent', color: 'var(--text-tertiary)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '6px 14px', fontSize: 11, cursor: 'pointer' }}>恢复默认</button>}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 export function CoverSettings({ tweaks, onBack }) {
   const coverJ = tweaks?.diaryCoverJinger;
   const coverC = tweaks?.diaryCoverConnie;
@@ -1311,34 +1336,12 @@ export function CoverSettings({ tweaks, onBack }) {
     input.click();
   }
 
-  function CoverCard({ who, label, cover, defaultBg }) {
-    return (
-      <Card padding="lg">
-        <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-primary)', marginBottom: 'var(--space-3)' }}>{label}</div>
-        <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
-          <div style={{
-            width: 72, height: 120, borderRadius: '4px 8px 8px 4px', overflow: 'hidden',
-            background: cover ? `url(${cover}) center/cover` : defaultBg,
-            border: '1px solid var(--border-light)', flexShrink: 0,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            {!cover && <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.6)', textAlign: 'center' }}>默认</span>}
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <button onClick={() => handleCoverUpload(who)} style={{ background: 'var(--accent)', color: '#FAF8F4', border: 'none', borderRadius: 'var(--radius-sm)', padding: '8px 16px', fontSize: 12, cursor: 'pointer', fontWeight: 500 }}>上传图片</button>
-            {cover && <button onClick={() => setTweakVal(who === 'jinger' ? 'diaryCoverJinger' : 'diaryCoverConnie', '')} style={{ background: 'transparent', color: 'var(--text-tertiary)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '6px 14px', fontSize: 11, cursor: 'pointer' }}>恢复默认</button>}
-          </div>
-        </div>
-      </Card>
-    );
-  }
-
   return (
     <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px 88px' }}>
       <SubPageHeader onBack={onBack} title="日记本封面" subtitle="上传自定义封面图片" />
       <Stack gap="md">
-        <CoverCard who="jinger" label="静儿的日记本" cover={coverJ} defaultBg="#F0C6D0" />
-        <CoverCard who="connie" label="Connie 的日记本" cover={coverC} defaultBg="#8B9EAE" />
+        <DiaryCoverCard label="静儿的日记本" cover={coverJ} defaultBg="#F0C6D0" onUpload={() => handleCoverUpload('jinger')} onReset={() => setTweakVal('diaryCoverJinger', '')} />
+        <DiaryCoverCard label="Connie 的日记本" cover={coverC} defaultBg="#8B9EAE" onUpload={() => handleCoverUpload('connie')} onReset={() => setTweakVal('diaryCoverConnie', '')} />
       </Stack>
     </div>
   );
@@ -1486,7 +1489,10 @@ export function MemoryCandidatesSettings({ onBack }) {
     }
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    const timer = window.setTimeout(load, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   async function accept(id) {
     setBusyId(id);

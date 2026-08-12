@@ -26,8 +26,8 @@ function FormattedText({ text }) {
       else if (match[3] || match[4]) parts.push(<em key={key++}>{match[3] || match[4]}</em>);
       lastIdx = match.index + match[0].length;
     }
-    if (lastIdx < remaining.length) parts.push(<span key={key++}>{remaining.slice(lastIdx)}</span>);
-    if (parts.length === 0 && line === '') parts.push(<br key={key++} />);
+    if (lastIdx < remaining.length) parts.push(<span key={key}>{remaining.slice(lastIdx)}</span>);
+    if (parts.length === 0 && line === '') parts.push(<br key={key} />);
     return <span key={i}>{parts}{i < lines.length - 1 && line !== '' && <br />}</span>;
   });
 }
@@ -200,7 +200,7 @@ const MessageRow = memo(function MessageRow({ m, isKept, isThinkOpen, onToggleTh
   );
 });
 
-function SettingsSheet({ band, timeOverride, setTimeOverride, weather, setWeather, deepMode, setDeepMode, connieName, setConnieName, chatBgImage, setChatBgImage, replyStyle, setReplyStyle, onRename, onClose }) {
+function SettingsSheet({ timeOverride, setTimeOverride, weather, setWeather, deepMode, setDeepMode, connieName, setConnieName, chatBgImage, setChatBgImage, replyStyle, setReplyStyle, onRename, onClose }) {
   const [nameInput, setNameInput] = useState(connieName);
   const prevNameRef = useRef(connieName);
   function commitName() {
@@ -214,7 +214,6 @@ function SettingsSheet({ band, timeOverride, setTimeOverride, weather, setWeathe
     }
   }
   const bgFileRef = useRef(null);
-  const palette = PALETTES[band];
   useEffect(() => {
     const closeOnEscape = (event) => { if (event.key === 'Escape') onClose(); };
     document.addEventListener('keydown', closeOnEscape);
@@ -361,6 +360,7 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
   const [replyStyle, setReplyStyle] = useState(() => localStorage.getItem('remoire_reply_style') || 'split');
   const [noteData, setNoteData] = useState(null);
   const [noteState, setNoteState] = useState('hidden');
+  const [noteError, setNoteError] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
@@ -442,7 +442,7 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
         } else {
           setSearchResults([]);
         }
-      } catch (e) {
+      } catch {
         if (!cancelled) setSearchResults([]);
       } finally {
         if (!cancelled) setSearching(false);
@@ -461,7 +461,9 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
         try {
           const res = await apiFetch(url);
           if (res.ok) return res;
-        } catch (e) {}
+        } catch {
+          if (cancelled) return null;
+        }
         await new Promise(r => setTimeout(r, 500 * (i + 1)));
       }
       return null;
@@ -471,14 +473,12 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
       if (!convId) {
         const latestRes = await fetchWithRetry('/chat/latest');
         if (latestRes) {
-          try {
-            const latestData = await latestRes.json();
-            if (latestData.ok && latestData.data?.conversation_id) {
-              convId = latestData.data.conversation_id;
-              conversationIdRef.current = convId;
-              localStorage.setItem('remoire_conv_id', convId);
-            }
-          } catch (e) {}
+          const latestData = await latestRes.json().catch(() => null);
+          if (latestData?.ok && latestData.data?.conversation_id) {
+            convId = latestData.data.conversation_id;
+            conversationIdRef.current = convId;
+            localStorage.setItem('remoire_conv_id', convId);
+          }
         }
       }
       if (cancelled || !convId) return;
@@ -530,7 +530,9 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
           setNoteData(data.data.note);
           setNoteState('visible');
         }
-      } catch (e) {}
+      } catch (error) {
+        console.warn('纸条加载失败', error);
+      }
     }
     loadNote();
   }, []);
@@ -589,7 +591,9 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
             } else if (parsed.type === 'error') {
               streamError = parsed.content || '后端生成回复时出错了。';
             }
-          } catch (e) {}
+          } catch {
+            streamError = '回复数据格式异常，请重试。';
+          }
         }
       }
       buffer += decoder.decode();
@@ -604,7 +608,9 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
           else if (parsed.type === 'note') { setNoteData(parsed.note); setNoteState('visible'); }
           else if (parsed.type === 'done') streamDone = true;
           else if (parsed.type === 'error') streamError = parsed.content || '后端生成回复时出错了。';
-        } catch (e) {}
+        } catch {
+          streamError = '回复数据格式异常，请重试。';
+        }
       }
 
       if (streamError) throw new Error(streamError);
@@ -833,17 +839,34 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
       {noteState === 'visible' && noteData && (() => {
         const noteStyle = tweaks?.noteStyle || 'washi';
         const dismissNote = async () => {
+          setNoteError('');
           setNoteState('hidden');
-          try { await apiJsonFetch(`/note/${noteData.id}/read`, { method: 'POST', body: JSON.stringify({ action: 'dismiss' }) }); } catch (e) {}
+          try {
+            const response = await apiJsonFetch(`/note/${noteData.id}/read`, { method: 'POST', body: JSON.stringify({ action: 'dismiss' }) });
+            if (!response.ok) throw new Error('纸条状态保存失败');
+          } catch {
+            setNoteState('visible');
+            setNoteError('还没保存成功，请再试一次。');
+          }
         };
         const keepNote = async () => {
+          setNoteError('');
           setNoteState('hidden');
-          try { await apiJsonFetch(`/note/${noteData.id}/read`, { method: 'POST', body: JSON.stringify({ action: 'keep' }) }); } catch (e) {}
+          try {
+            const response = await apiJsonFetch(`/note/${noteData.id}/read`, { method: 'POST', body: JSON.stringify({ action: 'keep' }) });
+            if (!response.ok) throw new Error('纸条状态保存失败');
+          } catch {
+            setNoteState('visible');
+            setNoteError('还没保存成功，请再试一次。');
+          }
         };
         const noteActions = (
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 14, marginTop: 8 }}>
-            <button onClick={dismissNote} style={{ background: 'none', border: 'none', fontSize: 12, color: 'var(--ink-soft)', cursor: 'pointer', fontFamily: "var(--font-body)" }}>知道了</button>
-            <button onClick={keepNote} style={{ background: 'none', border: 'none', fontSize: 12, color: 'var(--ink-accent)', cursor: 'pointer', fontFamily: "var(--font-body)", borderBottom: '1px solid var(--ink-accent)' }}>留着</button>
+          <div>
+            {noteError && <div role="status" style={{ color: 'var(--danger)', fontSize: 11, marginTop: 8 }}>{noteError}</div>}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 14, marginTop: 8 }}>
+              <button onClick={dismissNote} style={{ background: 'none', border: 'none', minHeight: 44, padding: '8px', fontSize: 12, color: 'var(--ink-soft)', cursor: 'pointer', fontFamily: "var(--font-body)" }}>知道了</button>
+              <button onClick={keepNote} style={{ background: 'none', border: 'none', minHeight: 44, padding: '8px', fontSize: 12, color: 'var(--ink-accent)', cursor: 'pointer', fontFamily: "var(--font-body)", textDecoration: 'underline', textUnderlineOffset: 4 }}>留着</button>
+            </div>
           </div>
         );
         const noteLabel = <div style={{ fontStyle: 'italic', fontSize: 11, color: 'var(--ink-soft)', marginBottom: 6, letterSpacing: '0.08em' }}>✦ Connie 留了一张纸条</div>;
@@ -1038,16 +1061,10 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
         )}
         {showActions && (
           <div className="r-action-row">
-            {[
-              ['photo', '照片', () => fileRef.current?.click()],
-              ['place', '此处', () => {}],
-              ['hold',  '提醒', () => {}],
-            ].map(([k, label, fn]) => (
-              <button key={k} className="r-action-tile" onClick={fn}>
-                <span className="r-action-glyph">{k === 'photo' ? '◰' : k === 'place' ? '◉' : '◌'}</span>
-                <span className="r-action-label">{label}</span>
-              </button>
-            ))}
+            <button className="r-action-tile" onClick={() => fileRef.current?.click()}>
+              <span className="r-action-glyph">◰</span>
+              <span className="r-action-label">照片</span>
+            </button>
           </div>
         )}
 
@@ -1144,7 +1161,6 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
       {/* Settings sheet */}
       {showSheet && (
         <SettingsSheet
-          band={band}
           timeOverride={timeOverride} setTimeOverride={setTimeOverride}
           weather={weather} setWeather={setWeather}
           deepMode={deepMode} setDeepMode={setDeepMode}

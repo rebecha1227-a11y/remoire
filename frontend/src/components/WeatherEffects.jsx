@@ -1,17 +1,15 @@
-import { useMemo } from 'react';
+const RAIN_DROPS = Array.from({ length: 24 }, (_, index) => ({
+  left: (index * 37 + 11) % 100,
+  dur: 2.5 + ((index * 17) % 35) / 10,
+  delay: -((index * 29) % 60) / 10,
+  opacity: 0.18 + ((index * 7) % 22) / 100,
+  length: 28 + ((index * 31) % 60),
+}));
 
 export function RainLayer() {
-  const drops = useMemo(() =>
-    Array.from({ length: 24 }, () => ({
-      left: Math.random() * 100,
-      dur: 2.5 + Math.random() * 3.5,
-      delay: -Math.random() * 6,
-      opacity: 0.18 + Math.random() * 0.22,
-      length: 28 + Math.random() * 60,
-    })), []);
   return (
     <div className="r-rain">
-      {drops.map((d, i) => (
+      {RAIN_DROPS.map((d, i) => (
         <div key={i} className="r-rain-drop" style={{
           left: `${d.left}%`,
           animationDuration: `${d.dur}s`,
