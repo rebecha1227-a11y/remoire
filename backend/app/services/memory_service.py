@@ -2,7 +2,7 @@ import uuid
 import json
 import math
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 from app.database import get_db
 from app.llm import call_llm, get_embedding, get_embeddings_batch
 from app.config import EMBEDDING_API_BASE, EMBEDDING_API_KEY, EMBEDDING_MODEL_ID
@@ -227,18 +227,22 @@ async def accept_candidate(candidate_id: str, content: str | None = None,
         mem_id = str(uuid.uuid4())
         now = datetime.utcnow().isoformat()
         decay_rate = _decay_rate_for_layer(final_layer)
+        expires_at = (
+            (datetime.utcnow() + timedelta(days=30)).isoformat()
+            if final_layer == "short" and not final_unresolved else None
+        )
         embedding = await _generate_embedding(final_content)
         embedding_blob = _pack_embedding(embedding) if embedding else None
 
         await db.execute(
             """INSERT INTO memories
-               (id, content, tags_json, layer, memory_type, event_date,
+               (id, content, tags_json, layer, memory_type, event_date, expires_at,
                 weight, decay_rate, valence, arousal, unresolved, pinned,
                 embedding, source_candidate_id, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, 1.0, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, 1.0, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 mem_id, final_content, json.dumps(final_tags, ensure_ascii=False),
-                final_layer, final_type, final_event_date, decay_rate,
+                final_layer, final_type, final_event_date, expires_at, decay_rate,
                 final_valence, final_arousal, int(final_unresolved),
                 1 if final_layer == "core" else 0, embedding_blob,
                 candidate_id, now, now,
@@ -258,7 +262,9 @@ async def accept_candidate(candidate_id: str, content: str | None = None,
                 await db.execute(
                     """INSERT INTO memory_links
                        (id, source_id, target_id, link_type, weight, created_at)
-                       VALUES (?, ?, ?, 'relates_to', ?, ?)""",
+                       VALUES (?, ?, ?, 'relates_to', ?, ?)
+                       ON CONFLICT(source_id, target_id, link_type)
+                       DO UPDATE SET weight = MAX(memory_links.weight, excluded.weight)""",
                     (
                         str(uuid.uuid4()), mem_id, item["id"],
                         item.get("relevance_score", 0.5), datetime.utcnow().isoformat(),
@@ -324,12 +330,14 @@ async def find_associated(content: str, tags: list[str], limit: int = 3,
         mem_content = mem["content"]
         mem_tags = json.loads(mem["tags_json"] or "[]")
 
+        semantic_similarity = 0.0
         if use_embedding:
             mem_emb = _unpack_embedding(mem["embedding"] if "embedding" in mem.keys() else None)
             if mem_emb:
                 sim = _cosine_similarity(query_emb, mem_emb)
+                semantic_similarity = sim
                 tag_overlap = len(set(tags) & set(mem_tags))
-                score = max(0, sim) * 0.7 + min(tag_overlap * 0.15, 0.3)
+                score = max(0, sim) * 0.82 + min(tag_overlap * 0.09, 0.18)
             else:
                 tag_overlap = len(set(tags) & set(mem_tags))
                 content_grams = _bigrams(content)
@@ -345,23 +353,14 @@ async def find_associated(content: str, tags: list[str], limit: int = 3,
             content_score = min(gram_overlap / max(len(content_grams), 1), 1.0)
             score = tag_overlap * 0.4 + content_score * 0.6
 
-        if score > 0.05:
+        lexical_score = _keyword_search_score(content, mem_content, mem_tags)
+        has_strong_signal = semantic_similarity >= 0.70 or lexical_score >= 0.72 or bool(set(tags) & set(mem_tags))
+        if has_strong_signal and score > 0.20:
             scored.append({"memory": mem, "score": score})
 
     scored.sort(key=lambda x: x["score"], reverse=True)
 
     top = scored[:limit]
-    if top:
-        now = datetime.utcnow().isoformat()
-        async with get_db() as db:
-            for item in top:
-                await db.execute(
-                    """UPDATE memories
-                       SET last_triggered_at = ?, trigger_count = trigger_count + 1, updated_at = ?
-                       WHERE id = ?""",
-                    (now, now, item["memory"]["id"]),
-                )
-            await db.commit()
 
     return [
         {
@@ -397,7 +396,11 @@ async def get_core_memories() -> list[dict]:
 
 
 async def recall(query: str, limit: int = 5) -> list[dict]:
-    """双通道检索：关键词精确匹配 + 语义相似度，合并去重排序。"""
+    """Hybrid lexical/semantic retrieval with calibrated thresholds and diversity."""
+    query = query.strip()
+    limit = max(1, min(int(limit), 20))
+    if not query:
+        return []
     async with get_db() as db:
         async with db.execute("SELECT * FROM memories ORDER BY created_at DESC") as cur:
             all_memories = await cur.fetchall()
@@ -427,7 +430,9 @@ async def recall(query: str, limit: int = 5) -> list[dict]:
             mem_emb = _unpack_embedding(mem["embedding"] if "embedding" in mem.keys() else None)
             if mem_emb:
                 sim = _cosine_similarity(query_emb, mem_emb)
-                if sim > 0.2:
+                # Production random-pair p95 is ~0.71 for this embedding model.
+                # 0.70 removes most background similarity while preserving linked memories.
+                if sim >= 0.70:
                     semantic_scores[mid] = sim
 
     # ── 合并两个通道：同一条记忆取最高分 ──
@@ -439,59 +444,59 @@ async def recall(query: str, limit: int = 5) -> list[dict]:
         mem = mem_lookup[mid]
         kw_score = keyword_scores.get(mid, 0)
         sem_score = semantic_scores.get(mid, 0)
-        raw_score = max(kw_score, sem_score)
+        semantic_normalized = max(0.0, min(1.0, (sem_score - 0.65) / 0.35))
+        if kw_score and sem_score:
+            raw_score = 0.42 * kw_score + 0.58 * semantic_normalized + 0.08
+        elif sem_score:
+            raw_score = 0.82 * semantic_normalized
+        else:
+            raw_score = kw_score
 
-        layer_weight = {"core": 1.0, "long": 0.9, "short": 0.7, "consciousness": 0.6}.get(mem["layer"], 0.8)
-        mem_weight = mem["weight"] or 1.0
+        layer_weight = {"long": 1.0, "short": 1.05, "consciousness": 0.88}.get(mem["layer"], 1.0)
+        mem_weight = max(0.0, min(1.0, mem["weight"] if mem["weight"] is not None else 1.0))
         arousal_val = mem["arousal"] if "arousal" in mem.keys() and mem["arousal"] else 0.0
-        final_score = raw_score * layer_weight * (1 + arousal_val * 0.3) * mem_weight
+        final_score = raw_score * layer_weight * (1 + arousal_val * 0.15) * (0.7 + mem_weight * 0.3)
+        if mem["unresolved"]:
+            final_score *= 1.08
         is_resolved_task = (mem["memory_type"] == "unresolved" and not mem["unresolved"])
         if is_resolved_task:
-            final_score *= 0.3
+            final_score *= 0.4
 
         if final_score > 0.05:
             scored.append({"memory": mem, "score": final_score})
 
     scored.sort(key=lambda x: x["score"], reverse=True)
 
-    results = scored[:limit]
-
-    if len(results) < limit:
-        import random
-        already_ids = {item["memory"]["id"] for item in results} | core_ids
-        remaining = [m for m in non_core if m["id"] not in already_ids]
-        if remaining and random.random() < 0.4:
-            drift = random.choice(remaining)
-            results.append({"memory": drift, "score": 0.02})
-            already_ids.add(drift["id"])
-        fallback_count = limit - len(results)
-        for mem in remaining[:fallback_count * 2]:
-            if mem["id"] not in already_ids:
-                results.append({"memory": mem, "score": 0.01})
-                already_ids.add(mem["id"])
-                if len(results) >= limit:
-                    break
+    results = _diversify_results(scored[: max(limit * 4, limit)], limit)
 
     if results:
         now = datetime.utcnow().isoformat()
         async with get_db() as db:
             for item in results:
                 if item["score"] > 0.05:
+                    mem = item["memory"]
+                    last_triggered = _safe_get(mem, "last_triggered_at")
+                    eligible_trigger = True
+                    if last_triggered:
+                        try:
+                            eligible_trigger = datetime.utcnow() - datetime.fromisoformat(last_triggered) >= timedelta(hours=6)
+                        except ValueError:
+                            eligible_trigger = True
+                    if not eligible_trigger:
+                        continue
                     await db.execute(
                         """UPDATE memories
                            SET last_triggered_at = ?,
                                trigger_count = trigger_count + 1,
-                               weight = MIN(1.0, weight + 0.1),
-                               updated_at = ?
+                               weight = MIN(1.0, weight + 0.05)
                            WHERE id = ?""",
-                        (now, now, item["memory"]["id"]),
+                        (now, item["memory"]["id"]),
                     )
-                    mem = item["memory"]
                     new_trigger = (mem["trigger_count"] or 0) + 1
-                    if mem["layer"] in ("short", "consciousness") and new_trigger >= 3:
+                    if mem["layer"] == "short" and new_trigger >= 3:
                         await db.execute(
                             """UPDATE memories SET layer = 'long', decay_rate = ?
-                               WHERE id = ? AND layer IN ('short', 'consciousness')""",
+                               WHERE id = ? AND layer = 'short'""",
                             (_decay_rate_for_layer("long"), mem["id"]),
                         )
                         _digest_logger.info("auto-promote: %s → long (triggered %d times)", mem["id"][:8], new_trigger)
@@ -509,23 +514,54 @@ async def recall(query: str, limit: int = 5) -> list[dict]:
 
 
 def _keyword_search_score(query: str, mem_content: str, mem_tags: list[str]) -> float:
-    """通道 A：关键词精确匹配。适合名字、日期、具体短语。"""
+    """Deterministic lexical score that works for Chinese without word spaces."""
+    query_lower = "".join(query.lower().split())
+    content_lower = "".join(mem_content.lower().split())
+    if not query_lower or not content_lower:
+        return 0.0
+    if query_lower == content_lower:
+        return 1.0
     score = 0.0
-    query_lower = query.lower()
-    content_lower = mem_content.lower()
-
-    query_chars = set(query_lower)
-    keywords = []
+    if len(query_lower) >= 2 and query_lower in content_lower:
+        score = max(score, 0.85)
+    query_grams = _bigrams(query_lower)
+    content_grams = _bigrams(content_lower)
+    if query_grams:
+        containment = len(query_grams & content_grams) / len(query_grams)
+        score = max(score, containment * 0.65)
     for tag in mem_tags:
-        if tag.lower() in query_lower:
-            score += 0.4
-    for word in query.split():
-        if len(word) >= 2 and word in content_lower:
-            score += 0.3
-    if len(query) >= 3 and query_lower in content_lower:
-        score += 0.8
+        tag_lower = str(tag).lower().strip()
+        if tag_lower and (tag_lower in query_lower or query_lower in tag_lower):
+            score = max(score, 0.72)
+    return min(score, 1.0)
 
-    return min(score, 2.0)
+
+def _diversify_results(scored: list[dict], limit: int) -> list[dict]:
+    """Greedy MMR-style selection so near-duplicates do not crowd out useful context."""
+    selected = []
+    remaining = list(scored)
+    while remaining and len(selected) < limit:
+        best = None
+        best_adjusted = float("-inf")
+        for candidate in remaining:
+            redundancy = 0.0
+            for chosen in selected:
+                left = _unpack_embedding(_safe_get(candidate["memory"], "embedding"))
+                right = _unpack_embedding(_safe_get(chosen["memory"], "embedding"))
+                if left and right:
+                    similarity = _cosine_similarity(left, right)
+                else:
+                    left_grams = _bigrams(candidate["memory"]["content"])
+                    right_grams = _bigrams(chosen["memory"]["content"])
+                    similarity = len(left_grams & right_grams) / max(1, min(len(left_grams), len(right_grams)))
+                redundancy = max(redundancy, similarity)
+            penalty = max(0.0, redundancy - 0.72) * 0.5
+            adjusted = candidate["score"] - penalty
+            if adjusted > best_adjusted:
+                best, best_adjusted = candidate, adjusted
+        selected.append(best)
+        remaining.remove(best)
+    return selected
 
 
 def _bigram_score(query: str, mem_content: str, mem_tags: list[str]) -> float:
@@ -578,6 +614,10 @@ async def create_memory(content: str, tags: list[str] | None = None,
     now = datetime.utcnow().isoformat()
 
     decay_rate = _decay_rate_for_layer(layer)
+    expires_at = (
+        (datetime.utcnow() + timedelta(days=30)).isoformat()
+        if layer == "short" and not unresolved else None
+    )
 
     emb = await _generate_embedding(content)
     emb_blob = _pack_embedding(emb) if emb else None
@@ -585,12 +625,12 @@ async def create_memory(content: str, tags: list[str] | None = None,
     async with get_db() as db:
         await db.execute(
             """INSERT INTO memories
-               (id, content, tags_json, layer, memory_type, event_date, event_time,
+               (id, content, tags_json, layer, memory_type, event_date, event_time, expires_at,
                 weight, decay_rate, valence, arousal, unresolved, pinned,
                 embedding, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, 1.0, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1.0, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (mem_id, content, json.dumps(tags, ensure_ascii=False),
-             layer, memory_type, event_date, event_time,
+             layer, memory_type, event_date, event_time, expires_at,
              decay_rate, valence, arousal, int(unresolved),
              1 if layer == "core" else 0, emb_blob, now, now),
         )
@@ -604,9 +644,11 @@ async def create_memory(content: str, tags: list[str] | None = None,
                 link_id = str(uuid.uuid4())
                 now2 = datetime.utcnow().isoformat()
                 await db.execute(
-                    """INSERT OR IGNORE INTO memory_links
+                    """INSERT INTO memory_links
                        (id, source_id, target_id, link_type, weight, created_at)
-                       VALUES (?, ?, ?, 'relates_to', ?, ?)""",
+                       VALUES (?, ?, ?, 'relates_to', ?, ?)
+                       ON CONFLICT(source_id, target_id, link_type)
+                       DO UPDATE SET weight = MAX(memory_links.weight, excluded.weight)""",
                     (link_id, mem_id, a["id"], a.get("relevance_score", 0.5), now2),
                 )
             await db.commit()
@@ -725,6 +767,28 @@ async def get_memory(memory_id: str) -> dict | None:
     if not row:
         return None
     return _row_to_dict(row)
+
+
+async def get_related_memories(memory_id: str, limit: int = 6) -> list[dict]:
+    """Return strongest neighbors regardless of stored edge direction."""
+    limit = max(1, min(int(limit), 20))
+    async with get_db() as db:
+        async with db.execute(
+            """SELECT m.*, MAX(l.weight) AS relation_weight, l.link_type
+               FROM memory_links l
+               JOIN memories m ON m.id = CASE
+                   WHEN l.source_id = ? THEN l.target_id ELSE l.source_id END
+               WHERE l.source_id = ? OR l.target_id = ?
+               GROUP BY m.id, l.link_type
+               ORDER BY relation_weight DESC, m.weight DESC
+               LIMIT ?""",
+            (memory_id, memory_id, memory_id, limit),
+        ) as cursor:
+            rows = await cursor.fetchall()
+    return [
+        {**_row_to_dict(row), "relation_weight": round(row["relation_weight"], 3), "link_type": row["link_type"]}
+        for row in rows
+    ]
 
 
 async def update_memory(memory_id: str, content: str | None = None, tags: list[str] | None = None,

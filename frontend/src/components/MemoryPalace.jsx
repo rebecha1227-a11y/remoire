@@ -293,6 +293,7 @@ function MemoryItem({ mem, onEdit, onDelete, onMove, onResolve }) {
   const [editing, setEditing] = useState(false);
   const [editContent, setEditContent] = useState(mem.content);
   const [saving, setSaving] = useState(false);
+  const [related, setRelated] = useState(null);
   const raw = mem.tags || mem.tags_json;
   const tags = Array.isArray(raw) ? raw :
     (typeof raw === 'string' ? (() => { try { return JSON.parse(raw); } catch { return []; } })() : []);
@@ -307,6 +308,18 @@ function MemoryItem({ mem, onEdit, onDelete, onMove, onResolve }) {
     setSaving(false);
     if (ok) setEditing(false);
   }
+
+  useEffect(() => {
+    if (!expanded || related !== null) return;
+    let active = true;
+    apiFetch(`/memory/${mem.id}/related?limit=3`)
+      .then(response => response.json())
+      .then(data => {
+        if (active) setRelated(data.ok && Array.isArray(data.data) ? data.data : []);
+      })
+      .catch(() => { if (active) setRelated([]); });
+    return () => { active = false; };
+  }, [expanded, mem.id, related]);
 
   return (
     <div style={{
@@ -355,7 +368,18 @@ function MemoryItem({ mem, onEdit, onDelete, onMove, onResolve }) {
         </div>
       )}
       {expanded && !editing && (
-        <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <div style={{ marginTop: 10 }}>
+          {related && related.length > 0 && (
+            <div style={{ marginBottom: 10, padding: '9px 10px', background: 'rgba(124,99,80,0.045)', borderRadius: 8 }}>
+              <div style={{ marginBottom: 5, color: 'var(--ink-faint)', fontSize: 10, letterSpacing: '0.06em' }}>与它相连的记忆</div>
+              {related.map(item => (
+                <div key={item.id} style={{ color: 'var(--ink-soft)', fontSize: 11, lineHeight: 1.55 }}>
+                  · {item.content}
+                </div>
+              ))}
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 11, color: 'var(--ink-faint)', lineHeight: '28px' }}>
             权重 {mem.weight != null ? (mem.weight * 100).toFixed(0) + '%' : '—'}
             {mem.pinned && ' · 已固定'}
@@ -385,6 +409,7 @@ function MemoryItem({ mem, onEdit, onDelete, onMove, onResolve }) {
             background: 'transparent', fontSize: 11, color: '#c85050',
             cursor: 'pointer', fontFamily: 'var(--font-body)',
           }}>删除</button>
+          </div>
         </div>
       )}
     </div>

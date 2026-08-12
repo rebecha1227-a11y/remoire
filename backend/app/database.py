@@ -427,4 +427,43 @@ async def init_db():
                 "INSERT INTO schema_migrations (version, applied_at) VALUES (?, datetime('now'))",
                 ("2026-08-12-unresolved-invariant",),
             )
+        async with db.execute(
+            "SELECT 1 FROM schema_migrations WHERE version = ?",
+            ("2026-08-12-decay-rate-invariant",),
+        ) as cursor:
+            decay_migrated = await cursor.fetchone()
+        if not decay_migrated:
+            await db.execute("UPDATE memories SET decay_rate = 0.0 WHERE layer IN ('core', 'consciousness')")
+            await db.execute("UPDATE memories SET decay_rate = 0.995 WHERE layer = 'long'")
+            await db.execute("UPDATE memories SET decay_rate = 0.95 WHERE layer = 'short'")
+            await db.execute(
+                "INSERT INTO schema_migrations (version, applied_at) VALUES (?, datetime('now'))",
+                ("2026-08-12-decay-rate-invariant",),
+            )
+        async with db.execute(
+            "SELECT 1 FROM schema_migrations WHERE version = ?",
+            ("2026-08-12-memory-link-integrity",),
+        ) as cursor:
+            links_migrated = await cursor.fetchone()
+        if not links_migrated:
+            await db.execute(
+                """DELETE FROM memory_links
+                   WHERE source_id NOT IN (SELECT id FROM memories)
+                      OR target_id NOT IN (SELECT id FROM memories)
+                      OR source_id = target_id"""
+            )
+            await db.execute(
+                """DELETE FROM memory_links WHERE rowid NOT IN (
+                       SELECT MIN(rowid) FROM memory_links
+                       GROUP BY source_id, target_id, link_type
+                   )"""
+            )
+            await db.execute(
+                """CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_links_unique
+                   ON memory_links(source_id, target_id, link_type)"""
+            )
+            await db.execute(
+                "INSERT INTO schema_migrations (version, applied_at) VALUES (?, datetime('now'))",
+                ("2026-08-12-memory-link-integrity",),
+            )
         await db.commit()

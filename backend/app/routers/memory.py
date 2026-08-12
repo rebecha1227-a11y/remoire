@@ -123,6 +123,14 @@ async def get_memory(memory_id: str, _=Depends(verify_token)):
     return {"ok": True, "data": memory}
 
 
+@router.get("/{memory_id}/related")
+async def get_related_memories(memory_id: str, limit: int = Query(6, ge=1, le=20), _=Depends(verify_token)):
+    if not await memory_service.get_memory(memory_id):
+        raise HTTPException(status_code=404, detail="记忆不存在")
+    related = await memory_service.get_related_memories(memory_id, limit=limit)
+    return {"ok": True, "data": related}
+
+
 @router.put("/{memory_id}")
 async def update_memory(memory_id: str, req: UpdateRequest, _=Depends(verify_token)):
     try:

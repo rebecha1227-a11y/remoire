@@ -303,45 +303,47 @@ async def catchup_missed_diary():
 async def decay_memories():
     """每晚执行。只衰减 long 和 short 层。core 和 consciousness 不动。"""
     try:
-        now_str = datetime.now(BJ_TZ).isoformat()
-        yesterday = (datetime.now(BJ_TZ) - timedelta(hours=24)).isoformat()
+        # Database timestamps are UTC-naive ISO strings; compare like with like.
+        now_str = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
+        yesterday = (datetime.now(timezone.utc) - timedelta(hours=24)).replace(tzinfo=None).isoformat()
         async with get_db() as db:
             await db.execute(
                 """UPDATE memories
                    SET weight = MAX(0.3, weight * 0.995), updated_at = ?
                    WHERE layer = 'long'
+                     AND pinned = 0 AND unresolved = 0
                      AND (last_triggered_at IS NULL OR last_triggered_at < ?)""",
                 (now_str, yesterday),
             )
             await db.execute(
                 """UPDATE memories
-                   SET weight = MAX(0.1, weight * 0.95), updated_at = ?
+                   SET weight = MAX(0.05, weight * 0.95), updated_at = ?
                    WHERE layer = 'short'
+                     AND pinned = 0 AND unresolved = 0
                      AND (last_triggered_at IS NULL OR last_triggered_at < ?)""",
                 (now_str, yesterday),
             )
-            deleted = await db.execute(
-                "DELETE FROM memories WHERE layer = 'short' AND weight < 0.05"
-            )
             demoted = await db.execute(
                 """UPDATE memories
-                   SET layer = 'short', weight = 0.1, updated_at = ?
-                   WHERE layer IN ('long', 'consciousness')
+                   SET layer = 'short', weight = 0.1, decay_rate = 0.95,
+                       expires_at = datetime(?, '+7 days'), updated_at = ?
+                   WHERE layer = 'long' AND pinned = 0 AND unresolved = 0
                      AND expires_at IS NOT NULL AND expires_at < ?""",
-                (now_str, now_str),
+                (now_str, now_str, now_str),
             )
             expired = await db.execute(
                 """DELETE FROM memories WHERE layer = 'short'
+                   AND pinned = 0 AND unresolved = 0
                    AND expires_at IS NOT NULL AND expires_at < ?""",
                 (now_str,),
             )
-            if expired.rowcount > 0 or deleted.rowcount > 0:
+            if expired.rowcount > 0:
                 await db.execute(
                     """DELETE FROM memory_links WHERE source_id NOT IN (SELECT id FROM memories)
                        OR target_id NOT IN (SELECT id FROM memories)"""
                 )
             await db.commit()
-        logger.info("记忆衰减完成：降级 %d 条过期记忆，清理 %d 条", demoted.rowcount, deleted.rowcount + expired.rowcount)
+        logger.info("记忆衰减完成：降级 %d 条过期长期记忆，清理 %d 条过期短期记忆", demoted.rowcount, expired.rowcount)
     except Exception as e:
         logger.error("记忆衰减异常: %s", e)
 

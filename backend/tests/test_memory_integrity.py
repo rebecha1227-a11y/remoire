@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, patch
 from app import database
 from app.database import get_db, init_db
 from app.services import memory_service
+from app.scheduler import jobs
 
 
 class MemoryIntegrityTests(unittest.IsolatedAsyncioTestCase):
@@ -158,6 +159,126 @@ class MemoryIntegrityTests(unittest.IsolatedAsyncioTestCase):
                 "SELECT source_id, target_id FROM memory_links"
             )).fetchone()
         self.assertEqual((link["source_id"], link["target_id"]), ("keep", "related"))
+
+    async def test_recall_has_no_random_or_recent_fallback(self):
+        now = datetime.utcnow().isoformat()
+        async with get_db() as db:
+            await db.execute(
+                """INSERT INTO memories
+                   (id, content, tags_json, layer, memory_type, created_at, updated_at)
+                   VALUES ('unrelated', '完全无关的一段内容', '[]', 'long', 'fact', ?, ?)""",
+                (now, now),
+            )
+            await db.commit()
+        with patch.object(memory_service, "_generate_embedding", AsyncMock(return_value=None)):
+            self.assertEqual(await memory_service.recall("蒙特利尔留学", limit=5), [])
+
+    async def test_recall_uses_calibrated_semantic_floor(self):
+        now = datetime.utcnow().isoformat()
+        high = json.dumps([0.8, 0.6]).encode()
+        low = json.dumps([0.69, (1 - 0.69**2) ** 0.5]).encode()
+        async with get_db() as db:
+            await db.execute(
+                """INSERT INTO memories
+                   (id, content, tags_json, layer, memory_type, embedding, created_at, updated_at)
+                   VALUES ('high', '高相关语义', '[]', 'long', 'fact', ?, ?, ?),
+                          ('low', '背景相似语义', '[]', 'long', 'fact', ?, ?, ?)""",
+                (high, now, now, low, now, now),
+            )
+            await db.commit()
+        with patch.object(memory_service, "_generate_embedding", AsyncMock(return_value=[1.0, 0.0])):
+            results = await memory_service.recall("查询文本", limit=5)
+        self.assertEqual([item["id"] for item in results], ["high"])
+
+    async def test_recall_trigger_is_cooled_down_and_does_not_rewrite_updated_at(self):
+        original = "2026-01-01T00:00:00"
+        async with get_db() as db:
+            await db.execute(
+                """INSERT INTO memories
+                   (id, content, tags_json, layer, memory_type, created_at, updated_at)
+                   VALUES ('match', '静儿喜欢热拿铁', '[]', 'long', 'fact', ?, ?)""",
+                (original, original),
+            )
+            await db.commit()
+        with patch.object(memory_service, "_generate_embedding", AsyncMock(return_value=None)):
+            await memory_service.recall("热拿铁")
+            await memory_service.recall("热拿铁")
+        async with get_db() as db:
+            row = await (await db.execute(
+                "SELECT trigger_count, updated_at FROM memories WHERE id = 'match'"
+            )).fetchone()
+        self.assertEqual(row["trigger_count"], 1)
+        self.assertEqual(row["updated_at"], original)
+
+    async def test_write_time_association_does_not_count_as_recall(self):
+        now = datetime.utcnow().isoformat()
+        async with get_db() as db:
+            await db.execute(
+                """INSERT INTO memories
+                   (id, content, tags_json, layer, memory_type, embedding, created_at, updated_at)
+                   VALUES ('old', '静儿喜欢热拿铁', '["咖啡"]', 'long', 'fact', ?, ?, ?)""",
+                (json.dumps([1.0, 0.0]).encode(), now, now),
+            )
+            await db.commit()
+        with patch.object(memory_service, "_generate_embedding", AsyncMock(return_value=[1.0, 0.0])):
+            associated = await memory_service.find_associated("静儿爱喝热拿铁", ["咖啡"])
+        self.assertEqual([item["id"] for item in associated], ["old"])
+        async with get_db() as db:
+            row = await (await db.execute(
+                "SELECT trigger_count, last_triggered_at FROM memories WHERE id = 'old'"
+            )).fetchone()
+        self.assertEqual(row["trigger_count"], 0)
+        self.assertIsNone(row["last_triggered_at"])
+
+    def test_mmr_diversifies_near_duplicate_results(self):
+        packed_a = json.dumps([1.0, 0.0]).encode()
+        packed_c = json.dumps([0.0, 1.0]).encode()
+        scored = [
+            {"memory": {"id": "a", "content": "a", "embedding": packed_a}, "score": 0.90},
+            {"memory": {"id": "b", "content": "a copy", "embedding": packed_a}, "score": 0.89},
+            {"memory": {"id": "c", "content": "different", "embedding": packed_c}, "score": 0.82},
+        ]
+        selected = memory_service._diversify_results(scored, 2)
+        self.assertEqual([item["memory"]["id"] for item in selected], ["a", "c"])
+
+    async def test_related_memories_are_bidirectional_and_ranked(self):
+        now = datetime.utcnow().isoformat()
+        async with get_db() as db:
+            await db.execute(
+                """INSERT INTO memories (id, content, tags_json, layer, memory_type, created_at, updated_at)
+                   VALUES ('center', '中心', '[]', 'long', 'fact', ?, ?),
+                          ('left', '左侧', '[]', 'long', 'fact', ?, ?),
+                          ('right', '右侧', '[]', 'long', 'fact', ?, ?)""",
+                (now, now, now, now, now, now),
+            )
+            await db.execute(
+                """INSERT INTO memory_links (id, source_id, target_id, link_type, weight, created_at)
+                   VALUES ('a', 'left', 'center', 'relates_to', 0.7, ?),
+                          ('b', 'center', 'right', 'relates_to', 0.9, ?)""",
+                (now, now),
+            )
+            await db.commit()
+        related = await memory_service.get_related_memories("center")
+        self.assertEqual([item["id"] for item in related], ["right", "left"])
+
+    async def test_decay_protects_active_and_conscious_memories(self):
+        old = "2020-01-01T00:00:00"
+        async with get_db() as db:
+            await db.execute(
+                """INSERT INTO memories
+                   (id, content, tags_json, layer, memory_type, weight, unresolved, expires_at, created_at, updated_at)
+                   VALUES ('active', '进行中', '[]', 'long', 'unresolved', 1, 1, NULL, ?, ?),
+                          ('ordinary', '普通长期', '[]', 'long', 'fact', 1, 0, NULL, ?, ?),
+                          ('expired', '过期短期', '[]', 'short', 'fact', 1, 0, ?, ?, ?),
+                          ('mind', '内心记忆', '[]', 'consciousness', 'consciousness', 1, 0, ?, ?, ?)""",
+                (old, old, old, old, old, old, old, old, old, old),
+            )
+            await db.commit()
+        await jobs.decay_memories()
+        self.assertEqual((await memory_service.get_memory("active"))["weight"], 1)
+        self.assertAlmostEqual((await memory_service.get_memory("ordinary"))["weight"], 0.995)
+        self.assertIsNone(await memory_service.get_memory("expired"))
+        self.assertIsNotNone(await memory_service.get_memory("mind"))
 
 
 if __name__ == "__main__":
