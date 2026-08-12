@@ -287,16 +287,21 @@ nano .env
 `.env` 文件内容大概长这样（根据你的实际情况填写）：
 
 ```env
-# 当前 Bearer 过渡期必填；登录/session 实现后再移除
-API_SECRET_KEY=your-very-long-random-secret-key-here
-
 # iOS 快捷指令设备上传认证（独立于 API_SECRET_KEY）
 DEVICE_SECRET_KEY=your-device-upload-secret-here
 
-# 登录配置 —— 生产目标方案
-APP_USERNAME=jinger
+# 登录配置
+APP_USERNAME=connie
 APP_PASSWORD_HASH=your-password-hash-here
-SESSION_SECRET=your-very-long-random-session-secret-here
+SESSION_COOKIE_SECURE=true
+ALLOW_LEGACY_BEARER=false
+
+# 远程 MCP 独立 Bearer token 的 SHA-256（不用原始 token）
+MCP_API_TOKEN_SHA256=your-mcp-token-sha256-here
+
+# 模型预设 API Key 的数据库静态加密密钥
+MODEL_SECRET_ENCRYPTION_KEYS=your-fernet-key-here
+MODEL_SECRET_ENCRYPTION_REQUIRED=true
 
 # 数据库路径
 DATABASE_PATH=/opt/our-nest/backend/data/remoire.db
@@ -320,9 +325,15 @@ UPLOADS_PATH=/opt/our-nest/backend/uploads
 python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 ```
 
-当前过渡期把输出粘贴到 `API_SECRET_KEY=` 后面；登录/session 实现后再为 `SESSION_SECRET=` 单独生成一个新值。
+登录密码哈希使用仓库提供的 scrypt 生成逻辑；远程 MCP token 使用 `python -m scripts.generate_mcp_token` 生成原始 token 与 SHA-256。
 
-**生成密码哈希的方式**会在登录/session 代码实现时补充。当前代码仍处在 Bearer token 过渡态，生产部署前需要先完成登录/session 实现。
+模型预设加密密钥单独生成：
+
+```bash
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+将输出写入 `MODEL_SECRET_ENCRYPTION_KEYS=`。它不能提交到 Git，也不能只放在数据库备份旁边；丢失后已加密的模型密钥无法恢复。轮换时把新密钥放在最前面、旧密钥放在后面并以逗号分隔，重启完成迁移后再移除旧密钥。
 
 ### 6.5 初始化数据库
 

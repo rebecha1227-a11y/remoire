@@ -13,6 +13,7 @@ from app.config import ALLOWED_HOSTS, TRUSTED_ORIGINS
 from app.routers import auth, chat, memory, diary, note, settings, reminder, push, signal, autonomous
 from app.scheduler.jobs import connie_auto_diary, catchup_missed_diary, generate_breath_state, decay_memories, digest_memories
 from app.services.nudge_service import run_autonomous_check
+from app.services.model_settings_service import migrate_preset_secrets
 from app.services.weather_service import fetch_and_cache as fetch_weather
 import logging
 import re
@@ -48,6 +49,9 @@ async def _run_autonomous_and_reschedule():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    migrated_secrets = await migrate_preset_secrets()
+    if migrated_secrets:
+        logger.info("encrypted_model_preset_secrets=%s", migrated_secrets)
     scheduler.add_job(
         connie_auto_diary,
         CronTrigger(hour=23, minute=0, timezone="Asia/Shanghai"),

@@ -6,14 +6,22 @@ from datetime import datetime
 from urllib.parse import urlparse
 
 import httpx
+from cryptography.fernet import Fernet, InvalidToken, MultiFernet
 
-from app.config import DAILY_API_BASE, DAILY_API_KEY, DAILY_MODEL_ID
+from app.config import (
+    DAILY_API_BASE,
+    DAILY_API_KEY,
+    DAILY_MODEL_ID,
+    MODEL_SECRET_ENCRYPTION_KEYS,
+    MODEL_SECRET_ENCRYPTION_REQUIRED,
+)
 from app.database import get_db
 from app.llm import ModelConfig
 
 
 SLOTS = ("daily", "deep", "backend")
 UNSET = object()
+_ENCRYPTED_PREFIX = "fernet:v1:"
 
 
 class PresetNotFoundError(ValueError):
@@ -22,6 +30,68 @@ class PresetNotFoundError(ValueError):
 
 class UnsafeBaseUrlError(ValueError):
     pass
+
+
+class SecretEncryptionError(RuntimeError):
+    pass
+
+
+def _secret_cipher() -> MultiFernet | None:
+    if not MODEL_SECRET_ENCRYPTION_KEYS:
+        if MODEL_SECRET_ENCRYPTION_REQUIRED:
+            raise SecretEncryptionError("生产环境必须配置 MODEL_SECRET_ENCRYPTION_KEYS")
+        return None
+    try:
+        return MultiFernet([Fernet(key.strip().encode("ascii")) for key in MODEL_SECRET_ENCRYPTION_KEYS])
+    except (ValueError, TypeError) as exc:
+        raise SecretEncryptionError("MODEL_SECRET_ENCRYPTION_KEYS 包含无效的 Fernet 密钥") from exc
+
+
+def _encrypt_api_key(api_key: str) -> str:
+    value = api_key.strip()
+    if not value or value.startswith(_ENCRYPTED_PREFIX):
+        return value
+    cipher = _secret_cipher()
+    if not cipher:
+        return value
+    token = cipher.encrypt(value.encode("utf-8")).decode("ascii")
+    return f"{_ENCRYPTED_PREFIX}{token}"
+
+
+def _decrypt_api_key(stored: str) -> str:
+    if not stored or not stored.startswith(_ENCRYPTED_PREFIX):
+        return stored
+    cipher = _secret_cipher()
+    if not cipher:
+        raise SecretEncryptionError("数据库中的模型密钥已加密，但服务器未配置 MODEL_SECRET_ENCRYPTION_KEYS")
+    token = stored[len(_ENCRYPTED_PREFIX):]
+    try:
+        return cipher.decrypt(token.encode("ascii")).decode("utf-8")
+    except (InvalidToken, UnicodeDecodeError) as exc:
+        raise SecretEncryptionError("模型密钥无法解密，请检查加密密钥配置") from exc
+
+
+def _normalize_stored_api_key(stored: str) -> str:
+    """Encrypt plaintext or rewrap a token with the first configured rotation key."""
+    if not stored:
+        return stored
+    cipher = _secret_cipher()
+    if not cipher:
+        return stored
+    if not stored.startswith(_ENCRYPTED_PREFIX):
+        return _encrypt_api_key(stored)
+
+    token = stored[len(_ENCRYPTED_PREFIX):].encode("ascii")
+    primary = Fernet(MODEL_SECRET_ENCRYPTION_KEYS[0].strip().encode("ascii"))
+    try:
+        primary.decrypt(token)
+        return stored
+    except InvalidToken:
+        try:
+            plaintext = cipher.decrypt(token)
+        except InvalidToken as exc:
+            raise SecretEncryptionError("模型密钥无法解密，请检查加密密钥配置") from exc
+        return f"{_ENCRYPTED_PREFIX}{primary.encrypt(plaintext).decode('ascii')}"
 
 
 def _now() -> str:
@@ -33,7 +103,7 @@ def _row_to_preset(row) -> dict:
         "id": row["id"],
         "nickname": row["nickname"],
         "provider": row["provider"],
-        "api_key": row["api_key"],
+        "api_key": _decrypt_api_key(row["api_key"]),
         "base_url": row["base_url"],
         "model_name": row["model_name"],
         "created_at": row["created_at"],
@@ -47,6 +117,28 @@ def _public_preset(preset: dict | None) -> dict | None:
     public = dict(preset)
     public["api_key"] = "********" if public.get("api_key") else ""
     return public
+
+
+async def migrate_preset_secrets() -> int:
+    """Encrypt legacy plaintext preset keys once a server encryption key is configured."""
+    if not _secret_cipher():
+        return 0
+    async with get_db() as db:
+        async with db.execute("SELECT id, api_key FROM model_presets") as cur:
+            rows = await cur.fetchall()
+        pending = []
+        for row in rows:
+            normalized = _normalize_stored_api_key(row["api_key"])
+            if normalized != row["api_key"]:
+                pending.append((row, normalized))
+        for row, normalized in pending:
+            await db.execute(
+                "UPDATE model_presets SET api_key = ?, updated_at = ? WHERE id = ?",
+                (normalized, _now(), row["id"]),
+            )
+        if pending:
+            await db.commit()
+    return len(pending)
 
 
 async def _validated_public_base(base_url: str) -> dict:
@@ -131,7 +223,7 @@ async def seed_env_daily_preset() -> None:
             """INSERT INTO model_presets
                (id, nickname, provider, api_key, base_url, model_name, created_at, updated_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (preset_id, "环境变量默认模型", "openai-compatible", DAILY_API_KEY, DAILY_API_BASE, DAILY_MODEL_ID, now, now),
+            (preset_id, "环境变量默认模型", "openai-compatible", _encrypt_api_key(DAILY_API_KEY), DAILY_API_BASE, DAILY_MODEL_ID, now, now),
         )
         await db.execute(
             """INSERT OR REPLACE INTO model_slots (slot, preset_id, extended_thinking, updated_at)
@@ -187,7 +279,7 @@ async def create_preset(data: dict) -> dict:
                 preset_id,
                 data["nickname"].strip(),
                 (data.get("provider") or "openai-compatible").strip(),
-                data["api_key"].strip(),
+                _encrypt_api_key(data["api_key"]),
                 data["base_url"].strip().rstrip("/"),
                 data["model_name"].strip(),
                 now,
@@ -213,7 +305,7 @@ async def update_preset(preset_id: str, data: dict) -> dict:
             (
                 merged["nickname"].strip(),
                 (merged.get("provider") or "openai-compatible").strip(),
-                merged["api_key"].strip(),
+                _encrypt_api_key(merged["api_key"]),
                 merged["base_url"].strip().rstrip("/"),
                 merged["model_name"].strip(),
                 now,

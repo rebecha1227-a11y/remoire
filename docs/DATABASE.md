@@ -784,4 +784,4 @@ Remoire 使用 SQLite WAL mode，运行中备份不要直接 `cp` 主 `.db` 文�
 
 4. **不要在高频写入路径上做事务嵌套**。聊天消息存储 + 候选记忆提取应该是两个独立的 INSERT，不要包在同一个事务里——万一打标失败不应该影响消息存储。
 
-5. **`model_configs` 表的 `api_key` 字段**：首发明文存储，后续可改为 AES 加密。.db 文件本身通过文件权限保护（chmod 600）。
+5. **模型 API Key**：生产环境必须配置 `MODEL_SECRET_ENCRYPTION_KEYS`。服务启动时会用 Fernet 对 `model_presets.api_key` 的历史明文执行原地迁移；数据库只保存带 `fernet:v1:` 前缀的密文。密钥不进入数据库或备份，应单独保存在服务器环境变量和离线密码库中。
