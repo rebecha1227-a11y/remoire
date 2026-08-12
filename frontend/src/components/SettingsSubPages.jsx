@@ -174,10 +174,10 @@ export function ProactiveSettings({ onBack }) {
           <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 8 }}>
             <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>开始</label>
             <input type="time" value={cfg.startTime} onChange={e => set('startTime', e.target.value)}
-              style={{ flex: 1, padding: '8px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)', background: 'var(--bg-elevated)', color: 'var(--text-primary)', fontSize: 13, fontFamily: 'var(--font-body)' }} />
+              aria-label="主动消息开始时间" style={{ flex: 1, minHeight: 44, padding: '8px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)', background: 'var(--bg-elevated)', color: 'var(--text-primary)', fontSize: 13, fontFamily: 'var(--font-body)' }} />
             <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>结束</label>
             <input type="time" value={cfg.endTime} onChange={e => set('endTime', e.target.value)}
-              style={{ flex: 1, padding: '8px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)', background: 'var(--bg-elevated)', color: 'var(--text-primary)', fontSize: 13, fontFamily: 'var(--font-body)' }} />
+              aria-label="主动消息结束时间" style={{ flex: 1, minHeight: 44, padding: '8px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)', background: 'var(--bg-elevated)', color: 'var(--text-primary)', fontSize: 13, fontFamily: 'var(--font-body)' }} />
           </div>
           <SettingRow label="允许深夜消息" sub="23:00 之后仍可发送">
             <SettingsToggle on={cfg.allowNight} onChange={v => set('allowNight', v)} />
@@ -193,14 +193,14 @@ export function ProactiveSettings({ onBack }) {
             </div>
           </SettingRow>
           <SettingRow label="聊天后冷却" sub={`刚聊完 ${cfg.cooldown} 分钟内不打扰`}>
-            <select value={cfg.cooldown} onChange={e => set('cooldown', +e.target.value)}
-              style={{ padding: '6px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)', background: 'var(--bg-elevated)', color: 'var(--text-primary)', fontSize: 12, fontFamily: 'var(--font-body)' }}>
+            <select aria-label="聊天后冷却时间" value={cfg.cooldown} onChange={e => set('cooldown', +e.target.value)}
+              style={{ minHeight: 44, padding: '6px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)', background: 'var(--bg-elevated)', color: 'var(--text-primary)', fontSize: 12, fontFamily: 'var(--font-body)' }}>
               {[30, 60, 90, 120, 180].map(v => <option key={v} value={v}>{v} 分钟</option>)}
             </select>
           </SettingRow>
           <SettingRow label="连续消息上限" sub={`一次 burst 最多 ${cfg.maxBurst} 条`}>
-            <select value={cfg.maxBurst} onChange={e => set('maxBurst', +e.target.value)}
-              style={{ padding: '6px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)', background: 'var(--bg-elevated)', color: 'var(--text-primary)', fontSize: 12, fontFamily: 'var(--font-body)' }}>
+            <select aria-label="连续消息上限" value={cfg.maxBurst} onChange={e => set('maxBurst', +e.target.value)}
+              style={{ minHeight: 44, padding: '6px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)', background: 'var(--bg-elevated)', color: 'var(--text-primary)', fontSize: 12, fontFamily: 'var(--font-body)' }}>
               {[3, 5, 8, 10].map(v => <option key={v} value={v}>{v} 条</option>)}
             </select>
           </SettingRow>
@@ -469,7 +469,7 @@ export function ModelSettings({ onBack }) {
   }
 
   const fieldStyle = {
-    width: '100%', minHeight: 40, padding: '8px 10px', borderRadius: 'var(--radius-sm)',
+    width: '100%', minHeight: 44, padding: '8px 10px', borderRadius: 'var(--radius-sm)',
     border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(255,250,235,0.10)',
     backdropFilter: 'blur(12px) saturate(1.2)',
     WebkitBackdropFilter: 'blur(12px) saturate(1.2)',
@@ -480,12 +480,12 @@ export function ModelSettings({ onBack }) {
     marginBottom: 4, fontFamily: 'var(--font-body)', fontWeight: 500,
   };
   const ghostButton = {
-    minHeight: 40, padding: '8px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)',
+    minHeight: 44, padding: '8px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)',
     background: 'var(--bg-elevated)', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)',
     cursor: 'pointer', fontFamily: 'var(--font-body)', fontWeight: 500,
   };
   const primaryButton = {
-    minHeight: 40, padding: '9px 12px', borderRadius: 'var(--radius-sm)', border: 'none',
+    minHeight: 44, padding: '9px 12px', borderRadius: 'var(--radius-sm)', border: 'none',
     background: 'var(--accent)', fontSize: 'var(--text-xs)', color: '#FAF8F4',
     cursor: 'pointer', fontFamily: 'var(--font-body)', fontWeight: 500,
   };
@@ -1091,13 +1091,13 @@ export function DatesSettings({ onBack }) {
               <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>标题</label>
               <input value={newDate.title} onChange={e => setNewDate(n => ({ ...n, title: e.target.value }))}
                 placeholder="如：静儿生日"
-                style={{ width: '100%', padding: '8px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontSize: 13 }} />
+                style={{ width: '100%', minHeight: 44, padding: '8px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontSize: 13 }} />
             </div>
             <div>
               <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>日期 (MM-DD)</label>
               <input value={newDate.date} inputMode="numeric" maxLength={5} onChange={e => setNewDate(n => ({ ...n, date: e.target.value }))}
                 placeholder="04-12"
-                style={{ width: '100%', padding: '8px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontSize: 13 }} />
+                style={{ width: '100%', minHeight: 44, padding: '8px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontSize: 13 }} />
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <button disabled={saving} onClick={() => { setAdding(false); setStatus(''); }} style={{ flex: 1, minHeight: 44, padding: '8px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'transparent', fontSize: 12, color: 'var(--text-tertiary)', cursor: 'pointer' }}>取消</button>

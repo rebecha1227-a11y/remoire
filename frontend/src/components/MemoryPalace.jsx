@@ -242,10 +242,10 @@ function HeatmapCalendar({ heatmapData, quarterData, viewMode, setViewMode, year
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '10px 0 8px' }}>
             <span style={{ fontSize: 13, color: 'var(--ink-soft)' }}>{year} 年 {month} 月</span>
             <div style={{ display: 'flex', gap: 4 }}>
-              <button onClick={() => onChangeMonth(-1)} style={{ background: 'none', border: 'none', cursor: 'pointer', minWidth: 44, minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <button aria-label="上个月" onClick={() => onChangeMonth(-1)} style={{ background: 'none', border: 'none', cursor: 'pointer', minWidth: 44, minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" strokeWidth="1.5"><path d="M15 18l-6-6 6-6"/></svg>
               </button>
-              <button onClick={() => onChangeMonth(1)} style={{ background: 'none', border: 'none', cursor: 'pointer', minWidth: 44, minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <button aria-label="下个月" onClick={() => onChangeMonth(1)} style={{ background: 'none', border: 'none', cursor: 'pointer', minWidth: 44, minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" strokeWidth="1.5"><path d="M9 18l6-6-6-6"/></svg>
               </button>
             </div>

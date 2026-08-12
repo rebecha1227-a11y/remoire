@@ -89,10 +89,10 @@ function MiniCalendar({ reminderDays, onDaySelect, selectedDay, specialDates = {
           {viewYear} 年 {viewMonth + 1} 月
         </span>
         <div style={{ display: 'flex', gap: 4 }}>
-          <button onClick={prevMonth} style={{ background: 'none', border: 'none', cursor: 'pointer', minWidth: 44, minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <button aria-label="上个月" onClick={prevMonth} style={{ background: 'none', border: 'none', cursor: 'pointer', minWidth: 44, minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft, var(--text-tertiary))" strokeWidth="1.5"><path d="M15 18l-6-6 6-6" /></svg>
           </button>
-          <button onClick={nextMonth} style={{ background: 'none', border: 'none', cursor: 'pointer', minWidth: 44, minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <button aria-label="下个月" onClick={nextMonth} style={{ background: 'none', border: 'none', cursor: 'pointer', minWidth: 44, minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft, var(--text-tertiary))" strokeWidth="1.5"><path d="M9 18l6-6-6-6" /></svg>
           </button>
         </div>
@@ -195,7 +195,7 @@ export default function UsPage({ nav }) {
       const [statsRes, memRes, remRes, todayRes, weatherRes] = await Promise.all([
         apiFetch('/memory/stats'),
         apiFetch('/memory?limit=1&sort_by=created_at'),
-        apiFetch('/reminder?status=&limit=50'),
+        apiFetch('/reminder?limit=50'),
         apiFetch('/reminder/today'),
         apiFetch('/weather'),
       ]);

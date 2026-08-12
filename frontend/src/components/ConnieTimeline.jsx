@@ -95,13 +95,13 @@ function MiniCalendar({ selectedDate, onSelect, activeDates, onMonthChange }) {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-        <button onClick={prevMonth} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-soft, var(--text-tertiary))', padding: 8 }}>
+        <button aria-label="上个月" onClick={prevMonth} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-soft, var(--text-tertiary))', minWidth: 44, minHeight: 44, padding: 8 }}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M15 18l-6-6 6-6"/></svg>
         </button>
         <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--ink, var(--text-primary))', fontFamily: 'var(--font-body)' }}>
           {viewMonth.year}年{viewMonth.month + 1}月
         </span>
-        <button onClick={nextMonth} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-soft, var(--text-tertiary))', padding: 8 }}>
+        <button aria-label="下个月" onClick={nextMonth} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-soft, var(--text-tertiary))', minWidth: 44, minHeight: 44, padding: 8 }}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M9 18l6-6-6-6"/></svg>
         </button>
       </div>

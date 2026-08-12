@@ -160,7 +160,7 @@ function PinPad({ title, subtitle, onComplete, onCancel, errorKey, busy = false 
 
   const keys = [1,2,3,4,5,6,7,8,9,null,0,'del'];
   return (
-    <div style={{
+    <div role="dialog" aria-modal="true" aria-label={title} style={{
       position: 'absolute', inset: 0, zIndex: 50,
       background: 'var(--bg-primary)',
       display: 'flex', flexDirection: 'column', alignItems: 'center',
@@ -171,7 +171,7 @@ function PinPad({ title, subtitle, onComplete, onCancel, errorKey, busy = false 
           position: 'absolute', top: 16, left: 16,
           background: 'none', border: 'none', cursor: 'pointer',
           color: 'var(--text-tertiary)', fontSize: 12, fontFamily: 'var(--font-body)',
-          display: 'flex', alignItems: 'center', gap: 4, padding: 8,
+          display: 'flex', alignItems: 'center', gap: 4, minWidth: 44, minHeight: 44, padding: 8,
         }}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
           取消
@@ -191,7 +191,7 @@ function PinPad({ title, subtitle, onComplete, onCancel, errorKey, busy = false 
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, width: '100%', maxWidth: 220 }}>
         {keys.map((k, i) => k === null ? <div key={i} /> : (
-          <button key={i} disabled={busy} onClick={() => k === 'del' ? del() : press(k)} style={{
+          <button key={i} aria-label={k === 'del' ? '删除一位' : `数字 ${k}`} disabled={busy} onClick={() => k === 'del' ? del() : press(k)} style={{
             height: 56, borderRadius: 12,
             background: k === 'del' ? 'transparent' : 'var(--bg-elevated)',
             border: k === 'del' ? 'none' : '1px solid var(--border-light)',
@@ -225,9 +225,24 @@ function WritingEditor({ onSave, onCancel }) {
   const [pinErrorKey, setPinErrorKey] = useState(0);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
+  const hasDraft = Boolean(title.trim() || body.trim());
 
   const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
   const bgColor = isDark ? '#2A2420' : '#F8F2EE';
+
+  useEffect(() => {
+    if (!hasDraft) return undefined;
+    const warnBeforeLeaving = (event) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warnBeforeLeaving);
+    return () => window.removeEventListener('beforeunload', warnBeforeLeaving);
+  }, [hasDraft]);
+
+  function cancel() {
+    if (!hasDraft || window.confirm('放弃这篇未保存的日记吗？')) onCancel();
+  }
 
   function toggleLock() {
     if (locked) { setLocked(false); setPin(''); }
@@ -280,16 +295,16 @@ function WritingEditor({ onSave, onCancel }) {
       backgroundSize: '100% 28px',
       display: 'flex', flexDirection: 'column',
       animation: 'page-in 250ms ease',
-    }}>
+    }} role="dialog" aria-modal="true" aria-label="写日记">
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         padding: '12px 16px', flexShrink: 0,
         borderBottom: '1px solid rgba(100,90,80,0.08)',
       }}>
-        <button onClick={onCancel} style={{
+        <button onClick={cancel} style={{
           background: 'none', border: 'none', cursor: 'pointer',
           color: 'var(--text-tertiary)', fontSize: 12, fontFamily: 'var(--font-body)',
-          display: 'flex', alignItems: 'center', gap: 4, padding: 0,
+          display: 'flex', alignItems: 'center', gap: 4, minHeight: 44, padding: '0 8px 0 0',
         }}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
           取消
@@ -300,6 +315,7 @@ function WritingEditor({ onSave, onCancel }) {
         <button onClick={save} disabled={saving || (!title.trim() && !body.trim())} style={{
           background: (title.trim() || body.trim()) ? 'var(--accent)' : 'var(--border)',
           border: 'none', borderRadius: 8, padding: '6px 14px',
+          minHeight: 44,
           fontSize: 12, color: '#FAF8F4',
           cursor: (title.trim() || body.trim()) ? 'pointer' : 'default',
           fontFamily: 'var(--font-body)', fontWeight: 500, transition: 'background 0.2s',
@@ -312,7 +328,7 @@ function WritingEditor({ onSave, onCancel }) {
           onChange={e => setTitle(e.target.value)}
           placeholder="标题（可留空）"
           style={{
-            width: '100%', border: 'none', background: 'transparent', outline: 'none',
+            width: '100%', minHeight: 44, border: 'none', background: 'transparent', outline: 'none',
             fontFamily: 'var(--font-diary)', fontSize: 22,
             color: 'var(--text-deep)', fontWeight: 300, boxSizing: 'border-box',
           }}
@@ -345,7 +361,7 @@ function WritingEditor({ onSave, onCancel }) {
           display: 'flex', alignItems: 'center', gap: 6,
           background: locked ? 'rgba(184,146,74,0.08)' : 'transparent',
           border: `1px solid ${locked ? 'rgba(184,146,74,0.3)' : 'var(--border-light)'}`,
-          borderRadius: 20, padding: '6px 14px', cursor: 'pointer',
+          borderRadius: 22, minHeight: 44, padding: '6px 14px', cursor: 'pointer',
           color: locked ? 'var(--warning)' : 'var(--text-tertiary)',
           fontSize: 12, fontFamily: 'var(--font-body)', transition: 'all 0.2s',
         }}>
@@ -693,7 +709,7 @@ function DiaryMessageBoard({ entry, author, lockedConnie, onAddInteraction, onDe
       }} />
       {error && <div style={{ marginTop: 6, fontSize: 11, color: 'var(--warning)', fontFamily: 'var(--font-body)' }}>{error}</div>}
       <button onClick={() => submit(lockedConnie ? 'unlock_request' : 'comment')} disabled={!text.trim() || sending} style={{
-        marginTop: 8, width: '100%', minHeight: 34, border: 'none', borderRadius: 8,
+        marginTop: 8, width: '100%', minHeight: 44, border: 'none', borderRadius: 8,
         background: text.trim() && !sending ? 'var(--accent)' : 'var(--border)', color: '#FAF8F4',
         fontSize: 12, fontFamily: 'var(--font-body)', cursor: text.trim() && !sending ? 'pointer' : 'default'
       }}>
@@ -863,7 +879,7 @@ function OpenBook({ author, entries, onClose, onAddInteraction, onDeleteInteract
   }, [animatingPages, currentView, totalPages]);
 
   return (
-    <div style={{
+    <div role="dialog" aria-modal="true" aria-label={`${isConnie ? 'Connie' : '静儿'}的日记`} style={{
       position: 'absolute', inset: 0, zIndex: 20,
       background: 'var(--bg-secondary)',
       display: 'flex', flexDirection: 'column',
@@ -939,7 +955,7 @@ function OpenBook({ author, entries, onClose, onAddInteraction, onDeleteInteract
         padding: '8px 20px', margin: '0 12px 12px', flexShrink: 0,
         borderRadius: 16, position: 'relative',
       }}>
-        <button onClick={() => flipToPage(currentView - 1)} disabled={currentView === 0 || animating} style={{
+        <button aria-label="上一页" onClick={() => flipToPage(currentView - 1)} disabled={currentView === 0 || animating} style={{
           background: 'none', border: 'none', cursor: currentView > 0 ? 'pointer' : 'default',
           opacity: currentView > 0 && !animating ? 0.8 : 0.25, padding: 8,
           color: 'var(--text-primary)', minWidth: 44, minHeight: 44,
@@ -949,10 +965,10 @@ function OpenBook({ author, entries, onClose, onAddInteraction, onDeleteInteract
         </button>
         <button onClick={() => flipToPage(0)} style={{
           background: 'rgba(255,255,255,0.25)', border: '1px solid rgba(255,255,255,0.35)', borderRadius: 10,
-          padding: '6px 16px', fontSize: 11, color: 'var(--text-primary)', cursor: 'pointer',
+          minHeight: 44, padding: '6px 16px', fontSize: 11, color: 'var(--text-primary)', cursor: 'pointer',
           fontFamily: "var(--font-body)", fontWeight: 500,
         }}>目录</button>
-        <button onClick={() => flipToPage(currentView + 1)} disabled={currentView >= totalPages - 1 || animating} style={{
+        <button aria-label="下一页" onClick={() => flipToPage(currentView + 1)} disabled={currentView >= totalPages - 1 || animating} style={{
           background: 'none', border: 'none', cursor: currentView < totalPages - 1 ? 'pointer' : 'default',
           opacity: currentView < totalPages - 1 && !animating ? 0.8 : 0.25, padding: 8,
           color: 'var(--text-primary)', minWidth: 44, minHeight: 44,
@@ -1166,7 +1182,7 @@ export default function DiaryPage({ tweaks, nav, active }) {
 
 
   return (
-    <RoomShell nav={nav}>
+    <RoomShell nav={writing || openBook ? null : nav}>
     <div style={{
       position: 'relative', flex: 1,
       background: 'transparent',
@@ -1186,7 +1202,7 @@ export default function DiaryPage({ tweaks, nav, active }) {
       }
 
       {/* Shelf view: two closed notebooks */}
-      <div style={{ padding: '20px 14px 100px', height: '100%', overflowY: 'auto' }}>
+      {!writing && !openBook && <div style={{ padding: '20px 14px 100px', height: '100%', overflowY: 'auto' }}>
         {loadError && <div role="alert" style={{ margin: '0 10px 12px', fontSize: 12, color: 'var(--danger)', lineHeight: 1.6 }}>{loadError}</div>}
         <div style={{ marginBottom: 20, padding: '0 10px' }}>
           <div style={{
@@ -1218,7 +1234,7 @@ export default function DiaryPage({ tweaks, nav, active }) {
         <div className="r-glass" style={{ position: 'relative', marginTop: 14 }}>
           <DiaryFeed activities={activities} />
         </div>
-      </div>
+      </div>}
     </div>
     </RoomShell>
   );

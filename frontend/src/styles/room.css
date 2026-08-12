@@ -3,6 +3,15 @@
 .r-scroll { position: relative; z-index: 10; }
 .r-scroll::-webkit-scrollbar { width: 0; display: none; }
 
+.r-room-content {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
 /* ── Background layers ── */
 .r-bg { position: absolute; inset: 0; z-index: 0; transition: background 1.6s cubic-bezier(0.16,1,0.3,1); }
 .r-bg-wash { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
@@ -98,7 +107,7 @@
   font-family: var(--font-display);
   font-size: 22px; font-weight: 500;
   color: var(--ink); letter-spacing: 0.06em;
-  padding: 0 2px; transition: opacity 240ms;
+  min-height: 44px; padding: 0 2px; transition: opacity 240ms;
   text-shadow: 0 2px 6px var(--warm-shadow, rgba(60,30,10,0.22));
 }
 .r-name:hover { opacity: 0.7; }
@@ -109,7 +118,7 @@
   font-family: var(--font-body);
   font-size: 22px; font-weight: 400;
   color: var(--ink); letter-spacing: 0.06em;
-  padding: 0 2px; width: 60%;
+  min-height: 44px; padding: 0 2px; width: 60%;
 }
 .r-state {
   font-family: var(--font-display);
@@ -125,7 +134,7 @@
   100% { opacity: 0; }
 }
 .r-burger {
-  width: 40px; height: 40px; border-radius: 14px;
+  width: 44px; height: 44px; border-radius: 14px;
   background: rgba(255,250,235,0.10);
   border: 1px solid var(--ai-border);
   color: var(--ink);
@@ -168,13 +177,13 @@
 .r-search-input {
   flex: 1; background: transparent; border: none; outline: none;
   font-family: var(--font-body);
-  font-size: 14px; color: var(--ink);
+  min-height: 44px; font-size: 14px; color: var(--ink);
 }
 .r-search-input::placeholder { color: var(--ink-faint); }
 .r-search-close {
   background: none; border: none; cursor: pointer;
   color: var(--ink-soft); font-size: 14px;
-  width: 28px; height: 28px;
+  width: 44px; height: 44px;
   display: flex; align-items: center; justify-content: center;
 }
 .r-search-results {
@@ -322,7 +331,7 @@
   background: transparent; border: none; cursor: pointer;
   display: inline-flex; align-items: center; gap: 4px;
   font-family: inherit; font-style: italic; font-size: 10.5px;
-  color: var(--ink-soft); padding: 2px 0;
+  min-height: 44px; color: var(--ink-soft); padding: 2px 0;
   letter-spacing: 0.06em;
 }
 .r-think-handle:hover { color: var(--ink); }
@@ -393,7 +402,7 @@
 }
 .r-pending button {
   position: absolute; top: -8px; right: -8px;
-  width: 22px; height: 22px; border-radius: 50%;
+  width: 44px; height: 44px; border-radius: 50%;
   background: rgba(0,0,0,0.55); color: #fff;
   border: 1px solid rgba(255,255,255,0.2);
   font-size: 11px; cursor: pointer;
@@ -443,7 +452,7 @@
   opacity: 0.7;
 }
 .r-ibtn {
-  width: 36px; height: 36px;
+  width: 44px; height: 44px;
   border-radius: 50%; background: transparent; border: none;
   color: var(--ink-soft); cursor: pointer;
   display: flex; align-items: center; justify-content: center;
@@ -452,7 +461,7 @@
 }
 .r-ibtn:hover { color: var(--ink); transform: scale(1.06); background: rgba(255,250,230,0.10); box-shadow: 0 0 8px var(--warm-shadow, rgba(90,55,25,0.12)); }
 .r-mode-label {
-  height: 36px; padding: 0 10px;
+  min-height: 44px; padding: 0 10px;
   border-radius: 18px; background: transparent; border: none;
   color: var(--ink-soft); cursor: pointer;
   font-family: var(--font-body);
@@ -515,7 +524,7 @@
 .r-mode-row {
   display: block; width: 100%;
   background: transparent; border: none; cursor: pointer;
-  text-align: left; padding: 10px 12px;
+  min-height: 44px; text-align: left; padding: 10px 12px;
   border-radius: 12px;
   transition: background 200ms;
   font-family: var(--font-body);
@@ -536,7 +545,7 @@
   color: var(--ink);
   padding: 8px 4px;
   line-height: 20px; letter-spacing: 0.02em;
-  height: 36px; max-height: 110px;
+  height: 44px; max-height: 110px;
   box-sizing: border-box;
   display: block;
 }
@@ -675,12 +684,13 @@
   outline: none;
   font-family: var(--font-body);
   font-size: 16px; color: var(--ink-on-sheet);
-  padding: 6px 0; letter-spacing: 0.04em;
+  min-height: 44px; padding: 6px 0; letter-spacing: 0.04em;
 }
 .r-sheet-options {
   display: flex; flex-wrap: wrap; gap: 6px;
 }
 .r-chip {
+  min-width: 44px; min-height: 44px;
   padding: 7px 13px;
   border-radius: 14px;
   background: rgba(255,250,235,0.14);
@@ -706,19 +716,26 @@
     inset 0 1px 0 var(--user-edge);
 }
 .r-toggle {
+  width: 44px; height: 44px; border-radius: 22px;
+  background: transparent; border: none;
+  cursor: pointer; padding: 0;
+  transition: all 320ms cubic-bezier(0.16,1,0.3,1);
+  display: flex; align-items: center; position: relative;
+}
+.r-toggle::before {
+  content: ''; position: absolute; left: 0; top: 9px;
   width: 44px; height: 26px; border-radius: 14px;
   background: rgba(0,0,0,0.18); border: 1px solid var(--nav-border);
-  cursor: pointer; padding: 2px;
-  transition: all 320ms cubic-bezier(0.16,1,0.3,1);
-  display: flex; align-items: center;
+  box-sizing: border-box;
+  transition: background 320ms cubic-bezier(0.16,1,0.3,1);
 }
 .r-toggle span {
-  display: block; width: 20px; height: 20px;
+  position: absolute; left: 3px; top: 12px; display: block; width: 20px; height: 20px;
   border-radius: 50%;
   background: var(--ink-on-sheet);
   transition: all 320ms cubic-bezier(0.16,1,0.3,1);
 }
-.r-toggle.on { background: var(--ink-accent); }
+.r-toggle.on::before { background: var(--ink-accent); }
 .r-toggle.on span { transform: translateX(18px); background: #fff; }
 .r-sheet-close {
   width: 100%; padding: 12px;

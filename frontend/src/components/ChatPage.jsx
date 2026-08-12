@@ -119,7 +119,7 @@ const MessageRow = memo(function MessageRow({ m, isKept, isThinkOpen, onToggleTh
   }, [m.text]);
   const actBtn = {
     background: 'none', border: 'none', cursor: 'pointer',
-    padding: 3, display: 'flex', alignItems: 'center', justifyContent: 'center',
+    minWidth: 44, minHeight: 44, padding: 3, display: 'flex', alignItems: 'center', justifyContent: 'center',
     color: 'var(--ink-faint, rgba(0,0,0,0.25))',
   };
   const ico = { width: 13, height: 13, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round', strokeLinejoin: 'round' };
@@ -203,6 +203,7 @@ const MessageRow = memo(function MessageRow({ m, isKept, isThinkOpen, onToggleTh
 function SettingsSheet({ timeOverride, setTimeOverride, weather, setWeather, deepMode, setDeepMode, connieName, setConnieName, chatBgImage, setChatBgImage, replyStyle, setReplyStyle, onRename, onClose }) {
   const [nameInput, setNameInput] = useState(connieName);
   const prevNameRef = useRef(connieName);
+  const dialogRef = useRef(null);
   function commitName() {
     const newName = (nameInput || 'Connie').trim();
     if (newName !== prevNameRef.current) {
@@ -215,6 +216,7 @@ function SettingsSheet({ timeOverride, setTimeOverride, weather, setWeather, dee
   }
   const bgFileRef = useRef(null);
   useEffect(() => {
+    dialogRef.current?.focus();
     const closeOnEscape = (event) => { if (event.key === 'Escape') onClose(); };
     document.addEventListener('keydown', closeOnEscape);
     return () => document.removeEventListener('keydown', closeOnEscape);
@@ -227,7 +229,7 @@ function SettingsSheet({ timeOverride, setTimeOverride, weather, setWeather, dee
   }
   return (
     <div className="r-sheet-bd" onClick={onClose} role="presentation">
-      <div className="r-sheet" role="dialog" aria-modal="true" aria-label="这间房设置" onClick={e => e.stopPropagation()}>
+      <div ref={dialogRef} tabIndex={-1} className="r-sheet" role="dialog" aria-modal="true" aria-label="这间房设置" onClick={e => e.stopPropagation()}>
         <div className="r-sheet-grip" />
         <div className="r-sheet-title">这间房</div>
 
@@ -313,7 +315,7 @@ function SettingsSheet({ timeOverride, setTimeOverride, weather, setWeather, dee
               <div className="r-sheet-label">走深一点</div>
               <div className="r-sheet-hint">房间会变暗，她会说得更慢。</div>
             </div>
-            <button className={`r-toggle ${deepMode ? 'on' : ''}`}
+            <button className={`r-toggle ${deepMode ? 'on' : ''}`} role="switch" aria-label="深度模式" aria-checked={deepMode}
               onClick={() => setDeepMode(!deepMode)}>
               <span />
             </button>
@@ -746,6 +748,7 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
       fontFamily: "var(--font-display)",
       color: palette.ink,
     }}>
+      <div className="r-room-content" inert={showSheet ? true : undefined} aria-hidden={showSheet ? true : undefined}>
       {/* Background */}
       <div className="r-bg" style={chatBgImage ? {
         backgroundImage: `url(${chatBgImage})`,
@@ -769,7 +772,7 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
 
       {/* Header */}
       <div className="r-header">
-        <button className="r-burger" onClick={() => { setSearchOpen(true); setTimeout(() => searchInputRef.current?.focus(), 100); }} title="搜索聊天">
+        <button className="r-burger" aria-label="搜索聊天" onClick={() => { setSearchOpen(true); setTimeout(() => searchInputRef.current?.focus(), 100); }} title="搜索聊天">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
             <circle cx="11" cy="11" r="7" />
             <path d="M21 21l-4.35-4.35" />
@@ -794,7 +797,7 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
             {breathText || ambientLines[ambientIdx]}
           </div>
         </div>
-        <button className="r-burger" onClick={() => setShowSheet(true)} title="这间房">
+        <button className="r-burger" aria-label="打开这间房设置" onClick={() => setShowSheet(true)} title="这间房">
           <span /><span /><span />
         </button>
       </div>
@@ -813,7 +816,7 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
               placeholder="搜索聊天内容……"
               className="r-search-input"
             />
-            <button className="r-search-close" onClick={() => { setSearchOpen(false); setSearchQuery(''); }}>✕</button>
+            <button className="r-search-close" aria-label="关闭聊天搜索" onClick={() => { setSearchOpen(false); setSearchQuery(''); }}>✕</button>
           </div>
           {searchQuery.trim() && (
             <div className="r-search-results">
@@ -1046,17 +1049,17 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
               {quotedMsg.role === 'ai' ? '引用 Connie：' : '引用自己：'}
               {quotedMsg.text?.slice(0, 50)}{quotedMsg.text?.length > 50 ? '…' : ''}
             </span>
-            <button onClick={() => setQuotedMsg(null)} style={{
+            <button aria-label="取消引用" onClick={() => setQuotedMsg(null)} style={{
               background: 'none', border: 'none', cursor: 'pointer',
               color: 'var(--ink-faint, var(--text-tertiary))', fontSize: 14,
-              padding: '0 2px', lineHeight: 1,
+              minWidth: 44, minHeight: 44, padding: 0, lineHeight: 1,
             }}>✕</button>
           </div>
         )}
         {pendingImage && (
           <div className="r-pending">
             <img src={pendingImage} alt="" />
-            <button onClick={() => setPendingImage(null)}>✕</button>
+            <button aria-label="移除待发送图片" onClick={() => setPendingImage(null)}>✕</button>
           </div>
         )}
         {showActions && (
@@ -1069,7 +1072,7 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
         )}
 
         <div className="r-input-bar">
-          <button className="r-ibtn" onClick={() => setShowActions(v => !v)}
+          <button className="r-ibtn" aria-label={showActions ? '收起附件选项' : '添加照片'} aria-expanded={showActions} onClick={() => setShowActions(v => !v)}
             style={{ transform: showActions ? 'rotate(45deg)' : 'rotate(0)' }}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
               <path d="M12 5v14M5 12h14" strokeLinecap="round" />
@@ -1077,7 +1080,7 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
           </button>
 
           <div style={{ position: 'relative' }}>
-            <button className="r-mode-label" onClick={() => setShowModes(v => !v)}
+            <button className="r-mode-label" aria-label={`聊天模式：${CHAT_MODES[chatMode].label}`} aria-expanded={showModes} onClick={() => setShowModes(v => !v)}
               title={CHAT_MODES[chatMode].desc}>
               {CHAT_MODES[chatMode].label}
             </button>
@@ -1124,13 +1127,13 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
           />
 
           {(hasInput || pendingImage) ? (
-            <button className="r-ibtn r-ibtn-send" onClick={sendMessage}>
+            <button className="r-ibtn r-ibtn-send" aria-label="发送消息" onClick={sendMessage}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
                 <path d="M12 19V5M5 12l7-7 7 7" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </button>
           ) : (
-            <button className={`r-ibtn ${voiceHold ? 'r-ibtn-mic holding' : ''}`}
+            <button className={`r-ibtn ${voiceHold ? 'r-ibtn-mic holding' : ''}`} aria-label="按住录音"
               onMouseDown={() => setVoiceHold(true)} onMouseUp={() => setVoiceHold(false)} onMouseLeave={() => setVoiceHold(false)}
               onTouchStart={() => setVoiceHold(true)} onTouchEnd={() => setVoiceHold(false)}>
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
@@ -1156,6 +1159,7 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
             </button>
           );
         })}
+      </div>
       </div>
 
       {/* Settings sheet */}

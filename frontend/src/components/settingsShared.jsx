@@ -6,7 +6,7 @@ export function SettingsToggle({ on, onChange }) {
       type="button"
       role="switch"
       aria-checked={on}
-      aria-label={on ? '关闭' : '开启'}
+      aria-label={on ? '已开启，点击关闭' : '已关闭，点击开启'}
       onClick={() => onChange(!on)}
       style={{
         width: 44, height: 44, border: 0, padding: 0, background: 'transparent',

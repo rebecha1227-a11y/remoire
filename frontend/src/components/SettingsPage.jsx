@@ -108,17 +108,13 @@ export default function SettingsPage({ tweaks, nav }) {
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             <div style={{ width: 20, height: 20, borderRadius: '50%', background: tweaks?.accentColor || 'var(--accent)', border: '1.5px solid var(--border)' }} />
             <input type="color" value={tweaks?.accentColor || '#7C6350'} onChange={e => setTweakVal('accentColor', e.target.value)}
-              style={{ width: 28, height: 28, border: 'none', background: 'transparent', cursor: 'pointer', padding: 0 }} />
+              aria-label="选择主题色" style={{ width: 44, height: 44, border: 'none', background: 'transparent', cursor: 'pointer', padding: 0 }} />
           </div>
         </SettingRow>
         <SettingRow label="字体" sub="为聊天、纸条、日记等分别设置" onClick={() => setPanel('font')}><ChevronRight /></SettingRow>
         <SettingRow label="聊天气泡样式" sub={BUBBLE_NAMES[currentBubble] || '默认'} onClick={() => setPanel('bubble')}><ChevronRight /></SettingRow>
         <SettingRow label="便签样式" sub={NOTE_NAMES[currentNote] || '经典便签'} onClick={() => setPanel('note')}><ChevronRight /></SettingRow>
         <SettingRow label="日记本封面" sub="自定义封面图片" onClick={() => setPanel('cover')} noBorder><ChevronRight /></SettingRow>
-      </div>
-
-      <div className="r-glass" style={{ position: 'relative' }}>
-        <SettingRow label="清除所有数据" danger noBorder><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" strokeWidth="1.5"><path d="M9 18l6-6-6-6"/></svg></SettingRow>
       </div>
     </div>
     </RoomShell>

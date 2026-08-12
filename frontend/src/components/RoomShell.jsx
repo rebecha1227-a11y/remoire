@@ -95,8 +95,8 @@ export default function RoomShell({ children, nav }) {
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         {children}
       </div>
-      <div className="r-nav-spacer" />
-      {nav}
+      {nav && <div className="r-nav-spacer" />}
+      {nav || null}
     </div>
   );
 }
