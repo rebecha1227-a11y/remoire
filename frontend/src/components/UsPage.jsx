@@ -188,8 +188,10 @@ export default function UsPage({ tweaks = {}, nav }) {
   const [reminderDays, setReminderDays] = useState(new Set());
   const [weather, setWeather] = useState(null);
   const [specialDates, setSpecialDates] = useState(DEFAULT_SPECIAL_DATES);
+  const [status, setStatus] = useState('');
 
   const loadData = useCallback(async () => {
+    setStatus('');
     try {
       const [statsRes, memRes, remRes, todayRes, weatherRes] = await Promise.all([
         apiFetch('/memory/stats'),
@@ -203,6 +205,9 @@ export default function UsPage({ tweaks = {}, nav }) {
       const rd = await remRes.json();
       const td = await todayRes.json();
       const wd = await weatherRes.json();
+      if (!statsRes.ok || !sd.ok || !memRes.ok || !md.ok || !remRes.ok || !rd.ok || !todayRes.ok || !td.ok) {
+        throw new Error('共同生活数据加载失败');
+      }
       if (sd.ok) setMemStats(sd.data);
       if (wd.ok && wd.data) setWeather(wd.data);
       try {
@@ -219,7 +224,9 @@ export default function UsPage({ tweaks = {}, nav }) {
           });
           setSpecialDates(merged);
         }
-      } catch (e) {}
+      } catch {
+        setStatus('特殊日期暂时没有加载出来。');
+      }
       const items = md.ok ? (md.data?.items || []) : [];
       if (items.length > 0) setLatestMemory(items[0]);
       const allReminders = (rd.ok ? (rd.data?.items || []) : []).filter(r => r.status !== 'dismissed');
@@ -230,7 +237,9 @@ export default function UsPage({ tweaks = {}, nav }) {
         if (r.remind_at) daySet.add(r.remind_at.split(' ')[0]);
       });
       setReminderDays(daySet);
-    } catch (e) {}
+    } catch (error) {
+      setStatus(error.message || '页面数据加载失败，请稍后重试。');
+    }
   }, []);
 
   useEffect(() => { loadData(); }, [loadData, showPalace]);
@@ -245,21 +254,31 @@ export default function UsPage({ tweaks = {}, nav }) {
   }
 
   async function toggleDone(id) {
+    setStatus('');
     try {
-      await apiJsonFetch(`/reminder/${id}/done`, { method: 'POST', body: '{}' });
+      const res = await apiJsonFetch(`/reminder/${id}/done`, { method: 'POST', body: '{}' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) throw new Error(data.detail || data.error || '提醒更新失败');
       setReminders(r => r.map(x => x.id === id ? { ...x, status: 'done' } : x));
       setTodayReminders(r => r.map(x => x.id === id ? { ...x, status: 'done' } : x));
       if (selectedDay) handleDaySelect(selectedDay);
-    } catch (e) {}
+    } catch (error) {
+      setStatus(error.message || '提醒更新失败，请稍后重试。');
+    }
   }
 
   async function dismissReminder(id) {
+    setStatus('');
     try {
-      await apiJsonFetch(`/reminder/${id}/dismiss`, { method: 'POST', body: '{}' });
+      const res = await apiJsonFetch(`/reminder/${id}/dismiss`, { method: 'POST', body: '{}' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) throw new Error(data.detail || data.error || '提醒忽略失败');
       setReminders(r => r.filter(x => x.id !== id));
       setTodayReminders(r => r.filter(x => x.id !== id));
       if (selectedDay) handleDaySelect(selectedDay);
-    } catch (e) {}
+    } catch (error) {
+      setStatus(error.message || '提醒忽略失败，请稍后重试。');
+    }
   }
 
   if (showPalace) {
@@ -298,6 +317,7 @@ export default function UsPage({ tweaks = {}, nav }) {
       </div>
 
       <div style={{ padding: '0 14px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+        {status && <div role="status" style={{ fontSize: 12, color: status.includes('失败') ? 'var(--danger)' : 'var(--ink-soft)', lineHeight: 1.6 }}>{status}</div>}
         <button type="button" className="r-glass" onClick={() => setShowPalace(true)} style={{
           width: '100%', border: 'none', textAlign: 'left', fontFamily: 'inherit',
           position: 'relative', animation: 'card-in 180ms 20ms ease both',

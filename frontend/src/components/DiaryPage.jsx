@@ -218,6 +218,8 @@ function WritingEditor({ onSave, onCancel }) {
   const [pinMode, setPinMode] = useState(null);
   const [pinFirst, setPinFirst] = useState('');
   const [pinErrorKey, setPinErrorKey] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
 
   const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
   const bgColor = isDark ? '#2A2420' : '#F8F2EE';
@@ -238,9 +240,17 @@ function WritingEditor({ onSave, onCancel }) {
     }
   }
 
-  function save() {
-    if (!title.trim() && !body.trim()) return;
-    onSave({ date: dateStr, weekday, title: title.trim() || '无题', body, locked, pin });
+  async function save() {
+    if ((!title.trim() && !body.trim()) || saving) return;
+    setSaving(true);
+    setSaveError('');
+    try {
+      await onSave({ date: dateStr, weekday, title: title.trim() || '无题', body, locked, pin });
+    } catch (error) {
+      setSaveError(error.message || '日记没有保存成功，文字仍保留在这里。');
+    } finally {
+      setSaving(false);
+    }
   }
 
   if (pinMode) {
@@ -282,13 +292,13 @@ function WritingEditor({ onSave, onCancel }) {
         <div style={{ fontFamily: 'var(--font-diary)', fontSize: 14, color: 'var(--text-tertiary)' }}>
           {dateStr} · {weekday}
         </div>
-        <button onClick={save} disabled={!title.trim() && !body.trim()} style={{
+        <button onClick={save} disabled={saving || (!title.trim() && !body.trim())} style={{
           background: (title.trim() || body.trim()) ? 'var(--accent)' : 'var(--border)',
           border: 'none', borderRadius: 8, padding: '6px 14px',
           fontSize: 12, color: '#FAF8F4',
           cursor: (title.trim() || body.trim()) ? 'pointer' : 'default',
           fontFamily: 'var(--font-body)', fontWeight: 500, transition: 'background 0.2s',
-        }}>保存</button>
+        }}>{saving ? '保存中…' : '保存'}</button>
       </div>
 
       <div style={{ padding: '20px 20px 0' }}>
@@ -304,6 +314,7 @@ function WritingEditor({ onSave, onCancel }) {
         />
       </div>
       <div style={{ height: 1, background: 'rgba(100,90,80,0.1)', margin: '12px 20px 0' }} />
+      {saveError && <div role="alert" style={{ padding: '10px 20px 0', color: 'var(--danger)', fontSize: 12 }}>{saveError}</div>}
 
       <textarea
         value={body}
@@ -1043,6 +1054,7 @@ export default function DiaryPage({ tweaks, nav, active }) {
   const [writing, setWriting] = useState(false);
   const [jingerDiary, setJingerDiary] = useState(JINGER_DIARY_INIT);
   const [connieDiary, setConnieDiary] = useState([]);
+  const [loadError, setLoadError] = useState('');
 
   const coverJ = tweaks && tweaks.diaryCoverJinger;
   const coverC = tweaks && tweaks.diaryCoverConnie;
@@ -1050,6 +1062,7 @@ export default function DiaryPage({ tweaks, nav, active }) {
   useEffect(() => {
     let cancelled = false;
     async function loadDiaries() {
+      setLoadError('');
       try {
         const [connieRes, jingerRes] = await Promise.all([
           apiFetch('/diary?author=connie&limit=50'),
@@ -1057,6 +1070,7 @@ export default function DiaryPage({ tweaks, nav, active }) {
         ]);
         const connieData = await connieRes.json();
         const jingerData = await jingerRes.json();
+        if (!connieRes.ok || !connieData.ok || !jingerRes.ok || !jingerData.ok) throw new Error('日记加载失败');
         if (cancelled) return;
         if (connieData.ok && Array.isArray(connieData.data) && connieData.data.length > 0) {
           setConnieDiary(connieData.data.map(mapDiaryEntry));
@@ -1064,7 +1078,9 @@ export default function DiaryPage({ tweaks, nav, active }) {
         if (jingerData.ok && Array.isArray(jingerData.data) && jingerData.data.length > 0) {
           setJingerDiary(jingerData.data.map(mapDiaryEntry));
         }
-      } catch (e) {}
+      } catch (error) {
+        if (!cancelled) setLoadError(error.message || '日记加载失败，请稍后重试。');
+      }
     }
     loadDiaries();
     return () => { cancelled = true; };
@@ -1098,8 +1114,7 @@ export default function DiaryPage({ tweaks, nav, active }) {
   }, [connieDiary, jingerDiary]);
 
   async function saveEntry(entry) {
-    try {
-      const res = await apiJsonFetch('/diary', {
+    const res = await apiJsonFetch('/diary', {
         method: 'POST',
         body: JSON.stringify({
           title: entry.title || '无题',
@@ -1109,11 +1124,11 @@ export default function DiaryPage({ tweaks, nav, active }) {
           pin: entry.pin || null
         })
       });
-      const data = await res.json();
-      if (data.ok) {
-        setJingerDiary(prev => [mapDiaryEntry(data.data), ...prev]);
-      }
-    } catch (e) {}
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok || !data.data) {
+      throw new Error(data.detail || data.error || '日记没有保存成功，文字仍保留在这里。');
+    }
+    setJingerDiary(prev => [mapDiaryEntry(data.data), ...prev]);
     setWriting(false);
   }
 
@@ -1165,6 +1180,7 @@ export default function DiaryPage({ tweaks, nav, active }) {
 
       {/* Shelf view: two closed notebooks */}
       <div style={{ padding: '20px 14px 100px', height: '100%', overflowY: 'auto' }}>
+        {loadError && <div role="alert" style={{ margin: '0 10px 12px', fontSize: 12, color: 'var(--danger)', lineHeight: 1.6 }}>{loadError}</div>}
         <div style={{ marginBottom: 20, padding: '0 10px' }}>
           <div style={{
             fontFamily: "var(--font-display)",

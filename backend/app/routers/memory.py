@@ -1,5 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from datetime import date
+from typing import Literal
+
+from pydantic import BaseModel, Field
 from app.auth import verify_token
 from app.services import memory_service
 
@@ -34,6 +37,18 @@ class MoveLayerRequest(BaseModel):
 class RecallRequest(BaseModel):
     query: str
     limit: int = 5
+
+
+class CreateRequest(BaseModel):
+    content: str = Field(min_length=1, max_length=2000)
+    tags: list[str] = Field(default_factory=list, max_length=20)
+    layer: Literal["core", "long", "short", "consciousness"] = "long"
+    memory_type: Literal["fact", "event", "unresolved", "date", "consciousness"] = "fact"
+    event_date: date | None = None
+    event_time: str | None = Field(default=None, max_length=32)
+    valence: float = Field(default=0.0, ge=0.0, le=1.0)
+    arousal: float = Field(default=0.0, ge=0.0, le=1.0)
+    unresolved: bool = False
 
 
 # ── 候选 ──
@@ -93,6 +108,23 @@ async def get_heatmap(
 
 
 # ── 正式记忆 ──
+
+@router.post("")
+async def create_memory(req: CreateRequest, _=Depends(verify_token)):
+    result = await memory_service.create_memory(
+        content=req.content,
+        tags=req.tags,
+        layer=req.layer,
+        memory_type=req.memory_type,
+        event_date=req.event_date.isoformat() if req.event_date else None,
+        event_time=req.event_time,
+        valence=req.valence,
+        arousal=req.arousal,
+        unresolved=req.unresolved,
+    )
+    if result["memory"].get("duplicate"):
+        raise HTTPException(status_code=409, detail="相同内容的记忆已经存在")
+    return {"ok": True, "data": result}
 
 @router.get("")
 async def get_memories(

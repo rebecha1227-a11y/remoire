@@ -943,42 +943,107 @@ function urlBase64ToUint8Array(base64String) {
 export function DatesSettings({ onBack }) {
   const [dates, setDates] = useState([]);
   const [adding, setAdding] = useState(false);
-  const [newDate, setNewDate] = useState({ date: '', title: '', recurring: true, note: '' });
+  const [newDate, setNewDate] = useState({ date: '', title: '' });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [busyId, setBusyId] = useState(null);
+  const [status, setStatus] = useState('');
 
   useEffect(() => {
     (async () => {
       try {
         const res = await apiFetch('/memory?memory_type=date&limit=50');
         const data = await res.json();
-        if (data.ok && data.data?.items) {
-          setDates(data.data.items.map(m => ({
-            id: m.id,
-            date: m.event_date ? m.event_date.slice(5, 10) : '',
-            title: m.content,
-            recurring: true,
-            note: (m.tags || []).join(', '),
-          })));
-        }
-      } catch (e) {}
+        if (!res.ok || !data.ok) throw new Error(data.detail || data.error || '特殊日期加载失败');
+        setDates((data.data?.items || []).map(m => ({
+          id: m.id,
+          date: m.event_date ? m.event_date.slice(5, 10) : '',
+          title: m.content,
+        })));
+      } catch (error) {
+        setStatus(error.message || '特殊日期加载失败，请稍后重试。');
+      } finally {
+        setLoading(false);
+      }
     })();
   }, []);
 
-  function addDate() {
-    if (!newDate.date || !newDate.title) return;
-    setDates(d => [...d, { ...newDate, id: Date.now() }]);
-    setNewDate({ date: '', title: '', recurring: true, note: '' });
-    setAdding(false);
+  function validMonthDay(value) {
+    if (!/^\d{2}-\d{2}$/.test(value)) return false;
+    const parsed = new Date(`2000-${value}T00:00:00Z`);
+    return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(5, 10) === value;
   }
 
-  function removeDate(id) {
-    setDates(d => d.filter(x => x.id !== id));
+  async function addDate() {
+    const title = newDate.title.trim();
+    const monthDay = newDate.date.trim();
+    if (!title) {
+      setStatus('请填写日期名称。');
+      return;
+    }
+    if (!validMonthDay(monthDay)) {
+      setStatus('日期请使用有效的 MM-DD 格式，例如 04-12。');
+      return;
+    }
+    setSaving(true);
+    setStatus('');
+    try {
+      const res = await apiJsonFetch('/memory', {
+        method: 'POST',
+        body: JSON.stringify({
+          content: title,
+          memory_type: 'date',
+          layer: 'long',
+          event_date: `2000-${monthDay}`,
+          tags: ['特殊日期'],
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) throw new Error(data.detail || data.error || '保存失败');
+      const memory = data.data.memory;
+      setDates(current => [...current, { id: memory.id, date: monthDay, title }]
+        .sort((a, b) => a.date.localeCompare(b.date)));
+      setNewDate({ date: '', title: '' });
+      setAdding(false);
+      setStatus('已保存到记忆库。');
+    } catch (error) {
+      setStatus(error.message || '保存失败，请稍后重试。');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function removeDate(item) {
+    if (!window.confirm(`删除“${item.title}”？这会同时从记忆库移除。`)) return;
+    setBusyId(item.id);
+    setStatus('');
+    try {
+      const res = await apiFetch(`/memory/${item.id}`, { method: 'DELETE' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) throw new Error(data.detail || data.error || '删除失败');
+      setDates(current => current.filter(date => date.id !== item.id));
+      setStatus('已从记忆库删除。');
+    } catch (error) {
+      setStatus(error.message || '删除失败，请稍后重试。');
+    } finally {
+      setBusyId(null);
+    }
   }
 
   return (
     <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px 88px' }}>
-      <SubPageHeader onBack={onBack} title="特殊日期" subtitle="生日、纪念日、deadline — Connie 会在这些日子特别记得你" />
+      <SubPageHeader onBack={onBack} title="特殊日期" subtitle="生日与纪念日会写入记忆库，并按年重复出现" />
 
-      <Stack gap="xs">
+      {status && <div role="status" style={{ marginBottom: 12, fontSize: 12, color: status.includes('失败') || status.startsWith('请') || status.includes('已经存在') ? 'var(--danger)' : 'var(--text-secondary)' }}>{status}</div>}
+      {loading && <div style={{ padding: '24px 0', textAlign: 'center', fontSize: 12, color: 'var(--text-tertiary)' }}>正在读取特殊日期…</div>}
+
+      {!loading && dates.length === 0 && !adding && (
+        <div style={{ padding: '18px 0', fontSize: 12, color: 'var(--text-tertiary)', lineHeight: 1.7 }}>
+          还没有特殊日期。添加后，它会成为一条正式记忆。
+        </div>
+      )}
+
+      {!loading && <Stack gap="xs">
         {dates.map(d => (
           <div key={d.id} style={{
             display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px',
@@ -996,17 +1061,18 @@ export function DatesSettings({ onBack }) {
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)' }}>{d.title}</div>
               <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 1 }}>
-                {d.date} {d.recurring ? '· 每年' : '· 一次性'}
+                {d.date} · 每年
               </div>
             </div>
-            <button onClick={() => removeDate(d.id)} style={{
-              background: 'none', border: 'none', cursor: 'pointer', padding: 4,
+            <button aria-label={`删除特殊日期：${d.title}`} disabled={busyId === d.id} onClick={() => removeDate(d)} style={{
+              width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: 'none', border: 'none', cursor: busyId === d.id ? 'wait' : 'pointer', padding: 0,
             }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
             </button>
           </div>
         ))}
-      </Stack>
+      </Stack>}
 
       {adding ? (
         <Card padding="md" style={{ marginTop: 12 }}>
@@ -1019,23 +1085,19 @@ export function DatesSettings({ onBack }) {
             </div>
             <div>
               <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>日期 (MM-DD)</label>
-              <input value={newDate.date} onChange={e => setNewDate(n => ({ ...n, date: e.target.value }))}
+              <input value={newDate.date} inputMode="numeric" maxLength={5} onChange={e => setNewDate(n => ({ ...n, date: e.target.value }))}
                 placeholder="04-12"
                 style={{ width: '100%', padding: '8px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontSize: 13 }} />
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>每年重复</span>
-              <SettingsToggle on={newDate.recurring} onChange={v => setNewDate(n => ({ ...n, recurring: v }))} />
-            </div>
             <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={() => setAdding(false)} style={{ flex: 1, padding: '8px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'transparent', fontSize: 12, color: 'var(--text-tertiary)', cursor: 'pointer' }}>取消</button>
-              <button onClick={addDate} style={{ flex: 1, padding: '8px', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--accent)', fontSize: 12, color: '#FAF8F4', cursor: 'pointer', fontWeight: 500 }}>添加</button>
+              <button disabled={saving} onClick={() => { setAdding(false); setStatus(''); }} style={{ flex: 1, minHeight: 44, padding: '8px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'transparent', fontSize: 12, color: 'var(--text-tertiary)', cursor: 'pointer' }}>取消</button>
+              <button disabled={saving} onClick={addDate} style={{ flex: 1, minHeight: 44, padding: '8px', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--accent)', fontSize: 12, color: '#FAF8F4', cursor: saving ? 'wait' : 'pointer', fontWeight: 500 }}>{saving ? '保存中…' : '添加'}</button>
             </div>
           </Stack>
         </Card>
       ) : (
-        <button onClick={() => setAdding(true)} style={{
-          width: '100%', marginTop: 12, padding: '10px', background: 'transparent',
+        <button disabled={loading} onClick={() => { setAdding(true); setStatus(''); }} style={{
+          width: '100%', minHeight: 44, marginTop: 12, padding: '10px', background: 'transparent',
           border: '1px dashed var(--border)', borderRadius: 'var(--radius-sm)',
           fontSize: 12, color: 'var(--text-tertiary)', cursor: 'pointer', fontFamily: 'var(--font-body)',
         }}>+ 添加特殊日期</button>
@@ -1339,17 +1401,21 @@ export function FontSettings({ tweaks, onBack }) {
 export function NoteHistorySettings({ onBack }) {
   const [notes, setNotes] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     async function load() {
+      setError('');
       try {
         const res = await apiFetch('/note?limit=50');
         const data = await res.json();
-        if (data.ok && data.data?.notes) {
-          setNotes(data.data.notes);
-        }
-      } catch (e) {}
-      setLoading(false);
+        if (!res.ok || !data.ok) throw new Error(data.detail || data.error || '小纸条加载失败');
+        setNotes(data.data?.notes || []);
+      } catch (loadError) {
+        setError(loadError.message || '小纸条加载失败，请稍后重试。');
+      } finally {
+        setLoading(false);
+      }
     }
     load();
   }, []);
@@ -1370,8 +1436,9 @@ export function NoteHistorySettings({ onBack }) {
       <SubPageHeader onBack={onBack} title="小纸条历史" subtitle="Connie 留过的所有纸条" />
 
       {loading && <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-tertiary)', fontSize: 13 }}>加载中…</div>}
+      {error && <div role="alert" style={{ padding: '12px 0', color: 'var(--danger)', fontSize: 12 }}>{error}</div>}
 
-      {!loading && notes.length === 0 && (
+      {!loading && !error && notes.length === 0 && (
         <Card padding="lg" style={{ textAlign: 'center' }}>
           <div style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>还没有纸条呢</div>
         </Card>
@@ -1402,37 +1469,56 @@ export function NoteHistorySettings({ onBack }) {
 export function MemoryCandidatesSettings({ onBack }) {
   const [candidates, setCandidates] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState(null);
+  const [error, setError] = useState('');
 
   async function load() {
+    setError('');
     try {
       const res = await apiFetch('/memory/candidates?status=pending&limit=50');
       const data = await res.json();
-      if (data.ok && Array.isArray(data.data)) {
-        setCandidates(data.data);
-      }
-    } catch (e) {}
-    setLoading(false);
+      if (!res.ok || !data.ok) throw new Error(data.detail || data.error || '候选记忆加载失败');
+      setCandidates(Array.isArray(data.data) ? data.data : []);
+    } catch (loadError) {
+      setError(loadError.message || '候选记忆加载失败，请稍后重试。');
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => { load(); }, []);
 
   async function accept(id) {
+    setBusyId(id);
+    setError('');
     try {
       const res = await apiJsonFetch(`/memory/candidates/${id}/accept`, {
         method: 'POST',
         body: '{}',
       });
       const data = await res.json();
-      if (data.ok) setCandidates(c => c.filter(x => x.id !== id));
-    } catch (e) {}
+      if (!res.ok || !data.ok) throw new Error(data.detail || data.error || '候选记忆确认失败');
+      setCandidates(c => c.filter(x => x.id !== id));
+    } catch (actionError) {
+      setError(actionError.message || '候选记忆确认失败，请稍后重试。');
+    } finally {
+      setBusyId(null);
+    }
   }
 
   async function reject(id) {
+    setBusyId(id);
+    setError('');
     try {
       const res = await apiFetch(`/memory/candidates/${id}/reject`, { method: 'POST' });
       const data = await res.json();
-      if (data.ok) setCandidates(c => c.filter(x => x.id !== id));
-    } catch (e) {}
+      if (!res.ok || !data.ok) throw new Error(data.detail || data.error || '候选记忆忽略失败');
+      setCandidates(c => c.filter(x => x.id !== id));
+    } catch (actionError) {
+      setError(actionError.message || '候选记忆忽略失败，请稍后重试。');
+    } finally {
+      setBusyId(null);
+    }
   }
 
   return (
@@ -1440,8 +1526,9 @@ export function MemoryCandidatesSettings({ onBack }) {
       <SubPageHeader onBack={onBack} title="记忆候选" subtitle="低置信度的候选需要你确认才会进入正式记忆库" />
 
       {loading && <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-tertiary)', fontSize: 13 }}>加载中…</div>}
+      {error && <div role="alert" style={{ padding: '12px 0', color: 'var(--danger)', fontSize: 12 }}>{error}</div>}
 
-      {!loading && candidates.length === 0 && (
+      {!loading && !error && candidates.length === 0 && (
         <Card padding="lg" style={{ textAlign: 'center' }}>
           <div style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>没有待审核的候选</div>
         </Card>
@@ -1459,12 +1546,12 @@ export function MemoryCandidatesSettings({ onBack }) {
               </div>
             )}
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button onClick={() => reject(c.id)} style={{
+                <button disabled={busyId === c.id} onClick={() => reject(c.id)} style={{
                 padding: '6px 14px', borderRadius: 'var(--radius-sm)',
                 border: '1px solid var(--border)', background: 'transparent',
                 fontSize: 12, color: 'var(--text-tertiary)', cursor: 'pointer', fontFamily: 'var(--font-body)',
               }}>不要</button>
-              <button onClick={() => accept(c.id)} style={{
+                <button disabled={busyId === c.id} onClick={() => accept(c.id)} style={{
                 padding: '6px 14px', borderRadius: 'var(--radius-sm)',
                 border: 'none', background: 'var(--accent)',
                 fontSize: 12, color: '#FAF8F4', cursor: 'pointer', fontWeight: 500, fontFamily: 'var(--font-body)',

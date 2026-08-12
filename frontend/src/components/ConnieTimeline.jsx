@@ -209,24 +209,36 @@ export default function ConnieTimeline({ onBack }) {
   const [activeDates, setActiveDates] = useState([]);
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   const [calendarMonth, setCalendarMonth] = useState(() => selectedDate.slice(0, 7));
 
   useEffect(() => {
     if (!calendarMonth) return;
+    setError('');
     apiFetch(`/autonomous/dates?month=${calendarMonth}`)
-      .then(r => r.json())
-      .then(d => { if (d.ok) setActiveDates(d.data); })
-      .catch(() => {});
+      .then(async r => {
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok || !data.ok) throw new Error(data.detail || data.error || '活动日期加载失败');
+        setActiveDates(data.data || []);
+      })
+      .catch(err => setError(err.message || '活动日期加载失败'));
   }, [calendarMonth]);
 
   useEffect(() => {
     if (!selectedDate) return;
     setLoading(true);
+    setError('');
     apiFetch(`/autonomous/logs?date=${selectedDate}`)
-      .then(r => r.json())
-      .then(d => { if (d.ok) setLogs(d.data); })
-      .catch(() => {})
+      .then(async r => {
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok || !data.ok) throw new Error(data.detail || data.error || '生活日志加载失败');
+        setLogs(data.data || []);
+      })
+      .catch(err => {
+        setLogs([]);
+        setError(err.message || '生活日志加载失败');
+      })
       .finally(() => setLoading(false));
   }, [selectedDate]);
 
@@ -275,6 +287,11 @@ export default function ConnieTimeline({ onBack }) {
           />
         </div>
 
+        {error && (
+          <div role="alert" style={{ padding: '10px 12px', marginBottom: 10, color: 'var(--danger)', fontSize: 12, lineHeight: 1.6 }}>
+            {error}
+          </div>
+        )}
         {loading ? (
           <div style={{ textAlign: 'center', padding: 40, color: 'var(--ink-faint, var(--text-tertiary))', fontSize: 13 }}>
             加载中...

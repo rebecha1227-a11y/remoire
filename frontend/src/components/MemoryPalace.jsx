@@ -799,7 +799,9 @@ export default function MemoryPalace({ onBack }) {
         const res = await apiFetch(`/memory/heatmap?year=${calYear}&month=${calMonth}`);
         const data = await res.json();
         if (data.ok) setHeatmap(parseHeatmapArr(data.data));
-      } catch (e) {}
+      } catch (error) {
+        setHomeError(error.message || '记忆日历加载失败');
+      }
     })();
   }, [calYear, calMonth]);
 
@@ -822,7 +824,10 @@ export default function MemoryPalace({ onBack }) {
           ...m,
           heatmap: results[i].ok ? parseHeatmapArr(results[i].data) : {},
         })));
-      } catch (e) {}
+      } catch (error) {
+        setQuarterData([]);
+        setHomeError(error.message || '季度记忆日历加载失败');
+      }
     })();
   }, [calYear, calMonth, heatViewMode]);
 
