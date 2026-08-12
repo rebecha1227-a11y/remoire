@@ -1,18 +1,28 @@
-from fastapi import APIRouter, Depends
+from typing import Literal
+
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from app.auth import verify_token
 from app.services.chat_service import get_or_create_conversation, get_history, search_messages, stream_chat, debug_prompt
+from app.services.image_storage import MAX_ENCODED_IMAGE_CHARS, decode_image
 import json
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 class SendRequest(BaseModel):
-    message: str
-    conversation_id: str | None = None
-    image: str | None = None
-    mode: str | None = "daily"
-    reply_style: str | None = "split"
+    message: str = Field(min_length=1, max_length=20_000)
+    conversation_id: str | None = Field(default=None, max_length=64)
+    image: str | None = Field(default=None, max_length=MAX_ENCODED_IMAGE_CHARS)
+    mode: Literal["daily", "deep"] = "daily"
+    reply_style: Literal["split", "whole"] = "split"
+
+    @field_validator("image")
+    @classmethod
+    def validate_image(cls, value: str | None) -> str | None:
+        if value:
+            decode_image(value)
+        return value
 
 @router.post("/send")
 async def send_message(req: SendRequest, _=Depends(verify_token)):
@@ -51,12 +61,21 @@ async def latest_conversation(_=Depends(verify_token)):
     return {"ok": True, "data": {"conversation_id": row["id"]}}
 
 @router.get("/history")
-async def chat_history(conversation_id: str, limit: int = 50, _=Depends(verify_token)):
+async def chat_history(
+    conversation_id: str = Query(max_length=64),
+    limit: int = Query(50, ge=1, le=200),
+    _=Depends(verify_token),
+):
     messages = await get_history(conversation_id, limit=limit)
     return {"ok": True, "data": {"messages": messages, "conversation_id": conversation_id}}
 
 @router.get("/search")
-async def chat_search(conversation_id: str, q: str, limit: int = 80, _=Depends(verify_token)):
+async def chat_search(
+    conversation_id: str = Query(max_length=64),
+    q: str = Query(min_length=1, max_length=200),
+    limit: int = Query(80, ge=1, le=200),
+    _=Depends(verify_token),
+):
     messages = await search_messages(conversation_id, q, limit=limit)
     return {"ok": True, "data": {"messages": messages, "conversation_id": conversation_id}}
 
