@@ -1,6 +1,7 @@
 import json
 from datetime import datetime, timezone, timedelta
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from app.auth import verify_token
 from app.database import get_db
 
 router = APIRouter(prefix="/api/autonomous", tags=["autonomous"])
@@ -9,7 +10,7 @@ BJ_TZ = timezone(timedelta(hours=8))
 
 
 @router.get("/logs")
-async def get_logs(date: str | None = None):
+async def get_logs(date: str | None = None, _=Depends(verify_token)):
     if date:
         day_start = f"{date}T00:00:00+08:00"
         day_end = f"{date}T23:59:59+08:00"
@@ -41,7 +42,7 @@ async def get_logs(date: str | None = None):
 
 
 @router.get("/dates")
-async def get_active_dates(month: str | None = None):
+async def get_active_dates(month: str | None = None, _=Depends(verify_token)):
     if month:
         month_start = f"{month}-01T00:00:00+08:00"
         parts = month.split("-")

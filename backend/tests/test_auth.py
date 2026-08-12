@@ -9,6 +9,7 @@ from app import config, database
 from app.auth import make_password_hash, verify_mcp_token, verify_password, verify_token
 from app.database import init_db
 from app.routers import auth as auth_router
+from app.routers import autonomous as autonomous_router
 
 
 class AuthTests(unittest.TestCase):
@@ -30,6 +31,7 @@ class AuthTests(unittest.TestCase):
 
         app = FastAPI()
         app.include_router(auth_router.router)
+        app.include_router(autonomous_router.router)
 
         @app.get("/probe")
         async def read_probe(_=Depends(verify_token)):
@@ -132,6 +134,13 @@ class AuthTests(unittest.TestCase):
             ).status_code,
             204,
         )
+
+    def test_autonomous_activity_is_private(self):
+        self.assertEqual(self.client.get("/api/autonomous/logs").status_code, 401)
+        self.assertEqual(self.client.get("/api/autonomous/dates").status_code, 401)
+        self.login()
+        self.assertEqual(self.client.get("/api/autonomous/logs").status_code, 200)
+        self.assertEqual(self.client.get("/api/autonomous/dates").status_code, 200)
 
 
 if __name__ == "__main__":
