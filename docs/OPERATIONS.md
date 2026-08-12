@@ -182,6 +182,32 @@ ALLOWED_HOSTS=remoire.cc,localhost,127.0.0.1
 
 Nginx 使用仓库中的 `deploy/nginx/remoire.conf`。上线前先运行 `nginx -t`，它负责 HTTPS、HSTS、CSP 和正确转发客户端 IP/协议。
 
+### 远程 MCP 认证与轮换
+
+远程 `/mcp` 不复用网页登录密码或会话 cookie。Nginx 在转发之前，通过内部 `auth_request` 让 FastAPI 校验一枚独立的高熵 Bearer token。服务器只保存 token 的 SHA-256，没有配置时默认拒绝。
+
+在服务器后端目录生成一组新凭据：
+
+```bash
+cd /opt/remoire/backend
+./venv/bin/python -m scripts.generate_mcp_token
+```
+
+屏幕会显示两个值：
+
+1. 原始 Bearer token：只配置到需要访问 Remoire 的 MCP 客户端，不写入仓库、handover 或日志。
+2. `MCP_API_TOKEN_SHA256`：写入 `/opt/remoire/backend/.env`。
+
+轮换步骤：
+
+1. 生成新 token 和新摘要。
+2. 把新摘要写入服务器 `.env`，重启 `remoire`。
+3. 把新原始 token 更新到 MCP 客户端。
+4. 用匿名请求验证 `/mcp` 返回 `401`，用新 token 验证初始化成功。
+5. 旧 token 会因服务器摘要已替换而立即失效。
+
+> 不要把 token 放进 URL 查询参数。客户端必须使用 `Authorization: Bearer <token>`。如果所用 MCP 客户端不支持预配置 Bearer token，应接入正式 OAuth 2.1 授权流，不应因为兼容问题恢复匿名入口。
+
 ## 七、交付门禁
 
 一次生产发布只有同时满足以下条件才算完成：
@@ -190,6 +216,7 @@ Nginx 使用仓库中的 `deploy/nginx/remoire.conf`。上线前先运行 `nginx
 - 最新备份通过 SHA-256 和 SQLite 完整性验证。
 - systemd 服务和定时器状态正常。
 - 8000/8001 没有直接暴露公网。
+- 匿名访问 `/mcp` 被拒绝，并且只有当前 MCP token 可初始化连接。
 - 生产数据库数量与发布前预期一致。
 - 关键用户流程已在真实生产域名验证。
 - 仓库与 handover 中没有新增明文密钥。

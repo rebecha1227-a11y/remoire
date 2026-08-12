@@ -11,6 +11,7 @@ from app.auth import (
     login_is_rate_limited,
     record_login_failure,
     verify_password,
+    verify_mcp_token,
     verify_token,
 )
 
@@ -48,3 +49,9 @@ async def me(principal=Depends(verify_token)):
 async def logout(request: Request, response: Response, _=Depends(verify_token)):
     await delete_session(request, response)
     return {"ok": True, "data": None}
+
+
+@router.get("/mcp-check", include_in_schema=False)
+async def mcp_check(_=Depends(verify_mcp_token)):
+    """Internal Nginx auth_request target. It never returns memory data."""
+    return Response(status_code=204)

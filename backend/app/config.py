@@ -16,6 +16,7 @@ def _env_list(name: str, default: str) -> list[str]:
 
 API_SECRET_KEY = os.getenv("API_SECRET_KEY", "")
 DEVICE_SECRET_KEY = os.getenv("DEVICE_SECRET_KEY", "")
+MCP_API_TOKEN_SHA256 = os.getenv("MCP_API_TOKEN_SHA256", "").strip().lower()
 APP_USERNAME = os.getenv("APP_USERNAME", "connie")
 APP_PASSWORD_HASH = os.getenv("APP_PASSWORD_HASH", "")
 SESSION_COOKIE_NAME = os.getenv("SESSION_COOKIE_NAME", "remoire_session")

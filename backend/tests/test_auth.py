@@ -6,7 +6,7 @@ from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
 from app import config, database
-from app.auth import make_password_hash, verify_password, verify_token
+from app.auth import make_password_hash, verify_mcp_token, verify_password, verify_token
 from app.database import init_db
 from app.routers import auth as auth_router
 
@@ -25,6 +25,7 @@ class AuthTests(unittest.TestCase):
         config.SESSION_TTL_DAYS = 30
         config.ALLOW_LEGACY_BEARER = False
         config.API_SECRET_KEY = "legacy-secret"
+        config.MCP_API_TOKEN_SHA256 = ""
         asyncio.run(init_db())
 
         app = FastAPI()
@@ -36,6 +37,10 @@ class AuthTests(unittest.TestCase):
 
         @app.post("/probe")
         async def write_probe(_=Depends(verify_token)):
+            return {"ok": True}
+
+        @app.get("/mcp-probe")
+        async def mcp_probe(_=Depends(verify_mcp_token)):
             return {"ok": True}
 
         self.client = TestClient(app)
@@ -101,6 +106,32 @@ class AuthTests(unittest.TestCase):
         response = self.client.post("/api/auth/logout", headers={"X-CSRF-Token": csrf})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(self.client.get("/probe").status_code, 401)
+
+    def test_mcp_auth_fails_closed_when_unconfigured(self):
+        self.assertEqual(self.client.get("/mcp-probe").status_code, 503)
+        self.assertEqual(self.client.get("/api/auth/mcp-check").status_code, 503)
+
+    def test_mcp_auth_accepts_only_the_independent_bearer(self):
+        import hashlib
+
+        token = "mcp-test-token-with-high-entropy-placeholder"
+        config.MCP_API_TOKEN_SHA256 = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        self.assertEqual(self.client.get("/mcp-probe").status_code, 401)
+        self.assertEqual(
+            self.client.get("/mcp-probe", headers={"Authorization": "Bearer wrong"}).status_code,
+            401,
+        )
+        response = self.client.get(
+            "/mcp-probe", headers={"Authorization": f"Bearer {token}"}
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"ok": True})
+        self.assertEqual(
+            self.client.get(
+                "/api/auth/mcp-check", headers={"Authorization": f"Bearer {token}"}
+            ).status_code,
+            204,
+        )
 
 
 if __name__ == "__main__":

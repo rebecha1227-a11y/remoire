@@ -198,3 +198,20 @@ async def verify_token(request: Request) -> dict[str, str]:
     ):
         return {"username": config.APP_USERNAME, "auth_type": "legacy_bearer"}
     raise HTTPException(status_code=401, detail="请先登录", headers={"WWW-Authenticate": "Session"})
+
+
+async def verify_mcp_token(request: Request) -> dict[str, str]:
+    """Verify the independent, high-entropy bearer token used by remote MCP."""
+    configured_hash = config.MCP_API_TOKEN_SHA256
+    if len(configured_hash) != 64 or any(char not in "0123456789abcdef" for char in configured_hash):
+        raise HTTPException(status_code=503, detail="MCP 认证尚未配置")
+    credentials: HTTPAuthorizationCredentials | None = await _bearer(request)
+    if not credentials or not hmac.compare_digest(
+        _hash_secret(credentials.credentials), configured_hash
+    ):
+        raise HTTPException(
+            status_code=401,
+            detail="MCP 凭据无效",
+            headers={"WWW-Authenticate": 'Bearer realm="remoire-mcp"'},
+        )
+    return {"username": config.APP_USERNAME, "auth_type": "mcp_bearer"}
