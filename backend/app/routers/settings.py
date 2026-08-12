@@ -224,7 +224,14 @@ async def update_proactive_settings(req: ProactiveSettingsRequest, _=Depends(ver
         return {"ok": True}
     sets = []
     params = []
+    allowed_columns = {
+        "enabled", "start_hour", "end_hour", "allow_night", "max_daily",
+        "cooldown_minutes", "max_burst", "max_rounds", "round_interval_minutes",
+        "end_on_reply", "types_json",
+    }
     for key in fields:
+        if key not in allowed_columns:
+            raise HTTPException(status_code=400, detail="主动消息设置包含未知字段")
         val = getattr(req, key)
         if key in ("enabled", "allow_night", "end_on_reply"):
             val = 1 if val else 0
@@ -240,7 +247,8 @@ async def update_proactive_settings(req: ProactiveSettingsRequest, _=Depends(ver
             (now,),
         )
         await db.execute(
-            f"UPDATE proactive_message_settings SET {', '.join(sets)} WHERE id = ?",
+            # Column identifiers come only from allowed_columns; all values stay bound.
+            f"UPDATE proactive_message_settings SET {', '.join(sets)} WHERE id = ?",  # nosec B608
             tuple(params),
         )
         await db.commit()

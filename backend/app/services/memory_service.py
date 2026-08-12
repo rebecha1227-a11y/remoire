@@ -749,13 +749,15 @@ async def list_memories(limit: int = 50, offset: int = 0, search: str | None = N
 
     async with get_db() as db:
         async with db.execute(
-            f"SELECT * FROM memories{where} ORDER BY {order} LIMIT ? OFFSET ?",
+            # where/order are assembled exclusively from fixed fragments above.
+            f"SELECT * FROM memories{where} ORDER BY {order} LIMIT ? OFFSET ?",  # nosec B608
             (*params, limit, offset),
         ) as cur:
             rows = await cur.fetchall()
 
         async with db.execute(
-            f"SELECT COUNT(*) as cnt FROM memories{where}",
+            # where contains only fixed fragments and all values remain bound.
+            f"SELECT COUNT(*) as cnt FROM memories{where}",  # nosec B608
             params,
         ) as cur:
             total_row = await cur.fetchone()
@@ -880,11 +882,22 @@ async def update_memory(memory_id: str, content: str | None = None, tags: list[s
                 updates["layer"] = target_layer
                 updates["decay_rate"] = _decay_rate_for_layer(target_layer)
 
-        set_clause = ", ".join(f"{k} = ?" for k in updates)
+        allowed_update_columns = {
+            "content", "tags_json", "layer", "memory_type", "event_date",
+            "event_time", "valence", "arousal", "unresolved", "pinned",
+            "embedding", "updated_at", "decay_rate", "weight",
+        }
+        if set(updates) - allowed_update_columns:
+            raise ValueError("记忆更新包含未知字段")
+        set_clause = ", ".join(f"{key} = ?" for key in updates)
         values = list(updates.values())
         values.append(memory_id)
 
-        await db.execute(f"UPDATE memories SET {set_clause} WHERE id = ?", values)
+        await db.execute(
+            # Every identifier in set_clause passed allowed_update_columns above.
+            f"UPDATE memories SET {set_clause} WHERE id = ?",  # nosec B608
+            values,
+        )
         await db.commit()
 
         async with db.execute("SELECT * FROM memories WHERE id = ?", (memory_id,)) as cur:

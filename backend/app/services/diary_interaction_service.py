@@ -71,7 +71,8 @@ async def delete_interaction(
         params.append(actor)
     async with get_db() as db:
         cur = await db.execute(
-            f"DELETE FROM diary_interactions WHERE {' AND '.join(clauses)}",
+            # Clauses are fixed literals selected by this function; values are bound.
+            f"DELETE FROM diary_interactions WHERE {' AND '.join(clauses)}",  # nosec B608
             tuple(params),
         )
         await db.commit()
@@ -527,7 +528,8 @@ async def mark_seen_by_connie(interaction_ids: list[str]) -> None:
     placeholders = ",".join("?" for _ in interaction_ids)
     async with get_db() as db:
         await db.execute(
-            f"UPDATE diary_interactions SET seen_by_connie = 1 WHERE id IN ({placeholders})",
+            # placeholders contains only one '?' per internal UUID, never user SQL.
+            f"UPDATE diary_interactions SET seen_by_connie = 1 WHERE id IN ({placeholders})",  # nosec B608
             interaction_ids,
         )
         await db.commit()
