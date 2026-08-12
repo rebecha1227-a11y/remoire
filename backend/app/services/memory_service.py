@@ -1,6 +1,7 @@
 import uuid
 import json
 import math
+import asyncio
 from datetime import datetime
 from app.database import get_db
 from app.llm import call_llm, get_embedding, get_embeddings_batch
@@ -885,10 +886,133 @@ async def get_heatmap(year: int, month: int) -> list[dict]:
 
 import logging
 _digest_logger = logging.getLogger(__name__)
+_digest_lock = asyncio.Lock()
+
+
+def _digest_similarity(left, right) -> float:
+    if left["content"].strip().lower() == right["content"].strip().lower():
+        return 1.0
+    left_grams = _bigrams(left["content"].lower())
+    right_grams = _bigrams(right["content"].lower())
+    containment = len(left_grams & right_grams) / max(1, min(len(left_grams), len(right_grams)))
+    left_emb = _unpack_embedding(_safe_get(left, "embedding"))
+    right_emb = _unpack_embedding(_safe_get(right, "embedding"))
+    semantic = _cosine_similarity(left_emb, right_emb) if left_emb and right_emb else 0.0
+    return max(containment, semantic if containment >= 0.35 else 0.0)
+
+
+def _validate_digest_plan(rows, proposal: dict) -> tuple[list[dict], list[dict]]:
+    """Treat LLM output as an untrusted proposal and return safe keep/delete pairs."""
+    lookup = {row["id"]: row for row in rows}
+    protected = {
+        row["id"] for row in rows
+        if row["layer"] in ("core", "consciousness")
+        or row["pinned"]
+        or row["unresolved"]
+        or row["memory_type"] == "unresolved"
+    }
+    requested = []
+    for merge in proposal.get("merge", []) if isinstance(proposal, dict) else []:
+        if not isinstance(merge, dict):
+            continue
+        keep_id = merge.get("keep_id")
+        for delete_id in merge.get("delete_ids", []):
+            requested.append((keep_id, delete_id, merge.get("reason", "")))
+    for delete_id in proposal.get("delete", []) if isinstance(proposal, dict) else []:
+        requested.append((None, delete_id, "top-level delete"))
+
+    accepted, skipped, deleting, keepers = [], [], set(), set()
+    for proposed_keep, delete_id, reason in requested:
+        if delete_id not in lookup or delete_id in deleting or delete_id in protected or delete_id in keepers:
+            skipped.append({"keep_id": proposed_keep, "delete_id": delete_id, "reason": "unknown, duplicate, or protected"})
+            continue
+        candidates = [lookup[proposed_keep]] if proposed_keep in lookup else [
+            row for row in rows if row["id"] != delete_id and row["id"] not in deleting
+        ]
+        candidates = [row for row in candidates if row["id"] != delete_id]
+        if not candidates:
+            skipped.append({"keep_id": proposed_keep, "delete_id": delete_id, "reason": "no keeper"})
+            continue
+        keeper = max(
+            candidates,
+            key=lambda row: (_digest_similarity(row, lookup[delete_id]), row["pinned"], row["weight"] or 0),
+        )
+        similarity = _digest_similarity(keeper, lookup[delete_id])
+        if similarity < 0.92:
+            skipped.append({"keep_id": keeper["id"], "delete_id": delete_id, "reason": "similarity below safety threshold", "score": round(similarity, 4)})
+            continue
+        deleting.add(delete_id)
+        keepers.add(keeper["id"])
+        accepted.append({"keep_id": keeper["id"], "delete_id": delete_id, "reason": reason, "score": round(similarity, 4)})
+    return accepted, skipped
+
+
+async def _apply_digest_pairs(pairs: list[dict]) -> int:
+    if not pairs:
+        return 0
+    async with get_db() as db:
+        await db.execute("BEGIN IMMEDIATE")
+        try:
+            for pair in pairs:
+                keep_id, delete_id = pair["keep_id"], pair["delete_id"]
+                async with db.execute(
+                    "SELECT id, tags_json, weight, arousal, trigger_count FROM memories WHERE id IN (?, ?)",
+                    (keep_id, delete_id),
+                ) as cursor:
+                    current = await cursor.fetchall()
+                if len(current) != 2:
+                    raise RuntimeError("digest rows changed before commit")
+                by_id = {row["id"]: row for row in current}
+                keep, deleted = by_id[keep_id], by_id[delete_id]
+                tags = list(dict.fromkeys(json.loads(keep["tags_json"] or "[]") + json.loads(deleted["tags_json"] or "[]")))
+                await db.execute(
+                    """UPDATE memories SET tags_json = ?, weight = MAX(weight, ?),
+                       arousal = MAX(arousal, ?), trigger_count = trigger_count + ?, updated_at = ?
+                       WHERE id = ?""",
+                    (json.dumps(tags, ensure_ascii=False), deleted["weight"] or 0, deleted["arousal"] or 0,
+                     deleted["trigger_count"] or 0, datetime.utcnow().isoformat(), keep_id),
+                )
+                async with db.execute(
+                    "SELECT source_id, target_id, link_type, weight, description, created_at FROM memory_links WHERE source_id = ? OR target_id = ?",
+                    (delete_id, delete_id),
+                ) as cursor:
+                    links = await cursor.fetchall()
+                await db.execute("DELETE FROM memory_links WHERE source_id = ? OR target_id = ?", (delete_id, delete_id))
+                for link in links:
+                    source = keep_id if link["source_id"] == delete_id else link["source_id"]
+                    target = keep_id if link["target_id"] == delete_id else link["target_id"]
+                    if source == target:
+                        continue
+                    async with db.execute(
+                        "SELECT 1 FROM memory_links WHERE source_id = ? AND target_id = ? AND link_type = ? LIMIT 1",
+                        (source, target, link["link_type"]),
+                    ) as cursor:
+                        exists = await cursor.fetchone()
+                    if not exists:
+                        await db.execute(
+                            """INSERT INTO memory_links
+                               (id, source_id, target_id, link_type, weight, description, created_at)
+                               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                            (str(uuid.uuid4()), source, target, link["link_type"], link["weight"], link["description"], link["created_at"]),
+                        )
+                await db.execute("DELETE FROM memories WHERE id = ?", (delete_id,))
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            raise
+    return len(pairs)
 
 
 async def run_digest():
-    """用 LLM 识别并清理重复记忆。按层分批处理。"""
+    """Conservatively remove duplicates with validation, audit, and one transaction per batch."""
+    if _digest_lock.locked():
+        _digest_logger.info("digest: another run is active, skipping")
+        return 0
+    async with _digest_lock:
+        return await _run_digest_locked()
+
+
+async def _run_digest_locked():
     digest_prompt = _load_prompt("digest.md")
     if not digest_prompt:
         _digest_logger.warning("digest: digest.md 不存在，跳过")
@@ -896,11 +1020,22 @@ async def run_digest():
 
     config, _ = await model_settings_service.get_model_config_for_slot("backend")
     total_deleted = 0
+    run_id = str(uuid.uuid4())
+    proposed_log, applied_log, skipped_log = [], [], []
+    now = datetime.utcnow().isoformat()
+    async with get_db() as db:
+        await db.execute(
+            "INSERT INTO memory_digest_runs (id, status, created_at) VALUES (?, 'running', ?)",
+            (run_id, now),
+        )
+        await db.commit()
 
-    for layer in ("core", "long", "short", "consciousness"):
+    for layer in ("long", "short"):
         async with get_db() as db:
             async with db.execute(
-                "SELECT id, content, layer, memory_type FROM memories WHERE layer = ? ORDER BY created_at",
+                """SELECT id, content, layer, memory_type, tags_json, weight, arousal,
+                          pinned, unresolved, trigger_count, embedding
+                   FROM memories WHERE layer = ? ORDER BY created_at""",
                 (layer,),
             ) as cur:
                 rows = await cur.fetchall()
@@ -943,23 +1078,27 @@ async def run_digest():
                 cleaned = cleaned[brace_start:brace_end + 1]
                 result = json.loads(cleaned)
 
-                ids_to_delete = set(result.get("delete", []))
-                for merge in result.get("merge", []):
-                    ids_to_delete.update(merge.get("delete_ids", []))
-
-                if ids_to_delete:
-                    async with get_db() as db:
-                        for mid in ids_to_delete:
-                            await db.execute("DELETE FROM memories WHERE id = ?", (mid,))
-                            await db.execute("DELETE FROM memory_links WHERE source_id = ? OR target_id = ?", (mid, mid))
-                        await db.commit()
-                    total_deleted += len(ids_to_delete)
-                    _digest_logger.info("digest: %s 层删除 %d 条重复记忆", layer, len(ids_to_delete))
+                proposed_log.append({"layer": layer, "proposal": result})
+                accepted, skipped = _validate_digest_plan(chunk, result)
+                skipped_log.extend(skipped)
+                deleted = await _apply_digest_pairs(accepted)
+                applied_log.extend(accepted)
+                total_deleted += deleted
+                if deleted:
+                    _digest_logger.info("digest: %s 层安全合并 %d 条重复记忆", layer, deleted)
 
             except Exception as e:
                 _digest_logger.warning("digest: %s 层处理失败 — %s", layer, e)
 
-    _digest_logger.info("digest: 完成，共删除 %d 条重复记忆", total_deleted)
+    async with get_db() as db:
+        await db.execute(
+            """UPDATE memory_digest_runs SET status = 'completed', proposed_json = ?,
+               applied_json = ?, skipped_json = ?, deleted_count = ?, completed_at = ? WHERE id = ?""",
+            (json.dumps(proposed_log, ensure_ascii=False), json.dumps(applied_log, ensure_ascii=False),
+             json.dumps(skipped_log, ensure_ascii=False), total_deleted, datetime.utcnow().isoformat(), run_id),
+        )
+        await db.commit()
+    _digest_logger.info("digest: 完成，共安全合并 %d 条重复记忆", total_deleted)
     return total_deleted
 
 

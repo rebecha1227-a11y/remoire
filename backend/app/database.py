@@ -221,6 +221,17 @@ async def init_db():
                 applied_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS memory_digest_runs (
+                id TEXT PRIMARY KEY,
+                status TEXT NOT NULL,
+                proposed_json TEXT NOT NULL DEFAULT '[]',
+                applied_json TEXT NOT NULL DEFAULT '[]',
+                skipped_json TEXT NOT NULL DEFAULT '[]',
+                deleted_count INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                completed_at TEXT
+            );
+
             CREATE INDEX IF NOT EXISTS idx_messages_conversation
                 ON messages(conversation_id, created_at);
             CREATE INDEX IF NOT EXISTS idx_memory_candidates_status
@@ -243,6 +254,8 @@ async def init_db():
                 ON app_usage_events(app_name, created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_auth_sessions_expires
                 ON auth_sessions(expires_at);
+            CREATE INDEX IF NOT EXISTS idx_memory_digest_runs_created
+                ON memory_digest_runs(created_at DESC);
             CREATE TABLE IF NOT EXISTS weather_cache (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 temp TEXT,

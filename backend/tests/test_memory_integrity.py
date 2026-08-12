@@ -108,6 +108,57 @@ class MemoryIntegrityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(stored["arousal"], 0.8)
         self.assertTrue(stored["unresolved"])
 
+    async def test_digest_rejects_low_similarity_and_protected_deletes(self):
+        rows = [
+            {"id": "keep", "content": "静儿喜欢喝热拿铁", "layer": "long", "memory_type": "fact", "pinned": 0, "unresolved": 0, "weight": 1.0, "embedding": None},
+            {"id": "different", "content": "静儿明天要去广州出差", "layer": "long", "memory_type": "event", "pinned": 0, "unresolved": 0, "weight": 1.0, "embedding": None},
+            {"id": "protected", "content": "静儿喜欢喝热拿铁", "layer": "long", "memory_type": "fact", "pinned": 1, "unresolved": 0, "weight": 1.0, "embedding": None},
+        ]
+        accepted, skipped = memory_service._validate_digest_plan(rows, {
+            "merge": [
+                {"keep_id": "keep", "delete_ids": ["different"]},
+                {"keep_id": "keep", "delete_ids": ["protected"]},
+            ]
+        })
+        self.assertEqual(accepted, [])
+        self.assertEqual(len(skipped), 2)
+
+    async def test_digest_transaction_merges_metadata_and_rewires_links(self):
+        now = datetime.utcnow().isoformat()
+        async with get_db() as db:
+            await db.execute(
+                """INSERT INTO memories
+                   (id, content, tags_json, layer, memory_type, weight, arousal,
+                    trigger_count, created_at, updated_at)
+                   VALUES ('keep', '静儿喜欢热拿铁', '["咖啡"]', 'long', 'fact', 0.6, 0.2, 2, ?, ?),
+                          ('duplicate', '静儿喜欢热拿铁', '["偏好"]', 'long', 'fact', 0.9, 0.7, 3, ?, ?),
+                          ('related', '一起去过咖啡店', '[]', 'long', 'event', 1, 0, 0, ?, ?)""",
+                (now, now, now, now, now, now),
+            )
+            await db.execute(
+                """INSERT INTO memory_links
+                   (id, source_id, target_id, link_type, weight, created_at)
+                   VALUES ('link', 'duplicate', 'related', 'relates_to', 0.8, ?)""",
+                (now,),
+            )
+            await db.commit()
+
+        count = await memory_service._apply_digest_pairs([
+            {"keep_id": "keep", "delete_id": "duplicate", "score": 1.0, "reason": "exact"}
+        ])
+        self.assertEqual(count, 1)
+        self.assertIsNone(await memory_service.get_memory("duplicate"))
+        kept = await memory_service.get_memory("keep")
+        self.assertEqual(set(kept["tags"]), {"咖啡", "偏好"})
+        self.assertEqual(kept["weight"], 0.9)
+        self.assertEqual(kept["arousal"], 0.7)
+        self.assertEqual(kept["trigger_count"], 5)
+        async with get_db() as db:
+            link = await (await db.execute(
+                "SELECT source_id, target_id FROM memory_links"
+            )).fetchone()
+        self.assertEqual((link["source_id"], link["target_id"]), ("keep", "related"))
+
 
 if __name__ == "__main__":
     unittest.main()
