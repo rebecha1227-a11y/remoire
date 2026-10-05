@@ -119,7 +119,7 @@ const MessageRow = memo(function MessageRow({ m, isKept, isThinkOpen, onToggleTh
   }, [m.text]);
   const actBtn = {
     background: 'none', border: 'none', cursor: 'pointer',
-    minWidth: 44, minHeight: 44, padding: 3, display: 'flex', alignItems: 'center', justifyContent: 'center',
+    padding: 3, display: 'flex', alignItems: 'center', justifyContent: 'center',
     color: 'var(--ink-faint, rgba(0,0,0,0.25))',
   };
   const ico = { width: 13, height: 13, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round', strokeLinejoin: 'round' };

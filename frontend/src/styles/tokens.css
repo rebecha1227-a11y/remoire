@@ -1,6 +1,6 @@
 /* ── Design Tokens · Our Nest ── */
-/* Project type system: Cormorant Garamond (display) + Instrument Sans (body UI). */
-@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap');
+/* Restore the owner's original Noto Serif SC room UI. Dedicated font slots stay independent. */
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&family=Noto+Serif+SC:wght@300;400;500;600&display=swap');
 
 .font-hand {
   font-family: var(--font-display);
@@ -65,11 +65,11 @@
   --text-2xl:  2rem;
 
   /* Type roles — 大类用 display/body，专项 slot 用各自的字 */
-  --font-display:  'Cormorant Garamond', 'Songti SC', Georgia, serif;
-  --font-body:     'Instrument Sans', 'PingFang SC', 'Helvetica Neue', sans-serif;
+  --font-display:  'Noto Serif SC', 'Cormorant Garamond', serif;
+  --font-body:     'Noto Serif SC', 'Cormorant Garamond', serif;
 
   /* Font slots — overridden by JS when user uploads custom .ttf */
-  --font-chat:     'Instrument Sans', 'PingFang SC', 'Helvetica Neue', sans-serif;
+  --font-chat:     'Noto Serif SC', 'Cormorant Garamond', serif;
   --font-note:     'Cormorant Garamond', 'Songti SC', Georgia, serif;
   --font-diary:    'Cormorant Garamond', 'Songti SC', Georgia, serif;
   --font-read:     'Instrument Sans', 'PingFang SC', 'Helvetica Neue', sans-serif;

@@ -13,7 +13,7 @@ import './styles/room.css';
 const TWEAK_STORAGE_KEY = 'remoire_tweaks';
 
 const FONT_SLOTS = {
-  Chat: { cssVar: '--font-chat', family: 'RemoireCustomChat', fallback: "'Instrument Sans', 'PingFang SC', 'Helvetica Neue', sans-serif" },
+  Chat: { cssVar: '--font-chat', family: 'RemoireCustomChat', fallback: "'Noto Serif SC', 'Cormorant Garamond', serif" },
   Note: { cssVar: '--font-note', family: 'RemoireCustomNote', fallback: "'Cormorant Garamond', 'Songti SC', Georgia, serif" },
   Diary: { cssVar: '--font-diary', family: 'RemoireCustomDiary', fallback: "'Cormorant Garamond', 'Songti SC', Georgia, serif" },
   Read: { cssVar: '--font-read', family: 'RemoireCustomRead', fallback: "'Instrument Sans', 'PingFang SC', 'Helvetica Neue', sans-serif" },
@@ -113,37 +113,38 @@ export default function App() {
     const vv = window.visualViewport;
     if (!vv) return;
     let lastHeight = vv.height;
+    let restoreTimer;
+    const isEditing = () => document.activeElement?.matches('input, textarea, select, [contenteditable="true"]');
     function forceReflow() {
+      // Switching fields is not keyboard dismissal. Never resize/repaint the
+      // entire document while editing (especially on the paper diary surface).
+      if (isEditing() || vv.height < window.innerHeight - 80) return;
       window.scrollTo(0, 0);
       document.documentElement.scrollTop = 0;
       document.body.scrollTop = 0;
-      const body = document.body;
-      const prev = body.style.height;
-      body.style.height = window.innerHeight + 'px';
-      void body.offsetHeight;
-      body.style.height = '100lvh';
-      void body.offsetHeight;
-      body.style.height = prev || '100lvh';
+    }
+    function scheduleRestore() {
+      clearTimeout(restoreTimer);
+      restoreTimer = setTimeout(forceReflow, 250);
     }
     function onResize() {
       const h = vv.height;
       const grew = h > lastHeight + 80;
       lastHeight = h;
       if (grew) {
-        requestAnimationFrame(forceReflow);
-        setTimeout(forceReflow, 100);
-        setTimeout(forceReflow, 400);
+        scheduleRestore();
       }
     }
     function onBlur(e) {
       const tag = e.target?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
-        setTimeout(forceReflow, 250);
+        scheduleRestore();
       }
     }
     vv.addEventListener('resize', onResize);
     document.addEventListener('focusout', onBlur, true);
     return () => {
+      clearTimeout(restoreTimer);
       vv.removeEventListener('resize', onResize);
       document.removeEventListener('focusout', onBlur, true);
     };
