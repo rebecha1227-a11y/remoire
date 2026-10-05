@@ -111,41 +111,58 @@ export default function App() {
   useEffect(() => {
     const vv = window.visualViewport;
     if (!vv) return;
-    let lastHeight = vv.height;
-    let restoreTimer;
+    const root = document.documentElement;
+    let expandedHeight = vv.height;
+    let frameId;
+    let wasKeyboardOpen = false;
     const isEditing = () => document.activeElement?.matches('input, textarea, select, [contenteditable="true"]');
-    function forceReflow() {
-      // Switching fields is not keyboard dismissal. Never resize/repaint the
-      // entire document while editing (especially on the paper diary surface).
-      if (isEditing() || vv.height < window.innerHeight - 80) return;
-      window.scrollTo(0, 0);
-      document.documentElement.scrollTop = 0;
-      document.body.scrollTop = 0;
+
+    function syncViewport() {
+      cancelAnimationFrame(frameId);
+      frameId = requestAnimationFrame(() => {
+        const editing = isEditing();
+        const layoutHeight = Math.max(expandedHeight, window.innerHeight);
+        const keyboardOpen = editing && layoutHeight - vv.height > 80;
+
+        // WebKit keeps the layout viewport and its safe-area inset larger than
+        // the actually visible area while the software keyboard is present.
+        // Size the app to VisualViewport without forcing a full-body reflow.
+        root.style.setProperty('--app-visible-height', `${Math.round(vv.height)}px`);
+        root.classList.toggle('keyboard-open', keyboardOpen);
+
+        if (!editing && vv.height >= expandedHeight - 80) {
+          expandedHeight = vv.height;
+        }
+
+        if (wasKeyboardOpen && !keyboardOpen) {
+          window.scrollTo(0, 0);
+          root.scrollTop = 0;
+          document.body.scrollTop = 0;
+        }
+        wasKeyboardOpen = keyboardOpen;
+      });
     }
-    function scheduleRestore() {
-      clearTimeout(restoreTimer);
-      restoreTimer = setTimeout(forceReflow, 250);
+
+    function onOrientationChange() {
+      expandedHeight = vv.height;
+      syncViewport();
     }
-    function onResize() {
-      const h = vv.height;
-      const grew = h > lastHeight + 80;
-      lastHeight = h;
-      if (grew) {
-        scheduleRestore();
-      }
-    }
-    function onBlur(e) {
-      const tag = e.target?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
-        scheduleRestore();
-      }
-    }
-    vv.addEventListener('resize', onResize);
-    document.addEventListener('focusout', onBlur, true);
+
+    syncViewport();
+    vv.addEventListener('resize', syncViewport);
+    vv.addEventListener('scroll', syncViewport);
+    document.addEventListener('focusin', syncViewport, true);
+    document.addEventListener('focusout', syncViewport, true);
+    window.addEventListener('orientationchange', onOrientationChange);
     return () => {
-      clearTimeout(restoreTimer);
-      vv.removeEventListener('resize', onResize);
-      document.removeEventListener('focusout', onBlur, true);
+      cancelAnimationFrame(frameId);
+      vv.removeEventListener('resize', syncViewport);
+      vv.removeEventListener('scroll', syncViewport);
+      document.removeEventListener('focusin', syncViewport, true);
+      document.removeEventListener('focusout', syncViewport, true);
+      window.removeEventListener('orientationchange', onOrientationChange);
+      root.classList.remove('keyboard-open');
+      root.style.removeProperty('--app-visible-height');
     };
   }, []);
 
