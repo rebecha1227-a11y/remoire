@@ -9,7 +9,7 @@ export function SettingsToggle({ on, onChange }) {
       flexShrink: 0,
     }}>
       <div style={{
-        width: 18, height: 18, borderRadius: '50%', background: '#FAF8F4',
+        width: 18, height: 18, borderRadius: '50%', background: '#fff', zIndex: 1,
         position: 'absolute', top: 2, left: on ? 20 : 2, transition: 'left 0.2s',
         boxShadow: '0 1px 3px rgba(0,0,0,0.15)',
       }} />

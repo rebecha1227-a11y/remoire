@@ -82,11 +82,11 @@
   --text-2xl:  2rem;
 
   /* Type roles — 大类用 display/body，专项 slot 用各自的字 */
-  --font-display:  'Petrona', 'LXGW WenKai', Georgia, serif;
-  --font-body:     'Manrope', 'LXGW WenKai', 'Helvetica Neue', sans-serif;
+  --font-display:  'Noto Serif SC', 'Cormorant Garamond', serif;
+  --font-body:     'Noto Serif SC', 'Cormorant Garamond', serif;
 
   /* Font slots — overridden by JS when user uploads custom .ttf */
-  --font-chat:     'Manrope', 'LXGW WenKai', 'Helvetica Neue', sans-serif;
+  --font-chat:     'Noto Serif SC', 'Cormorant Garamond', serif;
   --font-note:     'ShouShuTi', 'JustAnotherHand', 'Caveat', cursive;
   --font-diary:    'ShouShuTi', 'JustAnotherHand', cursive;
   --font-read:     'Caveat', 'JustAnotherHand', cursive;

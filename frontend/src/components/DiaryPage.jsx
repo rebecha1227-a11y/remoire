@@ -219,8 +219,8 @@ function WritingEditor({ onSave, onCancel }) {
   const [pinFirst, setPinFirst] = useState('');
   const [pinErrorKey, setPinErrorKey] = useState(0);
 
-  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-  const bgColor = isDark ? '#2A2420' : '#F8F2EE';
+  // Keep the writing surface readable regardless of the surrounding theme.
+  const bgColor = '#F8F2EE';
 
   function toggleLock() {
     if (locked) { setLocked(false); setPin(''); }
@@ -258,8 +258,12 @@ function WritingEditor({ onSave, onCancel }) {
   }
 
   return (
-    <div style={{
+    <div className="diary-editor" style={{
       position: 'absolute', inset: 0, zIndex: 30,
+      '--text-primary': '#3D3229', '--text-deep': '#3D3229',
+      '--text-secondary': '#5C5047', '--text-tertiary': '#5C5047',
+      '--accent': '#D9C9BC', '--border': '#E4D9CD', '--border-light': '#D8CCC0',
+      '--warning': '#805B36', color: '#3D3229',
       background: bgColor,
       backgroundImage: 'linear-gradient(rgba(100,90,80,0.05) 1px, transparent 1px)',
       backgroundSize: '100% 28px',
@@ -285,7 +289,7 @@ function WritingEditor({ onSave, onCancel }) {
         <button onClick={save} disabled={!title.trim() && !body.trim()} style={{
           background: (title.trim() || body.trim()) ? 'var(--accent)' : 'var(--border)',
           border: 'none', borderRadius: 8, padding: '6px 14px',
-          fontSize: 12, color: '#FAF8F4',
+          fontSize: 12, color: '#3D3229',
           cursor: (title.trim() || body.trim()) ? 'pointer' : 'default',
           fontFamily: 'var(--font-body)', fontWeight: 500, transition: 'background 0.2s',
         }}>保存</button>
@@ -686,7 +690,7 @@ function DiaryMessageBoard({ entry, author, lockedConnie, onAddInteraction, onDe
       {error && <div style={{ marginTop: 6, fontSize: 11, color: 'var(--warning)', fontFamily: 'var(--font-body)' }}>{error}</div>}
       <button onClick={() => submit(lockedConnie ? 'unlock_request' : 'comment')} disabled={!text.trim() || sending} style={{
         marginTop: 8, width: '100%', minHeight: 34, border: 'none', borderRadius: 8,
-        background: text.trim() && !sending ? 'var(--accent)' : 'var(--border)', color: '#FAF8F4',
+        background: text.trim() && !sending ? '#D9C9BC' : '#EDE6DE', color: '#3D3229',
         fontSize: 12, fontFamily: 'var(--font-body)', cursor: text.trim() && !sending ? 'pointer' : 'default'
       }}>
         {sending ? '送出中…' : (lockedConnie ? '留言申请查看' : '留下这句话')}

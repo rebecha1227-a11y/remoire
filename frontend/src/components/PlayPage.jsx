@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Card, SectionLabel } from './primitives';
+import { Card, Pill, SectionLabel } from './primitives';
 import RoomShell from './RoomShell';
 import ConnieTimeline from './ConnieTimeline';
 
@@ -25,15 +25,15 @@ export default function PlayPage({ nav }) {
         <button onClick={() => setSpace(null)} style={{
           position: 'absolute', top: 20, left: 20,
           background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)',
-          borderRadius: 8, padding: '6px 12px', color: 'rgba(255,255,255,0.6)',
+          borderRadius: 8, minHeight: 44, padding: '6px 12px', color: 'rgba(255,255,255,0.6)',
           fontSize: 12, cursor: 'pointer',
         }}>← 回到现实</button>
         <div style={{ textAlign: 'center', padding: '0 32px' }}>
           <div style={{ fontFamily: "var(--font-parallel)", fontSize: 11, letterSpacing: 3, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', marginBottom: 24 }}>Parallel Space</div>
           <div style={{ fontFamily: "var(--font-parallel)", fontSize: 28, fontWeight: 300, color: 'rgba(255,255,255,0.9)', lineHeight: 1.5, marginBottom: 12 }}>京都，某年某月的下雨天</div>
           <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)', lineHeight: 1.8, marginBottom: 32 }}>上次停在：巷子里那家小书店，你刚翻到第三页</div>
-          <button style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 8, padding: '12px 28px', color: 'rgba(255,255,255,0.8)', fontSize: 14, cursor: 'pointer' }}>
-            继续故事
+          <button disabled style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 8, padding: '12px 28px', color: 'rgba(255,255,255,0.8)', fontSize: 14, cursor: 'pointer' }}>
+            筹备中 · 继续故事
           </button>
         </div>
       </div>
@@ -45,7 +45,7 @@ export default function PlayPage({ nav }) {
     <div style={{ overflowY: 'auto', flex: 1, padding: '20px 16px 16px', position: 'relative', zIndex: 10 }}>
       <div style={{ marginBottom: 'var(--space-6)' }}>
         <SectionLabel>Connie的世界</SectionLabel>
-        <div className="r-glass" onClick={() => setShowTimeline(true)} style={{
+        <Card padding="lg" onClick={() => setShowTimeline(true)} aria-label="打开 Connie 的生活日志和碎碎念" style={{
           position: 'relative',
           cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 14,
           animation: 'card-in 180ms ease',
@@ -73,11 +73,11 @@ export default function PlayPage({ nav }) {
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft, var(--text-tertiary))" strokeWidth="1.5" style={{ flexShrink: 0 }}>
             <path d="M9 18l6-6-6-6"/>
           </svg>
-        </div>
+        </Card>
       </div>
 
       <div style={{ marginBottom: 'var(--space-6)' }}>
-        <SectionLabel>共读</SectionLabel>
+        <SectionLabel>共读 <Pill tone="neutral">筹备中</Pill></SectionLabel>
         <Card padding="lg" style={{ animation: 'card-in 180ms ease' }}>
           <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
             <div style={{
@@ -109,12 +109,13 @@ export default function PlayPage({ nav }) {
           background: 'transparent', border: '1px dashed var(--border)',
           borderRadius: 'var(--radius-sm)', fontSize: 12, color: 'var(--text-tertiary)',
           cursor: 'pointer', fontFamily: "var(--font-body)",
-        }}>+ 添加书目</button>
+        }} disabled>+ 添加书目 · 筹备中</button>
       </div>
 
       <div>
-        <SectionLabel>平行空间</SectionLabel>
-        <div onClick={() => setSpace(true)} style={{
+        <SectionLabel>平行空间 <Pill tone="neutral">筹备中</Pill></SectionLabel>
+        <button type="button" aria-label="进入平行空间预览" onClick={() => setSpace(true)} style={{
+          width: '100%', border: 0, textAlign: 'left', fontFamily: 'var(--font-parallel)',
           background: '#1C1814', borderRadius: 'var(--radius-md)',
           padding: '24px 20px', cursor: 'pointer', position: 'relative', overflow: 'hidden',
           animation: 'card-in 180ms 80ms ease both',
@@ -145,15 +146,15 @@ export default function PlayPage({ nav }) {
           <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', lineHeight: 1.7 }}>停在：巷子里那家小书店，你刚翻到第三页</div>
           <div style={{ marginTop: 16, display: 'flex', alignItems: 'center', gap: 6, color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="12" cy="12" r="10"/><path d="M10 8l6 4-6 4V8z" fill="currentColor"/></svg>
-            点击进入
+            点击进入 · 筹备中
           </div>
-        </div>
+        </button>
         <button style={{
           width: '100%', marginTop: 8, padding: '10px',
           background: 'transparent', border: '1px dashed var(--border)',
           borderRadius: 'var(--radius-sm)', fontSize: 12, color: 'var(--text-tertiary)',
           cursor: 'pointer', fontFamily: "var(--font-body)",
-        }}>+ 创建新世界</button>
+        }} disabled>+ 创建新世界 · 筹备中</button>
       </div>
     </div>
     </RoomShell>
