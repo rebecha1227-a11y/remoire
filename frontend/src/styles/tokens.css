@@ -10,7 +10,6 @@
 }
 
 :root {
-  --app-visible-height: 100lvh;
   --note-bg:     #FDF8F0;
   --note-line:   rgba(124,99,80,0.12);
   --note-text:   var(--text-deep);
@@ -136,7 +135,6 @@ body {
   width: 100%;
   height: 100vh;
   height: 100lvh;
-  height: var(--app-visible-height, 100lvh);
   display: flex;
   flex-direction: column;
   overflow: hidden;

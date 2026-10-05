@@ -112,58 +112,51 @@ export default function App() {
   useEffect(() => {
     const vv = window.visualViewport;
     if (!vv) return;
-    const root = document.documentElement;
-    let expandedHeight = vv.height;
-    let frameId;
-    let wasKeyboardOpen = false;
+    let expandedHeight = Math.max(vv.height, window.innerHeight);
+    let needsRestore = false;
+    let restoreTimer;
     const isEditing = () => document.activeElement?.matches('input, textarea, select, [contenteditable="true"]');
-
-    function syncViewport() {
-      cancelAnimationFrame(frameId);
-      frameId = requestAnimationFrame(() => {
-        const editing = isEditing();
-        const layoutHeight = Math.max(expandedHeight, window.innerHeight);
-        const keyboardOpen = editing && layoutHeight - vv.height > 80;
-
-        // WebKit keeps the layout viewport and its safe-area inset larger than
-        // the actually visible area while the software keyboard is present.
-        // Size the app to VisualViewport without forcing a full-body reflow.
-        root.style.setProperty('--app-visible-height', `${Math.round(vv.height)}px`);
-        root.classList.toggle('keyboard-open', keyboardOpen);
-
-        if (!editing && vv.height >= expandedHeight - 80) {
-          expandedHeight = vv.height;
-        }
-
-        if (wasKeyboardOpen && !keyboardOpen) {
-          window.scrollTo(0, 0);
-          root.scrollTop = 0;
-          document.body.scrollTop = 0;
-        }
-        wasKeyboardOpen = keyboardOpen;
-      });
+    function restoreAfterKeyboard() {
+      // Keep 100lvh during input: iOS already pans the document for the keyboard.
+      // Shrinking body to VisualViewport.height applies that movement twice.
+      if (!needsRestore || vv.height < expandedHeight - 80) return;
+      window.scrollTo(0, 0);
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+      const body = document.body;
+      const previousHeight = body.style.height;
+      body.style.height = window.innerHeight + 'px';
+      void body.offsetHeight;
+      body.style.height = '100lvh';
+      void body.offsetHeight;
+      body.style.height = previousHeight;
+      needsRestore = false;
+      expandedHeight = Math.max(vv.height, window.innerHeight);
     }
-
-    function onOrientationChange() {
-      expandedHeight = vv.height;
-      syncViewport();
+    function scheduleRestore() {
+      clearTimeout(restoreTimer);
+      restoreTimer = setTimeout(restoreAfterKeyboard, 400);
     }
-
-    syncViewport();
-    vv.addEventListener('resize', syncViewport);
-    vv.addEventListener('scroll', syncViewport);
-    document.addEventListener('focusin', syncViewport, true);
-    document.addEventListener('focusout', syncViewport, true);
-    window.addEventListener('orientationchange', onOrientationChange);
+    function onResize() {
+      clearTimeout(restoreTimer);
+      if (vv.height < expandedHeight - 80) {
+        if (isEditing()) needsRestore = true;
+        return;
+      }
+      if (needsRestore) scheduleRestore();
+      else expandedHeight = Math.max(vv.height, window.innerHeight);
+    }
+    function onBlur() {
+      // A blur between diary fields is not a keyboard dismissal. The callback
+      // also waits for the viewport to expand, including when focus is retained.
+      if (needsRestore) scheduleRestore();
+    }
+    vv.addEventListener('resize', onResize);
+    document.addEventListener('focusout', onBlur, true);
     return () => {
-      cancelAnimationFrame(frameId);
-      vv.removeEventListener('resize', syncViewport);
-      vv.removeEventListener('scroll', syncViewport);
-      document.removeEventListener('focusin', syncViewport, true);
-      document.removeEventListener('focusout', syncViewport, true);
-      window.removeEventListener('orientationchange', onOrientationChange);
-      root.classList.remove('keyboard-open');
-      root.style.removeProperty('--app-visible-height');
+      clearTimeout(restoreTimer);
+      vv.removeEventListener('resize', onResize);
+      document.removeEventListener('focusout', onBlur, true);
     };
   }, []);
 
