@@ -1084,7 +1084,7 @@ export default function DiaryPage({ tweaks, nav, active }) {
         ]);
         const connieData = await connieRes.json();
         const jingerData = await jingerRes.json();
-        if (!connieRes.ok || !connieData.ok || !jingerRes.ok || !jingerData.ok) throw new Error('日记加载失败');
+        if (!connieRes.ok || !connieData.ok || !jingerRes.ok || !jingerData.ok) throw new Error('还没有人写过日记呢！');
         if (cancelled) return;
         if (connieData.ok && Array.isArray(connieData.data) && connieData.data.length > 0) {
           setConnieDiary(connieData.data.map(mapDiaryEntry));
@@ -1092,8 +1092,8 @@ export default function DiaryPage({ tweaks, nav, active }) {
         if (jingerData.ok && Array.isArray(jingerData.data) && jingerData.data.length > 0) {
           setJingerDiary(jingerData.data.map(mapDiaryEntry));
         }
-      } catch (error) {
-        if (!cancelled) setLoadError(error.message || '日记加载失败，请稍后重试。');
+      } catch {
+        if (!cancelled) setLoadError('还没有人写过日记呢！');
       }
     }
     loadDiaries();
@@ -1207,7 +1207,7 @@ export default function DiaryPage({ tweaks, nav, active }) {
 
       {/* Shelf view: two closed notebooks */}
       {!writing && !openBook && <div style={{ padding: '20px 14px 100px', height: '100%', overflowY: 'auto' }}>
-        {loadError && <div role="alert" style={{ margin: '0 10px 12px', fontSize: 12, color: 'var(--danger)', lineHeight: 1.6 }}>{loadError}</div>}
+        {loadError && <div role="status" style={{ margin: '0 10px 12px', fontSize: 13, color: 'var(--text-tertiary)', lineHeight: 1.6 }}>{loadError}</div>}
         <div style={{ marginBottom: 20, padding: '0 10px' }}>
           <div style={{
             fontFamily: "var(--font-display)",

@@ -215,15 +215,13 @@ async def verify_token(request: Request) -> dict[str, str]:
 async def verify_mcp_token(request: Request) -> dict[str, str]:
     """Verify the independent, high-entropy bearer token used by remote MCP."""
     configured_hash = config.MCP_API_TOKEN_SHA256
-    if len(configured_hash) != 64 or any(char not in "0123456789abcdef" for char in configured_hash):
-        raise HTTPException(status_code=503, detail="MCP 认证尚未配置")
     credentials: HTTPAuthorizationCredentials | None = await _bearer(request)
-    if not credentials or not hmac.compare_digest(
-        _hash_secret(credentials.credentials), configured_hash
-    ):
-        raise HTTPException(
-            status_code=401,
-            detail="MCP 凭据无效",
-            headers={"WWW-Authenticate": 'Bearer realm="remoire-mcp"'},
-        )
-    return {"username": config.APP_USERNAME, "auth_type": "mcp_bearer"}
+    if credentials and len(credentials.credentials) <= 256:
+        if len(configured_hash) == 64 and hmac.compare_digest(_hash_secret(credentials.credentials), configured_hash):
+            return {"username": config.APP_USERNAME, "auth_type": "mcp_bearer"}
+        from app.oauth import provider
+        if await provider.load_access_token(credentials.credentials):
+            return {"username": config.APP_USERNAME, "auth_type": "mcp_oauth"}
+    raise HTTPException(status_code=401, detail="MCP 凭据无效", headers={
+        "WWW-Authenticate": 'Bearer resource_metadata="https://remoire.cc/.well-known/oauth-protected-resource/mcp", scope="remoire"'
+    })

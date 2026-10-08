@@ -166,7 +166,7 @@
 }
 .r-search-bar {
   display: flex; align-items: center; gap: 8px;
-  padding: 8px 12px;
+  padding: 2px 8px 2px 14px;
   border-radius: 20px;
   background: var(--nav-bg);
   border: 1px solid var(--nav-border);
@@ -177,15 +177,20 @@
 .r-search-input {
   flex: 1; background: transparent; border: none; outline: none;
   font-family: var(--font-body);
-  min-height: 44px; font-size: 14px; color: var(--ink);
+  height: 36px; min-height: 0; font-size: 14px; color: var(--ink);
+  box-shadow: none;
 }
+.r-search-input:focus,
+.r-search-input:focus-visible { outline: none; box-shadow: none; }
 .r-search-input::placeholder { color: var(--ink-faint); }
 .r-search-close {
+  position: relative;
   background: none; border: none; cursor: pointer;
   color: var(--ink-soft); font-size: 14px;
-  width: 44px; height: 44px;
+  width: 36px; height: 36px;
   display: flex; align-items: center; justify-content: center;
 }
+.r-search-close::after { content: ''; position: absolute; inset: -4px; }
 .r-search-results {
   max-height: 50vh; overflow-y: auto;
   border-radius: 16px;
@@ -553,6 +558,8 @@
   display: block;
 }
 .r-input::placeholder { color: var(--ink-soft); font-style: italic; opacity: 0.9; }
+.r-input:focus,
+.r-input:focus-visible { outline: none; box-shadow: none; }
 
 /* ── Bottom nav ── */
 .r-nav {

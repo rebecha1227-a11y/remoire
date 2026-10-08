@@ -1,12 +1,13 @@
 import { SectionLabel } from './primitives';
 
-export function SettingsToggle({ on, onChange }) {
+export function SettingsToggle({ on, onChange, disabled = false, ariaLabel }) {
   return (
     <button
       type="button"
       role="switch"
       aria-checked={on}
-      aria-label={on ? '已开启，点击关闭' : '已关闭，点击开启'}
+      aria-label={ariaLabel || (on ? '已开启，点击关闭' : '已关闭，点击开启')}
+      disabled={disabled}
       onClick={() => onChange(!on)}
       style={{
         width: 44, height: 44, border: 0, padding: 0, background: 'transparent',

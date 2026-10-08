@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { apiErrorMessage, apiFetch } from "../utils/api";
+import { apiFetch } from "../utils/api";
 
 function toBJ(raw) {
   const d = new Date(raw.endsWith('Z') || raw.includes('+') ? raw : raw + '+08:00');
@@ -220,10 +220,10 @@ export default function ConnieTimeline({ onBack }) {
       apiFetch(`/autonomous/dates?month=${calendarMonth}`)
         .then(async r => {
           const data = await r.json().catch(() => ({}));
-          if (!r.ok || !data.ok) throw new Error(apiErrorMessage(data, '活动日期加载失败'));
+          if (!r.ok || !data.ok) throw new Error('quiet');
           setActiveDates(data.data || []);
         })
-        .catch(err => setError(err.message || '活动日期加载失败'));
+        .catch(() => setActiveDates([]));
     }, 0);
     return () => window.clearTimeout(timer);
   }, [calendarMonth]);
@@ -236,12 +236,12 @@ export default function ConnieTimeline({ onBack }) {
       apiFetch(`/autonomous/logs?date=${selectedDate}`)
         .then(async r => {
           const data = await r.json().catch(() => ({}));
-          if (!r.ok || !data.ok) throw new Error(apiErrorMessage(data, '生活日志加载失败'));
+          if (!r.ok || !data.ok) throw new Error('quiet');
           setLogs(data.data || []);
         })
-        .catch(err => {
+        .catch(() => {
           setLogs([]);
-          setError(err.message || '生活日志加载失败');
+          setError('');
         })
         .finally(() => setLoading(false));
     }, 0);
@@ -294,7 +294,7 @@ export default function ConnieTimeline({ onBack }) {
         </div>
 
         {error && (
-          <div role="alert" style={{ padding: '10px 12px', marginBottom: 10, color: 'var(--danger)', fontSize: 12, lineHeight: 1.6 }}>
+          <div role="status" style={{ padding: '10px 12px', marginBottom: 10, color: 'var(--ink-faint, var(--text-tertiary))', fontSize: 13, lineHeight: 1.6 }}>
             {error}
           </div>
         )}

@@ -20,6 +20,7 @@ class PresetCreateRequest(BaseModel):
     api_key: str = Field(min_length=1, max_length=4096)
     base_url: str = Field(min_length=1, max_length=2048)
     model_name: str = Field(min_length=1, max_length=256)
+    model_capabilities: dict | None = None
 
 
 class PresetUpdateRequest(BaseModel):
@@ -29,12 +30,15 @@ class PresetUpdateRequest(BaseModel):
     api_key: str | None = Field(default=None, min_length=1, max_length=4096)
     base_url: str | None = Field(default=None, min_length=1, max_length=2048)
     model_name: str | None = Field(default=None, min_length=1, max_length=256)
+    model_capabilities: dict | None = None
 
 
 class SlotUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     preset_id: str | None = Field(default=None, max_length=100)
     extended_thinking: bool | None = None
+    context_window: int | None = Field(default=None, ge=8192, le=2_000_000)
+    output_budget: int | None = Field(default=None, ge=256, le=524_288)
 
 
 class ModelProbeRequest(BaseModel):
@@ -152,6 +156,12 @@ async def update_model_slot(slot: str, req: SlotUpdateRequest, _=Depends(verify_
         return {"ok": True, "data": updated}
     except (ValueError, model_settings_service.PresetNotFoundError) as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.get("/cache-stats")
+async def get_prompt_cache_stats(days: int = 7, _=Depends(verify_token)):
+    days = max(1, min(days, 90))
+    return {"ok": True, "data": await model_settings_service.get_cache_stats(days)}
 
 
 # ── 主动消息设置 ──

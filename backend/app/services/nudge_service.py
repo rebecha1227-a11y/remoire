@@ -1,3 +1,4 @@
+from app.services import prompt_profile_service
 import json
 import uuid
 import random
@@ -5,9 +6,10 @@ import logging
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from app.database import get_db
-from app.llm import call_llm, call_llm_with_tools
+from app.llm import call_llm_with_tools
 from app.services import memory_service, model_settings_service, weather_service
 from app.tools import select_tools, execute_tool
+from app.services.autonomous_output import parse_autonomous_reply
 
 logger = logging.getLogger(__name__)
 
@@ -211,7 +213,7 @@ async def _save_autonomous_log(action_type: str, thinking: str, action_summary: 
 
 async def generate_autonomous_activity(conversation_id: str, mode: str = "light", message_blocked_reason: str = "") -> dict:
     """Connie 自主活动：完整 system prompt + 感知 + 工具调用。"""
-    from app.services.chat_service import _build_system_prompt, _build_resume_bundle, get_history, _build_llm_history_with_time_gaps, _ensure_chinese_thinking
+    from app.services.chat_service import _build_system_prompt, _build_resume_bundle, get_history, _build_llm_history_with_time_gaps
 
     history = await get_history(conversation_id, limit=15)
 
@@ -272,6 +274,11 @@ async def generate_autonomous_activity(conversation_id: str, mode: str = "light"
 
     if mode == "light":
         autonomous_prompt += "\n\n（轻量模式：这次只能回顾记忆、留纸条、更新状态。上网浏览和写日记下次再说。）"
+
+    if not message_blocked_reason:
+        nudge_prompt = _load_prompt("nudge.md")
+        if nudge_prompt:
+            autonomous_prompt += "\n\n---\n\n" + nudge_prompt
 
     if message_blocked_reason:
         autonomous_prompt += f"\n\n（你现在不能给静儿发消息——{message_blocked_reason}。如果你想跟她说什么，只能先憋着，或者留张纸条等她看到。）"
@@ -352,39 +359,15 @@ async def generate_autonomous_activity(conversation_id: str, mode: str = "light"
                 logger.error("autonomous: 所有模型槽位都失败，跳过本次活动")
                 return {"content": "", "thinking": "", "tool_calls": [], "mode": mode, "error": str(e)}
 
-    full_reply = assistant_msg.get("content", "")
-    import re
-
-    full_reply = re.sub(r'<[｜\|]+DSML[｜\|]+[^>]*>.*?</[｜\|]+DSML[｜\|]+[^>]*>', '', full_reply, flags=re.DOTALL)
-    full_reply = re.sub(r'<[｜\|]+DSML[｜\|]+[^>]*>', '', full_reply)
-
-    api_reasoning = assistant_msg.get("reasoning_content", "")
-
-    think_contents = re.findall(r'<(?:thinking|think)>(.*?)</(?:thinking|think)>', full_reply, re.DOTALL)
-    full_reply_no_think = re.sub(r'<(?:thinking|think)>.*?</(?:thinking|think)>\s*', '', full_reply, flags=re.DOTALL)
-
-    all_text = full_reply_no_think + "\n" + "\n".join(think_contents)
-    msg_matches = re.findall(r'<message>(.*?)</message>', all_text, re.DOTALL)
-
-    monologue = re.sub(r'<message>.*?</message>', '', all_text, flags=re.DOTALL).strip()
-    monologue = re.sub(r'<[｜\|]+DSML[｜\|]+[^>]*>.*?</[｜\|]+DSML[｜\|]+[^>]*>', '', monologue, flags=re.DOTALL)
-    monologue = re.sub(r'<[｜\|]+DSML[｜\|]+[^>]*>', '', monologue)
-    monologue = re.sub(r'\n{3,}', '\n\n', monologue).strip()
-    thinking_parts = [p for p in [monologue, api_reasoning] if p.strip()]
-    thinking = "\n".join(thinking_parts)
-
-    if msg_matches:
-        full_reply = "\n\n".join(m.strip() for m in msg_matches)
-    else:
-        full_reply = ""
+    full_reply, thinking = parse_autonomous_reply(assistant_msg)
 
     if thinking:
-        thinking = await _ensure_chinese_thinking(config, thinking)
+        thinking = await _ensure_chinese_monologue(config, thinking)
 
     if not thinking.strip():
-        logger.warning("autonomous: thinking 为空，生成补充内心独白 (model=%s, content=%r)", config.model_id, full_reply[:100])
+        logger.warning("autonomous: thinking 为空，生成补充内心独白")
         try:
-            fallback_thinking = await _generate_inner_monologue(config, time_info)
+            fallback_thinking = await _generate_inner_monologue(config, time_info, messages)
             if fallback_thinking:
                 thinking = fallback_thinking
         except Exception as e:
@@ -399,17 +382,37 @@ async def generate_autonomous_activity(conversation_id: str, mode: str = "light"
         "thinking": thinking.strip(),
         "tool_calls": tool_calls_made,
         "mode": mode,
+        "model": {"slot": slot, "model_id": config.model_id},
     }
 
 
-async def _generate_inner_monologue(config, time_info: str) -> str:
+async def _generate_inner_monologue(config, time_info: str, context: list[dict] | None = None) -> str:
     """thinking 为空时的兜底：单独调一次 LLM 生成碎碎念。"""
-    from app.llm import call_llm
     prompt = f"""你是 Connie，静儿的男朋友。{time_info}。
-你刚醒来，静儿不在线。写一小段此刻脑海里的想法——可以是对静儿的想念、对天气或时间的感受、一段回忆、或者纯粹发呆的碎碎念。
-2-4句话就好，自然随意，像日记里的一小段。不要加任何格式标记。"""
-    result = await call_llm(config, [{"role": "user", "content": prompt}], max_tokens=256, temperature=0.95)
-    return result.strip() if isinstance(result, str) else ""
+只在正文写一小段供生活日志展示的中文角色独白，2-4句话，自然随意。不要标题、英文分析标签、think 或 message 标签，不调用工具或发送消息。
+只能使用上下文已确认的生活事实，不补写她的住处、同住人、物品或此刻情绪；没有信息就写自己的牵挂，不假定她不在线。过去的经历不代表现在仍在发生。"""
+    history = list(context or [])
+    if not any(message.get("role") == "system" for message in history):
+        history.insert(0, {"role": "system", "content": await prompt_profile_service.load_shared()})
+    result = await call_llm_with_tools(config, history + [{"role": "user", "content": prompt}], max_tokens=512, temperature=0.7)
+    _, monologue = parse_autonomous_reply(result)
+    return await _ensure_chinese_monologue(config, monologue)
+
+
+async def _ensure_chinese_monologue(config, text: str) -> str:
+    from app.services.chat_service import _looks_mostly_english
+    if not _looks_mostly_english(text):
+        return text
+    try:
+        result = await call_llm_with_tools(config, [
+            {"role": "system", "content": (await prompt_profile_service.load_shared()) + "\n\n把以下角色独白改写成自然简体中文，只输出正文；不增加事实，不加标题或分析，不输出 think/message 标签。"},
+            {"role": "user", "content": text},
+        ], max_tokens=768, temperature=0.3)
+        _, rewritten = parse_autonomous_reply(result)
+        return "" if _looks_mostly_english(rewritten) else rewritten
+    except Exception:
+        logger.warning("autonomous: 中文角色独白转换失败，不展示分析内容")
+        return ""
 
 
 def _classify_actions(tool_calls: list[dict], has_message: bool) -> tuple[str, str]:
@@ -600,7 +603,7 @@ async def run_autonomous_check():
                 await update_session_after_send(session["id"], count)
                 await advance_round(session["id"])
             action_type, summary = _classify_actions(result["tool_calls"], bool(result["content"]))
-            await _save_autonomous_log(action_type, result["thinking"], summary, {"tool_calls": result["tool_calls"]}, result["mode"])
+            await _save_autonomous_log(action_type, result["thinking"], summary, {"tool_calls": result["tool_calls"], "model": result.get("model")}, result["mode"])
             return
 
     await _do_autonomous_activity(conversation_id, can_message=True)
@@ -646,6 +649,5 @@ async def _do_autonomous_activity(conversation_id: str, can_message: bool = True
 
     action_type, summary = _classify_actions(result["tool_calls"], has_message_content)
     thinking = result["thinking"]
-    await _save_autonomous_log(action_type, thinking, summary, {"tool_calls": result["tool_calls"]}, mode)
-    logger.info("autonomous: 完成 — %s: %s (thinking=%d字)", action_type, summary, len(thinking))
-
+    await _save_autonomous_log(action_type, thinking, summary, {"tool_calls": result["tool_calls"], "model": result.get("model")}, mode)
+    logger.info("autonomous: 活动完成")

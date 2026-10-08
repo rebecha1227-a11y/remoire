@@ -81,7 +81,11 @@ function RoomNav({ activeTab, onNavigate, ambient }) {
     <div className="r-nav" style={navVars}>
       {ROOM_NAV_TABS.map(t => (
         <button key={t.id} className={`r-nav-btn ${activeTab === t.id ? 'active' : ''}`}
-          onClick={() => onNavigate(t.id)}>
+          onClick={() => {
+            if (t.id === activeTab) return;
+            const event = new Event('remoire-before-navigate', { cancelable: true });
+            if (window.dispatchEvent(event)) onNavigate(t.id);
+          }}>
           {t.icon(svgProps)}
           <span>{t.label}</span>
         </button>

@@ -205,7 +205,7 @@ export default function UsPage({ nav }) {
       const td = await todayRes.json();
       const wd = await weatherRes.json();
       if (!statsRes.ok || !sd.ok || !memRes.ok || !md.ok || !remRes.ok || !rd.ok || !todayRes.ok || !td.ok) {
-        throw new Error('共同生活数据加载失败');
+        throw new Error('当前还没有你们共同生活的痕迹哦');
       }
       if (sd.ok) setMemStats(sd.data);
       if (wd.ok && wd.data) setWeather(wd.data);
@@ -235,8 +235,8 @@ export default function UsPage({ nav }) {
         if (r.remind_at) daySet.add(r.remind_at.split(' ')[0]);
       });
       setReminderDays(daySet);
-    } catch (error) {
-      setStatus(error.message || '页面数据加载失败，请稍后重试。');
+    } catch {
+      setStatus('当前还没有你们共同生活的痕迹哦');
     }
   }, []);
 
@@ -318,7 +318,7 @@ export default function UsPage({ nav }) {
       </div>
 
       <div style={{ padding: '0 14px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-        {status && <div role="status" style={{ fontSize: 12, color: status.includes('失败') ? 'var(--danger)' : 'var(--ink-soft)', lineHeight: 1.6 }}>{status}</div>}
+        {status && <div role="status" style={{ fontSize: 13, color: 'var(--ink-faint, var(--text-tertiary))', lineHeight: 1.6 }}>{status}</div>}
         <button type="button" className="r-glass" onClick={() => setShowPalace(true)} style={{
           width: '100%', border: 'none', textAlign: 'left', fontFamily: 'inherit',
           position: 'relative', animation: 'card-in 180ms 20ms ease both',
@@ -425,13 +425,18 @@ export default function UsPage({ nav }) {
                   }}
                 >
                   <button type="button" aria-label={isDone ? '提醒已完成' : `完成提醒：${r.content}`} disabled={isDone} onClick={() => toggleDone(r.id)} style={{
-                    width: 44, height: 44, borderRadius: '50%', padding: 0,
-                    border: `1.5px solid ${isDone ? 'var(--ink-faint, #aaa)' : 'var(--warning)'}`,
-                    background: isDone ? 'var(--ink-faint, #aaa)' : 'transparent',
+                    width: 44, height: 44, padding: 0, border: 'none', background: 'transparent',
                     flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
                     cursor: isDone ? 'default' : 'pointer',
                   }}>
-                    {isDone && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3"><path d="M5 12l5 5L19 7"/></svg>}
+                    <span style={{
+                      width: 16, height: 16, borderRadius: '50%', boxSizing: 'border-box',
+                      border: `1.5px solid ${isDone ? 'var(--ink-faint, var(--text-tertiary))' : 'var(--text-tertiary)'}`,
+                      background: isDone ? 'var(--text-tertiary)' : 'transparent',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}>
+                      {isDone && <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="var(--bg-elevated)" strokeWidth="3"><path d="M5 12l5 5L19 7"/></svg>}
+                    </span>
                   </button>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 14, color: 'var(--ink, var(--text-primary))', textDecoration: isDone ? 'line-through' : 'none' }}>{r.content}</div>

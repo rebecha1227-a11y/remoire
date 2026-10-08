@@ -111,8 +111,8 @@ class AuthTests(unittest.TestCase):
         self.assertEqual(self.client.get("/probe").status_code, 401)
 
     def test_mcp_auth_fails_closed_when_unconfigured(self):
-        self.assertEqual(self.client.get("/mcp-probe").status_code, 503)
-        self.assertEqual(self.client.get("/api/auth/mcp-check").status_code, 503)
+        self.assertEqual(self.client.get("/mcp-probe").status_code, 401)
+        self.assertEqual(self.client.get("/api/auth/mcp-check").status_code, 401)
 
     def test_mcp_auth_accepts_only_the_independent_bearer(self):
         import hashlib

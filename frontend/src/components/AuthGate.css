@@ -90,9 +90,11 @@
   transition: border-color 160ms ease, box-shadow 160ms ease;
 }
 
+.auth-form input:focus,
 .auth-form input:focus-visible {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(124, 99, 80, 0.13);
+  outline: none;
+  border-color: rgba(87, 67, 55, 0.45);
+  box-shadow: none;
 }
 
 .auth-message {
@@ -117,7 +119,7 @@
 
 .auth-form button:active { transform: translateY(1px); }
 .auth-form button:disabled { cursor: wait; opacity: 0.65; }
-.auth-form button:focus-visible { outline: 2px solid var(--text-deep); outline-offset: 3px; }
+.auth-form button:focus-visible { outline: 1px solid rgba(87, 67, 55, 0.35); outline-offset: 3px; }
 
 .auth-footnote {
   margin-top: 20px;

@@ -1,3 +1,7 @@
+from app.log_privacy import install_private_logging
+
+install_private_logging()
+
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -10,7 +14,7 @@ from apscheduler.triggers.date import DateTrigger
 from app.database import init_db
 from app.auth import verify_token
 from app.config import ALLOWED_HOSTS, TRUSTED_ORIGINS
-from app.routers import auth, chat, memory, diary, note, settings, reminder, push, signal, autonomous
+from app.routers import auth, chat, memory, diary, note, settings, reminder, push, signal, autonomous, prompt_profiles
 from app.scheduler.jobs import connie_auto_diary, catchup_missed_diary, generate_breath_state, decay_memories, digest_memories
 from app.services.nudge_service import run_autonomous_check
 from app.services.model_settings_service import migrate_preset_secrets
@@ -109,15 +113,14 @@ app.add_middleware(
 
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
-    incoming_id = request.headers.get("x-request-id", "")
-    request_id = incoming_id if _SAFE_REQUEST_ID.fullmatch(incoming_id) else str(uuid.uuid4())
+    request_id = str(uuid.uuid4())
     request.state.request_id = request_id
     started = time.perf_counter()
     response = await call_next(request)
     duration_ms = round((time.perf_counter() - started) * 1000, 2)
     logger.info(
-        "request_id=%s method=%s path=%s status=%s duration_ms=%.2f",
-        request_id, request.method, request.url.path, response.status_code, duration_ms,
+        "request_id=%s method=%s route=%s status=%s duration_ms=%.2f",
+        request_id, request.method, getattr(request.scope.get("route"), "path", "unmatched"), response.status_code, duration_ms,
     )
     response.headers["X-Request-ID"] = request_id
     response.headers["X-Content-Type-Options"] = "nosniff"
@@ -163,11 +166,14 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     return _error_response(request, 500, "internal_error", "服务暂时出了点问题")
 
 app.include_router(auth.router)
+from app.routers.oauth import routes as oauth_routes
+app.router.routes.extend(oauth_routes)
 app.include_router(chat.router)
 app.include_router(memory.router)
 app.include_router(diary.router)
 app.include_router(note.router)
 app.include_router(settings.router)
+app.include_router(prompt_profiles.router)
 app.include_router(reminder.router)
 app.include_router(push.router)
 app.include_router(signal.router)

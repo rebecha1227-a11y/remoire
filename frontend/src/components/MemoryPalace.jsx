@@ -486,17 +486,17 @@ function LayerDetail({ layer, onBack }) {
       const res = await apiFetch(`/memory?${params}`);
       const data = await res.json();
       if (currentRequest !== requestId.current) return;
-      if (!res.ok || !data.ok) throw new Error(apiErrorMessage(data, '记忆加载失败'));
+      if (!res.ok || !data.ok) throw new Error('这里还没有记忆');
       const items = Array.isArray(data.data?.items) ? data.data.items : [];
       setMemories(previous => append ? [...previous, ...items] : items);
       setTotal(Number(data.data?.total) || 0);
-    } catch (loadError) {
+    } catch {
       if (currentRequest !== requestId.current) return;
       if (!append) {
         setMemories([]);
         setTotal(0);
       }
-      setError(loadError.message || '记忆加载失败');
+      setError('');
     } finally {
       if (currentRequest === requestId.current) {
         setLoading(false);
@@ -586,15 +586,15 @@ function LayerDetail({ layer, onBack }) {
         </div>
       </div>
 
-      <div className="r-glass" style={{ position: 'relative', marginBottom: 12 }}>
+      <div className="r-glass" style={{ position: 'relative', marginBottom: 12, padding: '4px 14px' }}>
         <input
           type="search" value={searchInput} onChange={e => setSearchInput(e.target.value)}
           placeholder="搜索记忆…"
           aria-label={`搜索${meta.label}记忆`}
           style={{
-            width: '100%', minHeight: 44, border: 'none', background: 'transparent',
+            width: '100%', height: 36, minHeight: 0, border: 'none', background: 'transparent',
             fontSize: 14, color: 'var(--ink)', fontFamily: 'var(--font-body)',
-            padding: '0 2px',
+            padding: '0 2px', boxShadow: 'none',
           }}
         />
       </div>
@@ -688,12 +688,16 @@ function DayMemories({ year, month, day, onBack }) {
       });
       const res = await apiFetch(`/memory?${params}`);
       const data = await res.json();
-      if (!res.ok || !data.ok) throw new Error(apiErrorMessage(data, '这一天的记忆加载失败'));
+      if (!res.ok || !data.ok) throw new Error('这一天还没有留下记忆');
       const items = Array.isArray(data.data?.items) ? data.data.items : [];
       setMemories(previous => append ? [...previous, ...items] : items);
       setTotal(Number(data.data?.total) || 0);
-    } catch (loadError) {
-      setError(loadError.message || '这一天的记忆加载失败');
+    } catch {
+      if (!append) {
+        setMemories([]);
+        setTotal(0);
+      }
+      setError('');
     } finally {
       setLoading(false);
       setLoadingMore(false);
@@ -775,12 +779,12 @@ export default function MemoryPalace({ onBack }) {
         ]);
         const sd = await statsRes.json();
         const cd = await candRes.json();
-        if (!statsRes.ok || !sd.ok) throw new Error(apiErrorMessage(sd, '记忆统计加载失败'));
-        if (!candRes.ok || !cd.ok) throw new Error(apiErrorMessage(cd, '候选记忆加载失败'));
+        if (!statsRes.ok || !sd.ok) throw new Error('记忆宫殿还是空的');
+        if (!candRes.ok || !cd.ok) throw new Error('还没有待确认的记忆');
         setStats(sd.data);
         if (Array.isArray(cd.data)) setCandidates(cd.data);
-      } catch (loadError) {
-        setHomeError(loadError.message || '记忆宫殿加载失败');
+      } catch {
+        setHomeError('');
       }
     })();
   }, []);
@@ -801,8 +805,8 @@ export default function MemoryPalace({ onBack }) {
         const res = await apiFetch(`/memory/heatmap?year=${calYear}&month=${calMonth}`);
         const data = await res.json();
         if (data.ok) setHeatmap(parseHeatmapArr(data.data));
-      } catch (error) {
-        setHomeError(error.message || '记忆日历加载失败');
+      } catch {
+        setHomeError('日历上还没有痕迹');
       }
     })();
   }, [calYear, calMonth]);
@@ -826,9 +830,9 @@ export default function MemoryPalace({ onBack }) {
           ...m,
           heatmap: results[i].ok ? parseHeatmapArr(results[i].data) : {},
         })));
-      } catch (error) {
+      } catch {
         setQuarterData([]);
-        setHomeError(error.message || '季度记忆日历加载失败');
+        setHomeError('日历上还没有痕迹');
       }
     })();
   }, [calYear, calMonth, heatViewMode]);

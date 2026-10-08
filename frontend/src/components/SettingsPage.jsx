@@ -85,7 +85,7 @@ export default function SettingsPage({ tweaks, nav }) {
 
       <div className="r-glass" style={{ position: 'relative' }}>
         <SettingsSectionTitle title="AI 与模型" />
-        <SettingRow label="关系档案" sub="查看当前身份与表达配置状态" onClick={() => setPanel('prompt')}><ChevronRight /></SettingRow>
+        <SettingRow label="关系档案" sub="编辑共同的身份与表达偏好" onClick={() => setPanel('prompt')}><ChevronRight /></SettingRow>
         <SettingRow label="模型配置" sub="daily · deep · backend 三槽位" onClick={() => setPanel('model')}><ChevronRight /></SettingRow>
         <SettingRow label="语音配置" sub="即将推出" noBorder>
           <Pill tone="neutral">P2</Pill>

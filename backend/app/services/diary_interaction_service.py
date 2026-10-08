@@ -2,20 +2,13 @@ import json
 import logging
 import uuid
 from datetime import datetime
-from pathlib import Path
 from app.database import get_db
 from app.llm import call_llm
-from app.services import memory_service, model_settings_service
+from app.services import memory_service, model_settings_service, prompt_profile_service
 from app.services.diary_pin import hash_pin, verify_pin as verify_pin_hash
 
 
 logger = logging.getLogger(__name__)
-PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
-
-
-def _load_prompt(filename: str) -> str:
-    path = PROMPTS_DIR / filename
-    return path.read_text(encoding="utf-8") if path.exists() else ""
 
 
 async def get_diary(diary_id: str) -> dict | None:
@@ -219,8 +212,7 @@ async def generate_connie_reply(
     if current_interaction_id:
         recent_interactions = [item for item in recent_interactions if item.get("id") != current_interaction_id]
 
-    identity = _safe_load_prompt("identity.md")
-    voice = _safe_load_prompt("voice.md")
+    shared_profile = await prompt_profile_service.load_shared()
     memory_block = _build_memory_block(recalled_memories)
     chat_block = _build_chat_block(recent_messages)
     interaction_block = _build_interaction_block(recent_interactions)
@@ -229,7 +221,7 @@ async def generate_connie_reply(
         {
             "role": "system",
             "content": (
-                f"{identity}\n\n{voice}\n\n"
+                f"{shared_profile}\n\n"
                 "你现在在 Remoire 的日记留言板回复静儿。"
                 "必须根据日记内容、静儿留言、相关记忆、最近聊天和你的性格来回。"
                 "如果这是 Connie 上锁日记，绝不能透露正文细节、标题以外的内容、隐藏情绪或具体事件。"
@@ -328,14 +320,6 @@ async def _safe_list_interactions(diary_id: str) -> list[dict]:
         return []
 
 
-def _safe_load_prompt(filename: str) -> str:
-    try:
-        return _load_prompt(filename)
-    except Exception as exc:
-        logger.warning("日记留言回复提示词读取失败 %s：%s", filename, exc)
-        return ""
-
-
 def _build_memory_block(memories: list[dict]) -> str:
     try:
         lines = [f"- {item.get('content')}" for item in memories if item.get("content")]
@@ -417,10 +401,12 @@ async def decide_unlock_requests(limit: int = 5) -> list[dict]:
 
 
 async def decide_unlock_request(request: dict) -> dict:
+    shared_profile = await prompt_profile_service.load_shared()
     messages = [
         {
             "role": "system",
             "content": (
+                f"{shared_profile}\n\n"
                 "你是 Connie。静儿申请查看你上锁的日记。"
                 "你可以同意、拒绝，或暂时不回应。"
                 "同意代表永久解锁，所以只有你真的愿意让她看才同意。"

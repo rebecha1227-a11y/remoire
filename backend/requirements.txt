@@ -10,7 +10,8 @@ python-dotenv>=1.0,<2
 pydantic>=2.9,<3
 cryptography>=50,<51
 fastmcp>=3.4.7,<4
-mcp>=1.29,<2
+# OAuth adapters are regression-tested against this SDK version.
+mcp==1.30.0
 aiohttp>=3.14.3,<4
 joserfc>=1.7.4,<2
 pydantic-settings>=2.15,<3

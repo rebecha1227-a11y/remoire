@@ -55,10 +55,19 @@ export function apiJsonFetch(path, options = {}) {
   });
 }
 
+const RAW_HTTP_MESSAGE = /^(not found|internal server error|unauthorized|forbidden|bad request|unprocessable entity|method not allowed)$/i;
+
+function readableError(value) {
+  if (typeof value !== 'string') return '';
+  const text = value.trim();
+  if (!text || RAW_HTTP_MESSAGE.test(text)) return '';
+  return text;
+}
+
 export function apiErrorMessage(payload, fallback = '请求未能完成') {
-  if (typeof payload?.error?.message === 'string' && payload.error.message.trim()) return payload.error.message;
-  if (typeof payload?.error === 'string' && payload.error.trim()) return payload.error;
-  if (typeof payload?.detail?.message === 'string' && payload.detail.message.trim()) return payload.detail.message;
-  if (typeof payload?.detail === 'string' && payload.detail.trim()) return payload.detail;
-  return fallback;
+  return readableError(payload?.error?.message, fallback)
+    || readableError(payload?.error, fallback)
+    || readableError(payload?.detail?.message, fallback)
+    || readableError(payload?.detail, fallback)
+    || fallback;
 }

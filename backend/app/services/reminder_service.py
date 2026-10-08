@@ -47,7 +47,7 @@ async def extract_reminders(conversation_id: str, messages: list[dict]):
     )
 
     content = raw if isinstance(raw, str) else raw.get("content", "")
-    logger.info("待办提取 LLM 原始返回: %s", content[:500])
+    logger.info("待办提取 LLM 已返回")
     try:
         start = content.find("[")
         end = content.rfind("]") + 1
@@ -56,7 +56,7 @@ async def extract_reminders(conversation_id: str, messages: list[dict]):
         else:
             items = []
     except (json.JSONDecodeError, ValueError):
-        logger.warning("待办提取 JSON 解析失败: %s", content[:200])
+        logger.warning("待办提取 JSON 解析失败")
         items = []
 
     logger.info("待办提取结果: %d 条", len(items))

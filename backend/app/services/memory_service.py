@@ -68,13 +68,13 @@ def _load_prompt(filename: str) -> str:
 # ──────────────────────────────────────
 
 async def extract_candidates(conversation_id: str, messages: list[dict]) -> list[dict]:
-    """分析最近的聊天消息，提取记忆候选。confidence >= 0.7 自动入库，其余留 pending。"""
+    """自动入库还需用户原话依据；推测/缺失依据只留 pending。"""
     tagging_prompt = _load_prompt("tagging.md")
     if not tagging_prompt:
         return []
 
     chat_text = "\n".join(
-        f"{'静儿' if m['role'] == 'user' else 'Connie'}: {m['content']}"
+        f"[{m.get('created_at') or '发送时间未知'}] {'静儿' if m['role'] == 'user' else 'Connie'}: {m['content']}"
         for m in messages
     )
 
@@ -103,6 +103,14 @@ async def extract_candidates(conversation_id: str, messages: list[dict]) -> list
         content = c["content"]
         tags = c.get("tags", [])
         confidence = c.get("confidence", 0.5)
+        # Confidence alone is not evidence: a model may be confidently wrong.
+        evidence = c.get("evidence_quote")
+        user_supported = (
+            c.get("evidence_type") == "explicit"
+            and isinstance(evidence, str) and bool(evidence.strip())
+            and any(evidence.strip() in m["content"] for m in messages
+                    if m.get("role") == "user" and isinstance(m.get("content"), str))
+        )
 
         if await _is_duplicate(content):
             continue
@@ -114,7 +122,7 @@ async def extract_candidates(conversation_id: str, messages: list[dict]) -> list
         arousal = max(0.0, min(1.0, float(c.get("arousal", 0.0))))
         unresolved = bool(c.get("unresolved", mem_type == "unresolved")) or mem_type == "unresolved"
 
-        if confidence >= 0.7:
+        if confidence >= 0.7 and user_supported:
             result = await create_memory(
                 content, tags=tags, layer=proposed_layer,
                 memory_type=mem_type, event_date=event_date,

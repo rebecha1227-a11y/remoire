@@ -37,11 +37,17 @@ DIARY_TOOL_NAMES = ["read_diary", "read_jinger_diary", "try_unlock_diary", "repl
 DIARY_KEYWORDS = re.compile(r"日记|diary|写了什么|留言|上锁|解锁|密码|pin", re.IGNORECASE)
 
 
-def select_tools(user_message: str, has_diary_notifications: bool = False, include_web: bool = True) -> list[dict]:
+def select_tools(
+    user_message: str,
+    has_diary_notifications: bool = False,
+    include_web: bool = True,
+    *,
+    stable: bool = False,
+) -> list[dict]:
     names = list(BASE_TOOL_NAMES)
     if include_web:
         names += WEB_TOOL_NAMES
-    if DIARY_KEYWORDS.search(user_message) or has_diary_notifications:
+    if stable or DIARY_KEYWORDS.search(user_message) or has_diary_notifications:
         names += DIARY_TOOL_NAMES
     return [t for t in (_tool(n) for n in names) if t]
 

@@ -230,29 +230,7 @@ export function ProactiveSettings({ onBack }) {
 // ═══════════════════════════════════════════
 // 2. Prompt 编辑器
 // ═══════════════════════════════════════════
-export function PromptSettings({ onBack }) {
-  const connieName = localStorage.getItem('remoire_conn_name') || 'Connie';
-
-  return (
-    <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px 88px' }}>
-      <SubPageHeader onBack={onBack} title="关系档案" subtitle="查看当前关系身份与表达方式" />
-      <Card padding="lg" style={{ marginBottom: 16 }}>
-        <SettingRow label="你的名字" sub="当前产品身份">静儿</SettingRow>
-        <SettingRow label="TA 的名字" sub="可在聊天设置中修改备注">{connieName}</SettingRow>
-        <SettingRow label="关系" sub="当前系统身份" noBorder>恋人</SettingRow>
-      </Card>
-      <Card padding="md" elevated={false} style={{ borderStyle: 'dashed' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-          <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-primary)' }}>表达偏好编辑尚未开放</div>
-          <Pill tone="neutral">规划中</Pill>
-        </div>
-        <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.8 }}>
-          当前表达方式由服务器上的身份与语气配置统一控制。等保存、预览和版本回退真正接通后，这里才会提供编辑入口。
-        </div>
-      </Card>
-    </div>
-  );
-}
+export { default as PromptSettings } from "./PromptSettings";
 
 // ═══════════════════════════════════════════
 // 3. 模型配置
@@ -264,7 +242,7 @@ export function ModelSettings({ onBack }) {
     { id: 'backend', label: '后台任务', desc: '记忆提取、情感打标、摘要压缩、自动回复判断' },
   ];
   const API = '/settings';
-  const emptyDraft = { id: null, nickname: '', provider: 'openai-compatible', api_key: '', base_url: '', model_name: '' };
+  const emptyDraft = { id: null, nickname: '', provider: 'openai-compatible', api_key: '', base_url: '', model_name: '', model_capabilities: null };
 
   const [presets, setPresets] = useState([]);
   const [slots, setSlots] = useState([]);
@@ -279,6 +257,7 @@ export function ModelSettings({ onBack }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState('');
+  const [cacheStats, setCacheStats] = useState(null);
 
   const readJson = useCallback(async (res) => {
     const json = await res.json().catch(() => ({}));
@@ -292,16 +271,19 @@ export function ModelSettings({ onBack }) {
     setLoading(true);
     setStatus('');
     try {
-      const [presetsRes, slotsRes] = await Promise.all([
+      const [presetsRes, slotsRes, cacheStatsRes] = await Promise.all([
         apiFetch(`${API}/model-presets`),
         apiFetch(`${API}/slots`),
+        apiFetch(`${API}/cache-stats?days=7`),
       ]);
       const presetsJson = await readJson(presetsRes);
       const slotsJson = await readJson(slotsRes);
+      const cacheStatsJson = await readJson(cacheStatsRes);
       setPresets(presetsJson.data || []);
       setSlots(slotsJson.data || []);
-    } catch (err) {
-      setStatus(`加载失败：${err.message}`);
+      setCacheStats(cacheStatsJson.data || null);
+    } catch {
+      setStatus('这边还没有读到模型配置');
     } finally {
       setLoading(false);
     }
@@ -314,6 +296,7 @@ export function ModelSettings({ onBack }) {
       setTestResult(null);
     }
     if (field === 'model_name') {
+      setDraft(d => ({ ...d, model_capabilities: null }));
       setTestResult(null);
     }
   }
@@ -333,6 +316,7 @@ export function ModelSettings({ onBack }) {
         model_name: draft.model_name,
       };
       if (draft.api_key) body.api_key = draft.api_key;
+      body.model_capabilities = draft.model_capabilities;
       const res = await apiJsonFetch(draft.id ? `${API}/model-presets/${draft.id}` : `${API}/model-presets`, {
         method: draft.id ? 'PUT' : 'POST',
         body: JSON.stringify(body),
@@ -361,7 +345,7 @@ export function ModelSettings({ onBack }) {
   }
 
   function editPreset(preset) {
-    setDraft({ ...preset, api_key: '' });
+    setDraft({ ...preset, api_key: '', model_capabilities: preset.capabilities || null });
     setDraftModels([]);
     setModelFetchKey('');
     setTestResult(null);
@@ -451,6 +435,16 @@ export function ModelSettings({ onBack }) {
     }
   }
 
+  function selectDraftModel(modelId) {
+    const selected = draftModels.find(model => model.id === modelId);
+    setDraft(current => ({
+      ...current,
+      model_name: modelId,
+      model_capabilities: selected?.inferred_capabilities || null,
+    }));
+    setTestResult(null);
+  }
+
   async function saveSlot(slotId, patch) {
     const current = slots.find(s => s.slot === slotId) || {};
     const payload = {
@@ -503,10 +497,15 @@ export function ModelSettings({ onBack }) {
     background: 'var(--bg-secondary)', border: '1px solid var(--border-light)',
     fontSize: 'var(--text-xs)', fontFamily: 'var(--font-body)',
   };
+  const formatTokens = value => {
+    if (value >= 1000000) return `${value / 1000000}M`;
+    if (value >= 1000) return `${value / 1000}K`;
+    return String(value || 0);
+  };
 
   return (
     <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px 88px' }}>
-      <SubPageHeader onBack={onBack} title="模型配置" subtitle="给 Connie 的不同场景选择合适的模型。" />
+      <SubPageHeader onBack={onBack} title="模型配置" subtitle="选择模型；上下文与输出能力由系统自动识别。" />
 
       {status && (
         <div style={{ ...statusStyle, color: status.includes('失败') ? 'var(--danger)' : 'var(--text-secondary)' }}>{status}</div>
@@ -535,6 +534,32 @@ export function ModelSettings({ onBack }) {
                 ]}
                 style={{ marginBottom: 10 }}
               />
+              {current.preset_id && (
+                <div style={{
+                  marginBottom: 8, padding: '9px 10px', borderRadius: 'var(--radius-sm)',
+                  background: 'var(--bg-secondary)', border: '1px solid var(--border-light)',
+                  fontFamily: 'var(--font-body)',
+                }}>
+                  <div style={{ ...labelStyle, marginBottom: 3, fontSize: 'var(--text-sm)' }}>
+                    {current.capabilities?.context_window && current.capabilities?.max_output_tokens
+                      ? '已自动识别模型能力'
+                      : current.capabilities ? '已识别部分能力' : '使用兼容预算'}
+                  </div>
+                  <div style={{ ...valueText, wordBreak: 'normal', fontSize: 'var(--text-sm)', lineHeight: 1.5 }}>
+                    {formatTokens(current.context_window)} 上下文 · 最多 {formatTokens(current.output_budget)} 输出
+                  </div>
+                  {current.capabilities?.prompt_caching && (
+                    <div style={{ ...helperText, marginTop: 3, fontSize: '12px', lineHeight: 1.55 }}>
+                      Prompt 缓存已准备；实际命中以当前接口返回为准。
+                    </div>
+                  )}
+                  {current.capabilities?.source && (
+                    <div style={{ ...helperText, marginTop: 2, fontSize: '11px' }}>
+                      来源：{current.capabilities.source}
+                    </div>
+                  )}
+                </div>
+              )}
               <SettingRow label="扩展思考" sub="开启后允许保存思考内容；是否生效取决于模型。">
                 <SettingsToggle on={!!current.extended_thinking} onChange={v => saveSlot(slot.id, { extended_thinking: v })} />
               </SettingRow>
@@ -542,6 +567,31 @@ export function ModelSettings({ onBack }) {
           );
         })}
       </Stack>
+
+      <SettingsSectionTitle title="Prompt 缓存" />
+      <Card padding="md">
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
+          <div>
+            <div style={titleText}>最近 7 天命中率</div>
+            <div style={metaText}>
+              {cacheStats?.observable_requests
+                ? `${cacheStats.hit_requests} / ${cacheStats.observable_requests} 次可观测请求命中`
+                : '还没有接口返回可观测的缓存明细'}
+            </div>
+          </div>
+          <div style={{ fontSize: 20, lineHeight: 1, color: 'var(--text-deep)', fontWeight: 500, fontFamily: 'var(--font-body)' }}>
+            {cacheStats?.hit_rate == null ? '—' : `${cacheStats.hit_rate}%`}
+          </div>
+        </div>
+        <div style={{ ...helperText, marginTop: 9 }}>
+          同一供应商和缓存时长下，命中率越高通常越省；首次写入缓存仍可能额外计费。这里只统计接口真实返回的缓存 token，不会保存提示词正文。
+        </div>
+        {!!cacheStats?.read_tokens && (
+          <div style={{ ...helperText, marginTop: 4 }}>
+            已复用 {formatTokens(cacheStats.read_tokens)} 输入 token · 写入 {formatTokens(cacheStats.write_tokens)}
+          </div>
+        )}
+      </Card>
 
       <SettingsSectionTitle title="模型预设库" />
       <Stack gap="sm">
@@ -619,7 +669,7 @@ export function ModelSettings({ onBack }) {
               {draftModels.length > 0 ? (
                 <GlassSelect
                   value={draft.model_name}
-                  onChange={v => updateDraft('model_name', v)}
+                  onChange={selectDraftModel}
                   placeholder="选择模型"
                   options={[
                     { value: '', label: '选择模型' },
@@ -964,14 +1014,15 @@ export function DatesSettings({ onBack }) {
       try {
         const res = await apiFetch('/memory?memory_type=date&limit=50');
         const data = await res.json();
-        if (!res.ok || !data.ok) throw new Error(apiErrorMessage(data, '特殊日期加载失败'));
+        if (!res.ok || !data.ok) throw new Error('quiet');
         setDates((data.data?.items || []).map(m => ({
           id: m.id,
           date: m.event_date ? m.event_date.slice(5, 10) : '',
           title: m.content,
         })));
-      } catch (error) {
-        setStatus(error.message || '特殊日期加载失败，请稍后重试。');
+      } catch {
+        setDates([]);
+        setStatus('');
       } finally {
         setLoading(false);
       }
@@ -1419,10 +1470,11 @@ export function NoteHistorySettings({ onBack }) {
       try {
         const res = await apiFetch('/note?limit=50');
         const data = await res.json();
-        if (!res.ok || !data.ok) throw new Error(apiErrorMessage(data, '小纸条加载失败'));
+        if (!res.ok || !data.ok) throw new Error('quiet');
         setNotes(data.data?.notes || []);
-      } catch (loadError) {
-        setError(loadError.message || '小纸条加载失败，请稍后重试。');
+      } catch {
+        setNotes([]);
+        setError('');
       } finally {
         setLoading(false);
       }
@@ -1446,7 +1498,7 @@ export function NoteHistorySettings({ onBack }) {
       <SubPageHeader onBack={onBack} title="小纸条历史" subtitle="Connie 留过的所有纸条" />
 
       {loading && <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-tertiary)', fontSize: 13 }}>加载中…</div>}
-      {error && <div role="alert" style={{ padding: '12px 0', color: 'var(--danger)', fontSize: 12 }}>{error}</div>}
+      {error && <div role="status" style={{ padding: '12px 0', color: 'var(--text-tertiary)', fontSize: 13 }}>{error}</div>}
 
       {!loading && !error && notes.length === 0 && (
         <Card padding="lg" style={{ textAlign: 'center' }}>
@@ -1487,10 +1539,11 @@ export function MemoryCandidatesSettings({ onBack }) {
     try {
       const res = await apiFetch('/memory/candidates?status=pending&limit=50');
       const data = await res.json();
-      if (!res.ok || !data.ok) throw new Error(apiErrorMessage(data, '候选记忆加载失败'));
+      if (!res.ok || !data.ok) throw new Error('quiet');
       setCandidates(Array.isArray(data.data) ? data.data : []);
-    } catch (loadError) {
-      setError(loadError.message || '候选记忆加载失败，请稍后重试。');
+    } catch {
+      setCandidates([]);
+      setError('');
     } finally {
       setLoading(false);
     }
@@ -1539,7 +1592,7 @@ export function MemoryCandidatesSettings({ onBack }) {
       <SubPageHeader onBack={onBack} title="记忆候选" subtitle="低置信度的候选需要你确认才会进入正式记忆库" />
 
       {loading && <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-tertiary)', fontSize: 13 }}>加载中…</div>}
-      {error && <div role="alert" style={{ padding: '12px 0', color: 'var(--danger)', fontSize: 12 }}>{error}</div>}
+      {error && <div role="status" style={{ padding: '12px 0', color: 'var(--text-tertiary)', fontSize: 13 }}>{error}</div>}
 
       {!loading && !error && candidates.length === 0 && (
         <Card padding="lg" style={{ textAlign: 'center' }}>

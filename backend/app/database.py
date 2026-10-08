@@ -50,6 +50,16 @@ async def init_db():
                 created_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS conversation_summaries (
+                conversation_id TEXT PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE,
+                summary TEXT NOT NULL,
+                through_message_rowid INTEGER NOT NULL DEFAULT 0,
+                through_message_id TEXT,
+                source_message_count INTEGER NOT NULL DEFAULT 0,
+                version INTEGER NOT NULL DEFAULT 1,
+                updated_at TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS memory_candidates (
                 id TEXT PRIMARY KEY,
                 conversation_id TEXT REFERENCES conversations(id),
@@ -151,6 +161,7 @@ async def init_db():
                 api_key TEXT NOT NULL,
                 base_url TEXT NOT NULL,
                 model_name TEXT NOT NULL,
+                capabilities_json TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
@@ -159,6 +170,8 @@ async def init_db():
                 slot TEXT PRIMARY KEY,
                 preset_id TEXT REFERENCES model_presets(id) ON DELETE SET NULL,
                 extended_thinking INTEGER NOT NULL DEFAULT 0,
+                context_window INTEGER NOT NULL DEFAULT 32768,
+                output_budget INTEGER NOT NULL DEFAULT 4096,
                 updated_at TEXT NOT NULL
             );
 
@@ -205,6 +218,20 @@ async def init_db():
                 slot TEXT NOT NULL,
                 input_tokens INTEGER NOT NULL DEFAULT 0,
                 output_tokens INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS llm_usage_events (
+                id TEXT PRIMARY KEY,
+                slot TEXT NOT NULL DEFAULT 'unknown',
+                model_id TEXT NOT NULL DEFAULT '',
+                provider TEXT NOT NULL DEFAULT 'openai-compatible',
+                input_tokens INTEGER NOT NULL DEFAULT 0,
+                output_tokens INTEGER NOT NULL DEFAULT 0,
+                cache_requested INTEGER NOT NULL DEFAULT 0,
+                cache_reported INTEGER NOT NULL DEFAULT 0,
+                cache_read_input_tokens INTEGER NOT NULL DEFAULT 0,
+                cache_creation_input_tokens INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL
             );
 
@@ -270,6 +297,8 @@ async def init_db():
                 ON memory_digest_runs(created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_memory_recall_logs_created
                 ON memory_recall_logs(created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_llm_usage_events_created
+                ON llm_usage_events(created_at DESC);
             CREATE TABLE IF NOT EXISTS weather_cache (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 temp TEXT,
@@ -365,6 +394,9 @@ async def init_db():
             "ALTER TABLE diary_interactions ADD COLUMN seen_by_connie INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE diary_interactions ADD COLUMN seen_by_jinger INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE messages ADD COLUMN image TEXT",
+            "ALTER TABLE model_slots ADD COLUMN context_window INTEGER NOT NULL DEFAULT 32768",
+            "ALTER TABLE model_slots ADD COLUMN output_budget INTEGER NOT NULL DEFAULT 4096",
+            "ALTER TABLE model_presets ADD COLUMN capabilities_json TEXT",
             "ALTER TABLE memories ADD COLUMN layer TEXT NOT NULL DEFAULT 'long'",
             "ALTER TABLE memories ADD COLUMN memory_type TEXT NOT NULL DEFAULT 'fact'",
             "ALTER TABLE memories ADD COLUMN event_date TEXT",
@@ -494,3 +526,8 @@ async def init_db():
                 ("2026-08-12-memory-link-integrity",),
             )
         await db.commit()
+    from app.oauth import init_oauth_db
+    await init_oauth_db()
+    from app.services.prompt_profile_service import initialize
+    async with get_db() as db:
+        await initialize(db)

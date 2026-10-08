@@ -28,6 +28,7 @@ backend/data/
 # Claude Code 临时文件
 .claude/worktrees/
 .playwright-mcp/
+output/playwright/
 
 .bytro
 Remoire-v2-ia-design.md

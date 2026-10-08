@@ -18,6 +18,7 @@ load_dotenv(os.path.join(_backend_dir, ".env"))
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
+from app.services import prompt_profile_service
 from app.database import init_db
 from app.services import diary_service, memory_service, note_service
 
@@ -100,7 +101,8 @@ async def resume() -> str:
     note = await note_service.get_unread()
     diaries = await diary_service.list_diaries(author="connie", limit=3)
 
-    parts = []
+    shared_profile = await prompt_profile_service.load_shared()
+    parts = ["【当前身份与表达配置】\n" + shared_profile] if shared_profile else []
     if memories:
         parts.append("【最近的记忆】")
         parts.extend(f"- {m['content']}" for m in memories)

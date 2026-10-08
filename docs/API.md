@@ -23,7 +23,20 @@ https://{your-domain}/api
 
 **设备上传例外**：iOS 快捷指令调用的设备上传接口使用 URL 查询参数 `key` 认证（独立的 `DEVICE_SECRET_KEY`）。原因是 iOS 快捷指令无法方便地设置 HTTP Header，GET 请求 + URL 参数是最可靠的方式。`DEVICE_SECRET_KEY` 存在 `.env` 里，HTTPS 会加密完整 URL。内部读取类接口仍走普通 app 认证（当前 Bearer 过渡，目标 session cookie）。
 
-### 登录接口
+### MCP OAuth（2026-10-05 补充）
+
+下列协议端点位于域名根路径，不在 `/api` 下，响应使用 OAuth 标准 JSON，而非业务 API 信封：
+
+- GET `/.well-known/oauth-protected-resource/mcp`（另有无 `/mcp` 后缀别名）：受保护资源发现。
+- GET `/.well-known/oauth-authorization-server`：授权服务器发现。
+- POST `/register`：ChatGPT 客户端动态注册，不授予数据访问权限。
+- GET/POST `/authorize`：授权码 + PKCE S256；跳转到 GET/POST `/oauth/consent`，由用户登录并同意。
+- POST `/token`：授权码兑换和刷新；POST `/revoke`：撤销令牌对应授权族。
+- `/mcp`：继续支持独立静态 Bearer，同时接受有效 OAuth access token；网页 session cookie、refresh token 和 URL token 不可代替 MCP access token。
+
+资源固定为 `https://remoire.cc/mcp`，scope 为 `remoire`。详情和生产验收边界见 `CHATGPT-OAUTH-2026-10-05.md`。
+
+### 登录接口（业务会话）
 
 #### POST `/api/auth/login`
 
@@ -1035,8 +1048,10 @@ data: {"ts": "2026-04-25T08:00:00"}
 
 - `/api/settings` — UI 偏好（深色模式、字体大小等）
 - `/api/settings/models` — 统一模型槽位配置
+- `/api/settings/model-presets`、`/api/settings/slots` — 当前实际使用的模型预设与槽位接口
+- `/api/settings/cache-stats?days=7` — 供应商真实返回的 Prompt 缓存命中统计；不返回提示词正文
 - `/api/settings/proactive` — 主动消息参数
-- `/api/settings/prompts` — Prompt 分场景配置
+- `/api/settings/prompt-profiles` — 关系档案与表达配置（2026-10-06 本地实现）
 
 ### GET `/api/settings`
 
@@ -1102,6 +1117,13 @@ data: {"ts": "2026-04-25T08:00:00"}
 
 连接测试。发一条测试消息验证 API 是否可用。
 
+### 当前模型槽位接口（2026-10-08 本地代码）
+
+- GET `/api/settings/slots` 返回 daily / deep / backend，每项包含 `preset_id`、`extended_thinking`、`context_window`、`output_budget`。
+- PUT `/api/settings/slots/{slot}` 保存上述字段。`context_window` 范围 8192–2000000；`output_budget` 范围 256–65536，并必须为输入与安全余量留下至少 1024 tokens。
+
+`context_window` 只是应用组装输入时遵守的上限，应按模型服务商公布的值填写；它不会扩大模型自身上下文能力。`output_budget` 会作为兼容 Chat Completions 请求的 `max_tokens`，最终仍受模型与服务商限制。
+
 ### GET `/api/settings/proactive`
 
 获取主动消息设置。
@@ -1132,61 +1154,24 @@ data: {"ts": "2026-04-25T08:00:00"}
 
 保存主动消息设置（只传需要更新的字段）。
 
-### GET `/api/settings/prompts`
+### 关系档案接口（2026-10-06，本地实现，尚未部署）
 
-获取所有 Prompt 场景配置。
+旧 `/api/settings/prompts` 是历史设计，没有实现；实际使用 `/api/settings/prompt-profiles`。
 
-**响应**：
-```json
-{
-  "ok": true,
-  "data": {
-    "items": [
-      {
-        "scene": "identity",
-        "title": "Connie 人设",
-        "content": "你是 Connie，静儿的 AI 伴侣...",
-        "enabled": true
-      },
-      {
-        "scene": "wechat_reply_style",
-        "title": "微信回复风格",
-        "content": "回复更短、更自然、适合分条发送、不使用 markdown...",
-        "enabled": true
-      }
-    ]
-  }
-}
-```
+所有接口需认证；写请求校验 CSRF；返回 `Cache-Control: no-store`。
 
-场景列表：`identity` / `daytime_proactive` / `night_proactive` / `wechat_reply_style` / `frontend_reply_style` / `tool_use`
+| 方法与路径 | 作用 |
+|---|---|
+| GET `/api/settings/prompt-profiles` | 返回三个配置的数组（key/title/content/enabled/version/updated_at） |
+| PUT `/api/settings/prompt-profiles/{key}` | 保存原文，正文 `{content, enabled, expected_version}` |
+| GET `/api/settings/prompt-profiles/preview?scene=true` | 拼接已保存的共同配置及已开启场景配置，不调用模型，不含完整聊天上下文 |
+| GET `/api/settings/prompt-profiles/{key}/versions?before=20` | 每页最多 20 条历史元信息，不含正文；before 为版本游标 |
+| GET `/api/settings/prompt-profiles/{key}/versions/{version}` | 读取指定历史原文 |
+| POST `/api/settings/prompt-profiles/{key}/restore` | `{version, expected_version}`，回退产生新版本，保留历史 |
 
-### PUT `/api/settings/prompts/{scene}`
+`key` 只接受 `identity`、`voice`、`scene`。身份与表达一直有效；场景配置的 enabled 只影响后续聊天生成。私有原稿不通过此 API 下发，原稿的读写/历史接口均不开放。
 
-保存某个场景的 Prompt。
-
-**请求体**：
-```json
-{
-  "title": "微信回复风格",
-  "content": "回复更短、更自然...",
-  "enabled": true
-}
-```
-
-### POST `/api/settings/prompts/preview`
-
-预览当前配置合成后的最终 Prompt（调试用）。
-
-**请求体**：
-```json
-{
-  "context": "daily_chat",
-  "channel": "wechat"
-}
-```
-
-**响应**：合成后的完整 system prompt 文本。
+正文限制 60000 字符，不 trim、不重写。保存冲突返回 409，客户端保留编辑并让用户重新读取后合并；未知配置/版本返回 404。旧版本不接受写入，避免多设备互相覆盖。
 
 ---
 

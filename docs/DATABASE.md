@@ -45,6 +45,7 @@ channels               入口类型（Remoire / Claude.ai MCP / 微信）
 channel_bindings       具体入口绑定（某个微信账号、某个 MCP 客户端）
 conversations          会话容器（同一段聊天）
 messages               统一消息记录（核心）
+conversation_summaries 长对话滚动摘要及覆盖范围
 memory_candidates      记忆候选（等待确认）
 memories               正式记忆（已确认）
 memory_links           记忆之间的关联线
@@ -54,7 +55,8 @@ diaries                日记
 diary_unlock_logs      日记解锁记录
 notes                  小纸条
 model_configs          模型配置（旧名，后续迁移为 model_settings）
-model_settings         统一模型槽位设置
+model_slots            模型槽位、模型预设关联与上下文预算
+llm_usage_events       模型 token 与 Prompt 缓存命中统计（不保存正文）
 prompt_profiles        Prompt 编辑器分场景配置
 proactive_message_settings 主动消息参数
 delivery_logs          外部入口消息发送记录
@@ -178,21 +180,53 @@ CREATE TABLE IF NOT EXISTS model_settings (
 - `deep`：深度谈话、复杂情绪、长对话。
 - `backend`：记忆提取、情感打标、摘要压缩、对话导入处理、自动回复判断。
 
-### 6. prompt_profiles — Prompt 编辑器
+当前代码实际使用 `model_presets` + `model_slots`。`model_presets.capabilities_json` 保存从 `/models` 元数据或官方能力表规范化后的上下文、输出和缓存能力；`model_slots.context_window` 与 `output_budget` 保留实际生效值和未知模型的兼容预算。应用用它们计算输入预算，但不能改变模型厂商的真实能力。未知模型默认分别为 32768 与 4096，三个槽位可独立配置。
 
-Prompt 统一存在后端，由设置页编辑，不散落在前端或微信桥接代码里。
+### 5.1 conversation_summaries — 长对话滚动摘要
+
+2026-10-08 本地实现，尚未部署生产。
+
+```sql
+CREATE TABLE IF NOT EXISTS conversation_summaries (
+    conversation_id TEXT PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE,
+    summary TEXT NOT NULL,
+    through_message_rowid INTEGER NOT NULL DEFAULT 0,
+    through_message_id TEXT,
+    source_message_count INTEGER NOT NULL DEFAULT 0,
+    version INTEGER NOT NULL DEFAULT 1,
+    updated_at TEXT NOT NULL
+);
+```
+
+每次只摘要 `through_message_rowid` 之后的一段连续旧消息，并保留至少 12 条近期原文。更新使用旧 version 与旧覆盖 rowid 做乐观并发检查；重复后台任务只有一个能推进。摘要是聊天上下文索引，不进入记忆候选提取，也不会自动升级成核心记忆。
+
+### 6. prompt_profiles / prompt_profile_versions — 关系档案
+
+2026-10-06 本地实现，尚未部署。替代本节原有未实施的 scene/id 方案。
 
 ```sql
 CREATE TABLE IF NOT EXISTS prompt_profiles (
-    id TEXT PRIMARY KEY,
-    scene TEXT NOT NULL UNIQUE,                     -- 'identity' / 'daytime_proactive' / 'night_proactive' / 'wechat_reply_style' / 'frontend_reply_style' / 'tool_use'
-    title TEXT NOT NULL,
+    key TEXT PRIMARY KEY,
+    version INTEGER NOT NULL,
     content TEXT NOT NULL,
-    enabled BOOLEAN DEFAULT 1,
-    created_at DATETIME NOT NULL DEFAULT (datetime('now')),
-    updated_at DATETIME NOT NULL DEFAULT (datetime('now'))
+    enabled INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS prompt_profile_versions (
+    key TEXT NOT NULL REFERENCES prompt_profiles(key),
+    version INTEGER NOT NULL,
+    content TEXT NOT NULL,
+    enabled INTEGER NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (key, version)
 );
 ```
+
+固定 key：identity、voice、scene、original。首次从服务器 identity.md/voice.md 导入当前文字；场景与原稿初始为空，关闭。重启不会覆盖已有记录，包括空字符串。时间为带 UTC 时区的 ISO 字符串。
+
+保存使用 BEGIN IMMEDIATE 与 expected_version 比较，在同一事务更新正文和插入历史。恢复历史产生新版本，不删旧记录。运行时单次 SELECT 读取共同配置，无进程缓存；original 原稿不在运行时查询中。
+
+私有原稿可通过 scripts/import_prompt_original.py 导入，仅允许首次写入或相同内容幂等重试；CLI 先用 SQLite 在线备份保存快照，不覆盖已有不同原稿。私有正文不进入 Git、前端 bundle 或公共静态路径。
 
 ### 7. proactive_message_settings — 主动消息设置
 
@@ -265,6 +299,10 @@ CREATE TABLE IF NOT EXISTS usage_logs (
 - 主动消息默认只发一个入口，推荐微信优先。
 - 两边都发时，尽量复用一次 AI 生成结果。
 - 记忆召回只取最相关的 top-3 到 top-5。
+
+### 9.1 llm_usage_events — 实际调用与缓存统计
+
+2026-10-08 本地新增，尚未部署生产。每次服务商返回 usage 时写入模型、槽位、输入输出 token 与缓存读写 token，不保存 system prompt、消息正文、密钥或工具结果。`cache_reported=1` 表示服务商明确返回了缓存明细；设置页的命中率只以这部分请求为分母。
 - 长聊天用摘要 + 最近几条原文，不把完整历史都塞给模型。
 
 ### 10. memory_candidates — 记忆候选
@@ -775,6 +813,14 @@ Remoire 使用 SQLite WAL mode，运行中备份不要直接 `cp` 主 `.db` 文�
 ---
 
 ## 八、注意事项
+
+### 2026-10-05：独立 MCP OAuth 表
+
+`app/oauth.py::init_oauth_db()` 由主数据库初始化结束后调用，幂等创建 `oauth_clients`（客户端元数据，secret 加密）、`oauth_pending`（10 分钟授权请求，CSRF 摘要）、`oauth_codes`（2 分钟单次授权码摘要）、`oauth_tokens`（访问/刷新令牌摘要、client/resource/scope、授权族、绝对有效期、轮换/撤销状态）。授权族有索引，兑换和刷新使用 `BEGIN IMMEDIATE` 保证单次使用。
+
+这些表属于认证数据，不得作为记忆导出给模型或其他用户；凭据使用高熵随机值，主键摘要而非业务 UUID。此迁移不修改聊天、记忆、日记。回退 OAuth 代码不需要恢复旧数据库。运行细节见 `CHATGPT-OAUTH-2026-10-05.md`。
+
+### 通用约定
 
 1. **所有主键用 UUID v4 字符串**，不用自增整数。原因是 MCP 端和小窝端都可能创建记忆，UUID 避免冲突。
 

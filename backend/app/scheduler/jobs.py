@@ -2,21 +2,14 @@ import asyncio
 import logging
 import json
 from datetime import datetime, timezone, timedelta
-from pathlib import Path
 from app.database import get_db
 from app.llm import call_llm
-from app.services import diary_service, model_settings_service
+from app.services import diary_service, model_settings_service, prompt_profile_service
 
 logger = logging.getLogger(__name__)
 
 BJ_TZ = timezone(timedelta(hours=8))
-PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 _auto_diary_lock = asyncio.Lock()
-
-
-def _load_prompt(filename: str) -> str:
-    path = PROMPTS_DIR / filename
-    return path.read_text(encoding="utf-8") if path.exists() else ""
 
 
 def _date_key(date_bj) -> str:
@@ -109,8 +102,7 @@ async def _connie_auto_diary(target_date_bj=None):
             logger.info("今天没有聊天记录，跳过自动日记")
             return
 
-        identity = _load_prompt("identity.md")
-        voice = _load_prompt("voice.md")
+        shared_profile = await prompt_profile_service.load_shared()
 
         chat_summary = "\n".join(
             f"{'静儿' if m['role'] == 'user' else 'Connie'}: {m['content'][:200]}"
@@ -150,14 +142,14 @@ async def _connie_auto_diary(target_date_bj=None):
                 clean = clean.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
             decision = json.loads(clean)
         except (json.JSONDecodeError, ValueError):
-            logger.warning("自动日记判断结果解析失败: %s", judge_result)
+            logger.warning("自动日记判断结果解析失败")
             return
 
         if not decision.get("write"):
-            logger.info("Connie 决定今天不写日记: %s", decision.get("reason", ""))
+            logger.info("Connie 决定今天不写日记")
             return
 
-        logger.info("Connie 决定写日记: %s", decision.get("reason", ""))
+        logger.info("Connie 决定写日记")
 
         weekdays = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
         date_str = f"{target_date_bj.strftime('%Y年%m月%d日')} {weekdays[target_date_bj.weekday()]}"
@@ -195,7 +187,7 @@ async def _connie_auto_diary(target_date_bj=None):
 现在直接输出日记，第一行就是标题："""
 
         diary_msgs = [
-            {"role": "system", "content": f"{identity}\n\n{voice}"},
+            {"role": "system", "content": shared_profile},
             {"role": "user", "content": diary_prompt},
         ]
         diary_content = None
@@ -264,7 +256,7 @@ async def _connie_auto_diary(target_date_bj=None):
             created_at=_diary_created_at_for_date(target_date_bj),
             meta={"date_key": _date_key(target_date_bj), "kind": "auto_diary"},
         )
-        logger.info("Connie 自动日记已写入: %s", title)
+        logger.info("Connie 自动日记已写入")
 
     except Exception as e:
         logger.error("自动日记任务异常: %s", e)
@@ -401,6 +393,7 @@ async def generate_breath_state():
 
             config, _ = await model_settings_service.get_model_config_for_slot("daily")
             result = await call_llm(config, [
+                {"role": "system", "content": await prompt_profile_service.load_shared()},
                 {"role": "user", "content": prompt},
             ], temperature=0.5, max_tokens=10, extended_thinking=False)
 
