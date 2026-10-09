@@ -79,6 +79,8 @@ export function ProactiveSettings({ onBack }) {
     startTime: '09:00', endTime: '22:30',
     maxDaily: 5, cooldown: 60, maxBurst: 8, maxRounds: 3, roundInterval: 30,
     endOnReply: true,
+    deliveryChannel: 'remoire',
+    imessageReady: false,
     types: { care: true, reminder: true, followup: true, special: true },
   });
   const [status, setStatus] = useState('正在读取设置…');
@@ -102,10 +104,17 @@ export function ProactiveSettings({ onBack }) {
           maxRounds: d.max_rounds ?? 3,
           roundInterval: d.round_interval_minutes ?? 30,
           endOnReply: d.end_on_reply ?? true,
+          deliveryChannel: d.delivery_channel || 'remoire',
           types: d.types ?? c.types,
         }));
         setStatus('');
     }).catch(() => setStatus('设置加载失败，请稍后重试。'));
+    apiFetch('/settings/imessage').then(async response => {
+      const payload = await response.json().catch(() => ({}));
+      if (response.ok && payload.ok && payload.data) {
+        setCfg(current => ({ ...current, imessageReady: payload.data.status === 'connected' && payload.data.enabled }));
+      }
+    }).catch(() => {});
   }, []);
 
   const save = async (patch) => {
@@ -131,7 +140,8 @@ export function ProactiveSettings({ onBack }) {
       enabled: 'enabled', allowNight: 'allow_night',
       maxDaily: 'max_daily', cooldown: 'cooldown_minutes',
       maxBurst: 'max_burst', maxRounds: 'max_rounds',
-      roundInterval: 'round_interval_minutes', endOnReply: 'end_on_reply',
+      roundInterval: 'round_interval_minutes',       endOnReply: 'end_on_reply',
+      deliveryChannel: 'delivery_channel',
     };
     let patch;
     if (k === 'startTime') patch = { start_hour: parseInt(v.split(':')[0], 10) };
@@ -165,9 +175,41 @@ export function ProactiveSettings({ onBack }) {
         </div>
       ) : (
         <>
-          <SettingRow label="发送入口" sub="微信桥接开放前，主动消息只发送到 Remoire">
-            <Pill tone="neutral">Remoire</Pill>
+          <SettingRow label="发送入口" sub={cfg.deliveryChannel === 'imessage' ? '发到 iMessage；线路不通时改走网页通知' : '选一个入口。微信还不能用'}>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {[
+                { id: 'remoire', label: 'Remoire', disabled: false },
+                { id: 'imessage', label: 'iMessage', disabled: !cfg.imessageReady && cfg.deliveryChannel !== 'imessage' },
+                { id: 'wechat', label: '微信', disabled: true },
+              ].map(choice => {
+                const selected = cfg.deliveryChannel === choice.id;
+                return (
+                  <button
+                    key={choice.id}
+                    type="button"
+                    disabled={choice.disabled}
+                    aria-pressed={selected}
+                    onClick={() => {
+                      if (choice.disabled || choice.id === 'wechat') return;
+                      set('deliveryChannel', choice.id);
+                    }}
+                    style={{
+                      minHeight: 44, padding: '0 12px', borderRadius: 8,
+                      border: selected ? 'none' : '1px solid var(--border-light)',
+                      background: selected ? 'var(--accent)' : 'var(--bg-elevated)',
+                      color: selected ? 'var(--bubble-send-text)' : 'var(--text-secondary)',
+                      fontSize: 13, fontFamily: 'var(--font-body)',
+                      opacity: choice.disabled ? 0.45 : 1,
+                      cursor: choice.disabled ? 'default' : 'pointer',
+                    }}
+                  >{choice.label}</button>
+                );
+              })}
+            </div>
           </SettingRow>
+          {cfg.deliveryChannel !== 'imessage' && !cfg.imessageReady && (
+            <div style={{ fontSize: 12, color: 'var(--text-tertiary)', margin: '8px 0 12px' }}>iMessage 要等线路连上才能选。微信尚未开放。</div>
+          )}
 
           {/* 时间段 */}
           <SettingsSectionTitle title="时间段" />
@@ -722,6 +764,161 @@ export function ModelSettings({ onBack }) {
 // ═══════════════════════════════════════════
 // 4. 微信桥接
 // ═══════════════════════════════════════════
+export function ImessageSettings({ onBack }) {
+  const [cfg, setCfg] = useState({
+    enabled: false, project_id: '', owner_phone: '', line_phone: '',
+    secret_saved: false, status: 'unconfigured', status_detail: '',
+    merge_wait_seconds: 4, typing_ms_per_char: 45, failure_phrase_enabled: false,
+    last_inbound_at: '', last_outbound_at: '',
+  });
+  const [secret, setSecret] = useState('');
+  const [status, setStatus] = useState('正在读取…');
+
+  const load = useCallback(async () => {
+    const response = await apiFetch('/settings/imessage');
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.ok) throw new Error(apiErrorMessage(payload, '读取失败'));
+    setCfg(payload.data);
+    setSecret('');
+    setStatus('');
+  }, []);
+
+  useEffect(() => {
+    load().catch(() => setStatus('读取失败，请稍后重试。'));
+  }, [load]);
+
+  const save = async (patch, statusText = '已保存') => {
+    const response = await apiJsonFetch('/settings/imessage', {
+      method: 'PUT',
+      body: JSON.stringify(patch),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.ok) throw new Error(apiErrorMessage(payload, '保存失败'));
+    setCfg(payload.data);
+    setSecret('');
+    if (statusText) setStatus(statusText);
+  };
+
+  const saveRhythm = (next) => {
+    const merge_wait_seconds = Number(
+      next.merge_wait_seconds !== undefined ? next.merge_wait_seconds : cfg.merge_wait_seconds,
+    ) || 4;
+    const typing_ms_per_char = Number(
+      next.typing_ms_per_char !== undefined ? next.typing_ms_per_char : cfg.typing_ms_per_char,
+    ) || 45;
+    setCfg(current => ({ ...current, ...next }));
+    save({ merge_wait_seconds, typing_ms_per_char }, '节奏已保存').catch(err => setStatus(err.message));
+  };
+
+  const formatActivityTime = (raw) => {
+    if (!raw) return '';
+    const date = new Date(raw);
+    if (Number.isNaN(date.getTime())) return raw;
+    return date.toLocaleString('zh-CN', { hour12: false });
+  };
+
+  const statusText = (cfg.status === 'unconfigured' && cfg.line_phone)
+    ? '线路已开通，还没开始收发'
+    : ({
+      unconfigured: '未配置',
+      connecting: '连接中',
+      connected: '已连接',
+      line_changed: '线路号码已变化，请重新开通',
+      failed: '失败',
+    }[cfg.status] || '未配置');
+
+  return (
+    <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px 88px' }}>
+      <SubPageHeader onBack={onBack} title="iMessage 连接" subtitle="短信和网页用同一份记忆、同一份关系档案" />
+      {status && <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 8 }}>{status}</div>}
+      <SettingRow label="启用" sub="关掉后不收短信，也不从这里发出去">
+        <SettingsToggle on={!!cfg.enabled} onChange={value => save({ enabled: value }).catch(err => setStatus(err.message))} />
+      </SettingRow>
+      <div style={{ fontSize: 13, color: 'var(--text-secondary)', margin: '8px 0 12px' }}>
+        状态：{statusText}{cfg.status_detail ? ` · ${cfg.status_detail}` : ''}
+      </div>
+      <label style={{ display: 'block', fontSize: 12, color: 'var(--text-secondary)', marginBottom: 6 }}>Project ID</label>
+      <input value={cfg.project_id || ''} onChange={e => setCfg(current => ({ ...current, project_id: e.target.value }))}
+        style={fieldStyle} />
+      <label style={{ display: 'block', fontSize: 12, color: 'var(--text-secondary)', margin: '12px 0 6px' }}>Project Secret</label>
+      <input value={secret} type="password" placeholder={cfg.secret_saved ? '已保存，留空则不修改' : '填写后只保存在服务器'}
+        onChange={e => setSecret(e.target.value)} style={fieldStyle} autoComplete="off" />
+      <label style={{ display: 'block', fontSize: 12, color: 'var(--text-secondary)', margin: '12px 0 6px' }}>你的手机号</label>
+      <input value={cfg.owner_phone || ''} onChange={e => setCfg(current => ({ ...current, owner_phone: e.target.value }))}
+        placeholder="+8613800138000" style={fieldStyle} />
+      <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 8 }}>
+        线路号码：{cfg.line_phone || '还没有'}。只有这个手机号发来的短信会进入记忆。
+      </div>
+      <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+        <button type="button" onClick={() => save({
+          project_id: cfg.project_id,
+          owner_phone: cfg.owner_phone,
+          ...(secret ? { project_secret: secret } : {}),
+          merge_wait_seconds: Number(cfg.merge_wait_seconds) || 4,
+          typing_ms_per_char: Number(cfg.typing_ms_per_char) || 45,
+          failure_phrase_enabled: !!cfg.failure_phrase_enabled,
+        }).catch(err => setStatus(err.message))} style={actionStyle}>保存</button>
+        <button type="button" onClick={async () => {
+          setStatus('正在开通线路…');
+          try {
+            const response = await apiJsonFetch('/settings/imessage/enroll', { method: 'POST', body: '{}' });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || !payload.ok) throw new Error(apiErrorMessage(payload, '开通失败'));
+            setCfg(payload.data);
+            setStatus('线路已开通');
+          } catch (err) {
+            setStatus(err.message);
+          }
+        }} style={actionStyle}>开通线路</button>
+      </div>
+      <SettingsSectionTitle title="节奏" />
+      <SettingRow label="连发合并" sub="最后一条之后再等这么多秒">
+        <select aria-label="连发合并秒数" value={cfg.merge_wait_seconds || 4}
+          onChange={e => saveRhythm({ merge_wait_seconds: Number(e.target.value) })}
+          style={selectStyle}>
+          {[2, 3, 4, 6, 8, 10].map(value => <option key={value} value={value}>{value} 秒</option>)}
+        </select>
+      </SettingRow>
+      <SettingRow label="打字速度" sub="每字停顿，实际会夹在 0.8 到 6 秒">
+        <select aria-label="打字速度" value={cfg.typing_ms_per_char || 45}
+          onChange={e => saveRhythm({ typing_ms_per_char: Number(e.target.value) })}
+          style={selectStyle}>
+          {[30, 45, 70, 100].map(value => <option key={value} value={value}>{value} 毫秒</option>)}
+        </select>
+      </SettingRow>
+      <SettingRow label="出错时发一句" sub="默认关。打开后只说信号有点卡，不发技术报错">
+        <SettingsToggle on={!!cfg.failure_phrase_enabled} onChange={value => {
+          setCfg(current => ({ ...current, failure_phrase_enabled: value }));
+          save({ failure_phrase_enabled: value }).catch(err => setStatus(err.message));
+        }} />
+      </SettingRow>
+      {(cfg.last_inbound_at || cfg.last_outbound_at) && (
+        <div style={{ fontSize: 12, color: 'var(--text-tertiary)', lineHeight: 1.8, marginTop: 16 }}>
+          {cfg.last_inbound_at && <div>最近收到：{formatActivityTime(cfg.last_inbound_at)}</div>}
+          {cfg.last_outbound_at && <div>最近发出：{formatActivityTime(cfg.last_outbound_at)}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const fieldStyle = {
+  width: '100%', minHeight: 44, padding: '8px 10px', boxSizing: 'border-box',
+  borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)',
+  background: 'var(--bg-elevated)', color: 'var(--text-primary)', fontSize: 14,
+  fontFamily: 'var(--font-body)',
+};
+const selectStyle = {
+  minHeight: 44, padding: '6px 10px', borderRadius: 'var(--radius-sm)',
+  border: '1px solid var(--border-light)', background: 'var(--bg-elevated)',
+  color: 'var(--text-primary)', fontSize: 13, fontFamily: 'var(--font-body)',
+};
+const actionStyle = {
+  minHeight: 44, padding: '0 16px', borderRadius: 8, border: '1px solid var(--border)',
+  background: 'var(--bg-elevated)', color: 'var(--text-primary)', fontSize: 14,
+  fontFamily: 'var(--font-body)', cursor: 'pointer',
+};
+
 export function WeChatSettings({ onBack }) {
   return (
     <div style={{ overflowY: 'auto', height: '100%', padding: '16px 20px 88px' }}>

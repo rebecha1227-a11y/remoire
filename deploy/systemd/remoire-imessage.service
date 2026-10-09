@@ -1,0 +1,18 @@
+[Unit]
+Description=Remoire iMessage courier
+After=network-online.target remoire.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/remoire/backend/imessage_bridge
+Environment=REMOIRE_API_BASE=http://127.0.0.1:8000
+EnvironmentFile=-/opt/remoire/backend/.env
+ExecStart=/usr/bin/node /opt/remoire/backend/imessage_bridge/index.mjs
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

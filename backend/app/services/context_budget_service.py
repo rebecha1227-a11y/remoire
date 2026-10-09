@@ -127,7 +127,7 @@ async def get_history_after_summary(
     async with get_db() as db:
         async with db.execute(
             """SELECT rowid AS message_rowid, id, role, content, thinking, image,
-                      display_mode, created_at
+                      display_mode, channel, created_at
                FROM messages
                WHERE conversation_id = ? AND rowid > ?
                ORDER BY rowid DESC LIMIT ?""",

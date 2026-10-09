@@ -14,7 +14,7 @@ function getDayCount() {
 }
 import {
   ProactiveSettings, PromptSettings, ModelSettings,
-  WeChatSettings, MCPSettings, ImportSettings, PushSettings, DatesSettings, ExportSettings,
+  WeChatSettings, ImessageSettings, MCPSettings, ImportSettings, PushSettings, DatesSettings, ExportSettings,
   BubbleSettings, NoteSettings, CoverSettings, FontSettings,
   NoteHistorySettings, MemoryCandidatesSettings,
 } from './SettingsSubPages';
@@ -32,6 +32,7 @@ export default function SettingsPage({ tweaks, nav }) {
       model: ModelSettings,
       prompt: PromptSettings,
       wechat: WeChatSettings,
+      imessage: ImessageSettings,
       mcp: MCPSettings,
       import: ImportSettings,
       push: PushSettings,
@@ -95,6 +96,7 @@ export default function SettingsPage({ tweaks, nav }) {
       <div className="r-glass" style={{ position: 'relative' }}>
         <SettingsSectionTitle title="连接与数据" />
         <SettingRow label="微信桥接" sub="规划中 · 尚未开放" onClick={() => setPanel('wechat')}><ChevronRight /></SettingRow>
+        <SettingRow label="iMessage 连接" sub="Photon 线路 · 和网页共用记忆" onClick={() => setPanel('imessage')}><ChevronRight /></SettingRow>
         <SettingRow label="MCP 跨平台同步" sub="连接 ChatGPT 等支持 MCP 的客户端" onClick={() => setPanel('mcp')}><ChevronRight /></SettingRow>
         <SettingRow label="导入历史对话" sub="规划中 · 尚未开放" onClick={() => setPanel('import')}><ChevronRight /></SettingRow>
         <SettingRow label="消息推送" sub="Web Push 通知设置" onClick={() => setPanel('push')}><ChevronRight /></SettingRow>

@@ -4,6 +4,14 @@
 
 一个两人专属的 AI 陪伴 PWA——不是工具，是关系空间。
 
+## 2026-10-09 iMessage 桥（已发布生产）
+
+- 已发布到生产，见 `docs/DEPLOYMENT-2026-10-09-IMESSAGE.md`：服务 `remoire-imessage` 用独立 Node 22，生产库状态 connected；本机小邮差已停用，不要在本机再启动，否则会和生产抢线路。生产真机收发待验收。
+
+- Photon 只负责收发。文字走现有聊天、同一张记忆表和同一份关系档案；网页对话用 `messages.channel` 标出入口。只接受设置里登记的手机号。
+- 本机 Node 小邮差在 `backend/imessage_bridge/`，凭据用现有 Fernet 存在 `imessage_accounts`，不进前端回显。主动消息可选 Remoire / iMessage，微信仍不可选；线路不通时改走网页通知。
+- 本地完整回归 112 项通过，前端已构建。没有部署。2026-10-09 本机已接真实 Photon 线路，iPhone 发短信后收到 Connie 回复（日常槽改用 Youkies 的 Claude Opus 4.6 后成功；此前旧 waooapi 返回 403，表现为已读不回）。这台电脑必须开着，小邮差才在线；生产尚未接入。
+
 ## 2026-10-08 关系档案 UI 复核（未部署）
 
 - 用户要求与现有组件统一、注意字体大小，并先打开本地浏览器检查。已复用 SubPageHeader/Card/SettingsToggle，Noto Serif SC；移除前端原稿资料入口和 API 下发。

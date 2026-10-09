@@ -179,6 +179,18 @@ class ProactiveSettingsRequest(BaseModel):
     round_interval_minutes: int | None = Field(default=None, ge=5, le=1440)
     end_on_reply: bool | None = None
     types_json: str | None = Field(default=None, max_length=500)
+    delivery_channel: str | None = Field(default=None, max_length=32)
+
+    @field_validator("delivery_channel")
+    @classmethod
+    def validate_delivery_channel(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if value == "wechat":
+            raise ValueError("微信入口尚未开放")
+        if value not in {"remoire", "imessage"}:
+            raise ValueError("发送入口不正确")
+        return value
 
     @field_validator("types_json")
     @classmethod
@@ -237,8 +249,13 @@ async def update_proactive_settings(req: ProactiveSettingsRequest, _=Depends(ver
     allowed_columns = {
         "enabled", "start_hour", "end_hour", "allow_night", "max_daily",
         "cooldown_minutes", "max_burst", "max_rounds", "round_interval_minutes",
-        "end_on_reply", "types_json",
+        "end_on_reply", "types_json", "delivery_channel",
     }
+    if req.delivery_channel == "imessage":
+        from app.services.imessage_service import get_account
+        account = await get_account()
+        if not (account.get("enabled") and account.get("status") == "connected"):
+            raise HTTPException(status_code=400, detail="iMessage 线路还没连上")
     for key in fields:
         if key not in allowed_columns:
             raise HTTPException(status_code=400, detail="主动消息设置包含未知字段")

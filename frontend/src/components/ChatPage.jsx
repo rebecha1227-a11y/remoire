@@ -495,21 +495,21 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
             if (m.role === 'assistant') {
               const mode = m.display_mode || 'split';
               if (mode === 'whole') {
-                const msgObj = { id: ++msgIdRef.current, role: 'ai', text: m.content.trim(), time, type: 'normal', formatted: true };
+                const msgObj = { id: ++msgIdRef.current, role: 'ai', text: m.content.trim(), time, type: 'normal', formatted: true, channel: m.channel || 'remoire' };
                 if (m.thinking) msgObj.thinking = m.thinking;
                 loaded.push(msgObj);
               } else {
                 const segments = m.content.split('\n\n').map(s => s.trim()).filter(s => s.length > 0);
                 for (let si = 0; si < segments.length; si++) {
-                  const msgObj = { id: ++msgIdRef.current, role: 'ai', text: segments[si], time, type: 'normal' };
+                  const msgObj = { id: ++msgIdRef.current, role: 'ai', text: segments[si], time, type: 'normal', channel: m.channel || 'remoire' };
                   if (si === 0 && m.thinking) msgObj.thinking = m.thinking;
                   loaded.push(msgObj);
                 }
               }
-            } else if (m.content.startsWith('静儿修改')) {
-              loaded.push({ id: ++msgIdRef.current, role: 'system', text: m.content, time });
+            } else if (m.role === 'system' || m.content.startsWith('静儿修改')) {
+              loaded.push({ id: ++msgIdRef.current, role: 'system', text: m.content, time, channel: m.channel || '' });
             } else {
-              const userMsg = { id: ++msgIdRef.current, role: 'user', text: m.content, time, type: 'normal' };
+              const userMsg = { id: ++msgIdRef.current, role: 'user', text: m.content, time, type: 'normal', channel: m.channel || 'remoire' };
               if (m.image) userMsg.image = m.image;
               else if (m.image_id) userMsg.image = `${API_BASE}/chat/image/${m.image_id}`;
               loaded.push(userMsg);

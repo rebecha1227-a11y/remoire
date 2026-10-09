@@ -36,6 +36,7 @@ async def _get_settings() -> dict:
     d["enabled"] = bool(d.get("enabled", 1))
     d["allow_night"] = bool(d.get("allow_night", 0))
     d["end_on_reply"] = bool(d.get("end_on_reply", 1))
+    d["delivery_channel"] = d.get("delivery_channel") or "remoire"
     return d
 
 
@@ -279,6 +280,10 @@ async def generate_autonomous_activity(conversation_id: str, mode: str = "light"
         nudge_prompt = _load_prompt("nudge.md")
         if nudge_prompt:
             autonomous_prompt += "\n\n---\n\n" + nudge_prompt
+        proactive_cfg = await _get_settings()
+        if proactive_cfg.get("delivery_channel") == "imessage":
+            from app.services.imessage_format import NUDGE_CHANNEL_NOTE
+            autonomous_prompt += "\n\n" + NUDGE_CHANNEL_NOTE
 
     if message_blocked_reason:
         autonomous_prompt += f"\n\n（你现在不能给静儿发消息——{message_blocked_reason}。如果你想跟她说什么，只能先憋着，或者留张纸条等她看到。）"
@@ -478,7 +483,12 @@ async def send_nudge(conversation_id: str, content: str, thinking: str = "") -> 
     if not content.strip():
         return 0
 
-    await save_message(conversation_id, "assistant", content, thinking=thinking, display_mode="split")
+    cfg = await _get_settings()
+    if cfg.get("delivery_channel") == "imessage":
+        from app.services.imessage_service import deliver_proactive
+        return await deliver_proactive(conversation_id, content, thinking)
+
+    await save_message(conversation_id, "assistant", content, thinking=thinking, display_mode="split", channel="remoire")
 
     preview = content[:60].split("\n")[0]
     try:

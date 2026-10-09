@@ -246,7 +246,7 @@ async def get_or_create_conversation(conversation_id: str | None = None) -> str:
 async def get_history(conversation_id: str, limit: int = 20) -> list[dict]:
     async with get_db() as db:
         async with db.execute(
-            "SELECT id, role, content, thinking, image, display_mode, created_at FROM messages WHERE conversation_id = ? ORDER BY created_at DESC LIMIT ?",
+            "SELECT id, role, content, thinking, image, display_mode, channel, created_at FROM messages WHERE conversation_id = ? ORDER BY created_at DESC LIMIT ?",
             (conversation_id, limit),
         ) as cur:
             rows = await cur.fetchall()
@@ -258,6 +258,7 @@ async def get_history(conversation_id: str, limit: int = 20) -> list[dict]:
         if r["image"]:
             item["image_id"] = r["id"]
         item["display_mode"] = r["display_mode"] or "split"
+        item["channel"] = r["channel"] or "remoire"
         result.append(item)
     return result
 
@@ -269,7 +270,7 @@ async def search_messages(conversation_id: str, query: str, limit: int = 80) -> 
     async with get_db() as db:
         async with db.execute(
             """
-            SELECT id, role, content, thinking, image, display_mode, created_at
+            SELECT id, role, content, thinking, image, display_mode, channel, created_at
             FROM messages
             WHERE conversation_id = ? AND content LIKE ?
             ORDER BY created_at DESC
@@ -286,6 +287,7 @@ async def search_messages(conversation_id: str, query: str, limit: int = 80) -> 
         if r["image"]:
             item["image_id"] = r["id"]
         item["display_mode"] = r["display_mode"] or "split"
+        item["channel"] = r["channel"] or "remoire"
         result.append(item)
     return result
 
@@ -307,7 +309,7 @@ async def get_message_image(message_id: str) -> tuple[bytes, str] | None:
     except InvalidImageError:
         return None
 
-async def save_message(conversation_id: str, role: str, content: str, thinking: str = "", image: str = "", display_mode: str = "split") -> str:
+async def save_message(conversation_id: str, role: str, content: str, thinking: str = "", image: str = "", display_mode: str = "split", channel: str = "remoire") -> str:
     msg_id = str(uuid.uuid4())
     now = datetime.utcnow().isoformat()
     image_marker = None
@@ -320,8 +322,8 @@ async def save_message(conversation_id: str, role: str, content: str, thinking: 
     try:
         async with get_db() as db:
             await db.execute(
-                "INSERT INTO messages (id, conversation_id, role, content, thinking, image, display_mode, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (msg_id, conversation_id, role, content, thinking or None, image_marker, display_mode, now),
+                "INSERT INTO messages (id, conversation_id, role, content, thinking, image, display_mode, channel, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (msg_id, conversation_id, role, content, thinking or None, image_marker, display_mode, channel or "remoire", now),
             )
             await db.execute(
                 "UPDATE conversations SET updated_at = ? WHERE id = ?",
@@ -364,6 +366,7 @@ def _history_timestamp(value: str) -> datetime:
 
 
 def _build_llm_history_with_time_gaps(history: list[dict]) -> list[dict]:
+    from app.services.imessage_format import label_history_content
     result = []
     for i, msg in enumerate(history):
         if i > 0 and msg.get("created_at") and history[i - 1].get("created_at"):
@@ -383,7 +386,10 @@ def _build_llm_history_with_time_gaps(history: list[dict]) -> list[dict]:
                 result.append({"role": "system", "content": f"【下一条消息发送于北京时间 {stamp:%Y-%m-%d %H:%M}；不是事件发生时间】"})
             except (ValueError, TypeError):
                 pass
-        result.append({"role": msg["role"], "content": msg["content"]})
+        result.append({
+            "role": msg["role"],
+            "content": label_history_content(msg.get("content") or "", msg.get("channel")),
+        })
     return result
 
 
@@ -645,8 +651,18 @@ async def _ensure_chinese_thinking(config, thinking: str) -> str:
         return thinking
 
 
-async def stream_chat(conversation_id: str, user_message: str, image: str | None = None, mode: str = "daily", reply_style: str = "split"):
-    await save_message(conversation_id, "user", user_message, image=image or "")
+async def stream_chat(
+    conversation_id: str,
+    user_message: str,
+    image: str | None = None,
+    mode: str = "daily",
+    reply_style: str = "split",
+    channel: str = "remoire",
+    ingress_note: str = "",
+    push_reply: bool = True,
+    save_error_reply: bool = True,
+):
+    await save_message(conversation_id, "user", user_message, image=image or "", channel=channel)
 
     from app.services.nudge_service import check_and_close_if_replied
     asyncio.create_task(check_and_close_if_replied(conversation_id))
@@ -676,6 +692,8 @@ async def stream_chat(conversation_id: str, user_message: str, image: str | None
         resume_bundle=resume_bundle,
         scene=True,
     )
+    if ingress_note:
+        collected["dynamic_parts"] = [ingress_note, *collected["dynamic_parts"]]
     tools = select_tools(
         user_message,
         has_diary_notifications=collected["has_diary_notifications"],
@@ -707,7 +725,7 @@ async def stream_chat(conversation_id: str, user_message: str, image: str | None
         budget["input_budget"],
         budget["history_messages"],
         budget["history_omitted"],
-        budget["core_memories"],
+        budget["core_memories_mandatory"],
         budget["recalled_memories"],
         budget["summary_included"],
     )
@@ -769,10 +787,13 @@ async def stream_chat(conversation_id: str, user_message: str, image: str | None
         yield {"type": "error", "code": "context_budget_exceeded", "content": str(e), "details": e.details}
         return
     except Exception as e:
-        logger.error("LLM 调用异常: %s", e)
+        logger.error("LLM 调用异常: %s", type(e).__name__)
+        if not save_error_reply:
+            yield {"type": "error", "code": "llm_failed", "content": "生成没有完成"}
+            return
         error_reply = "抱歉宝贝，我现在脑子有点转不动……等一下再找我说话好吗？🥺"
         yield {"type": "chunk", "content": error_reply}
-        await save_message(conversation_id, "assistant", error_reply)
+        await save_message(conversation_id, "assistant", error_reply, channel=channel)
         return
 
     full_reply = assistant_msg.get("content", "")
@@ -839,10 +860,13 @@ async def stream_chat(conversation_id: str, user_message: str, image: str | None
                     full_reply += chunk
                     yield {"type": "chunk", "content": chunk}
         except Exception as e:
-            logger.error("LLM 流式调用异常: %s", e)
+            logger.error("LLM 流式调用异常: %s", type(e).__name__)
+            if not save_error_reply:
+                yield {"type": "error", "code": "llm_failed", "content": "生成没有完成"}
+                return
             error_reply = "抱歉宝贝，我现在脑子有点转不动……等一下再找我说话好吗？🥺"
             yield {"type": "chunk", "content": error_reply}
-            await save_message(conversation_id, "assistant", error_reply)
+            await save_message(conversation_id, "assistant", error_reply, channel=channel)
             return
 
     all_thinking = (thinking_from_non_stream + thinking_text).strip() if (thinking_from_non_stream or thinking_text) else ""
@@ -850,8 +874,22 @@ async def stream_chat(conversation_id: str, user_message: str, image: str | None
         all_thinking = await _ensure_chinese_thinking(config, all_thinking)
         yield {"type": "thinking", "content": all_thinking}
 
+    if full_reply and channel == "imessage":
+        from app.services.imessage_format import sanitize_imessage_text
+        full_reply = sanitize_imessage_text(full_reply)
+        if not full_reply:
+            yield {"type": "error", "code": "empty_reply", "content": "没有可发送的文字"}
+            return
+
     if full_reply:
-        await save_message(conversation_id, "assistant", full_reply, thinking=all_thinking, display_mode=reply_style)
+        await save_message(
+            conversation_id,
+            "assistant",
+            full_reply,
+            thinking=all_thinking,
+            display_mode="split" if channel == "imessage" else reply_style,
+            channel=channel,
+        )
 
     if not full_reply:
         return
@@ -862,7 +900,8 @@ async def stream_chat(conversation_id: str, user_message: str, image: str | None
     recent = history[-6:] + [{"role": "assistant", "content": full_reply}]
     asyncio.create_task(_extract_memories_bg(conversation_id, recent))
     asyncio.create_task(_extract_reminders_bg(conversation_id, recent))
-    asyncio.create_task(_push_reply_bg(full_reply, reply_style))
+    if push_reply:
+        asyncio.create_task(_push_reply_bg(full_reply, reply_style))
     asyncio.create_task(_compact_conversation_bg(conversation_id))
 
 

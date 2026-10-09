@@ -14,7 +14,7 @@ from apscheduler.triggers.date import DateTrigger
 from app.database import init_db
 from app.auth import verify_token
 from app.config import ALLOWED_HOSTS, TRUSTED_ORIGINS
-from app.routers import auth, chat, memory, diary, note, settings, reminder, push, signal, autonomous, prompt_profiles
+from app.routers import auth, chat, memory, diary, note, settings, reminder, push, signal, autonomous, prompt_profiles, imessage
 from app.scheduler.jobs import connie_auto_diary, catchup_missed_diary, generate_breath_state, decay_memories, digest_memories
 from app.services.nudge_service import run_autonomous_check
 from app.services.model_settings_service import migrate_preset_secrets
@@ -178,6 +178,7 @@ app.include_router(reminder.router)
 app.include_router(push.router)
 app.include_router(signal.router)
 app.include_router(autonomous.router)
+app.include_router(imessage.router)
 
 @app.get("/")
 async def root():

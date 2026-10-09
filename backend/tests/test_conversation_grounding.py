@@ -33,7 +33,10 @@ class GroundingTests(unittest.IsolatedAsyncioTestCase):
             result = chat._build_llm_history_with_time_gaps([{'role': 'user', 'content': '今天', 'created_at': value}])
             self.assertIn('2026-10-05 00:05', result[0]['content'])
         msg = {'role': 'user', 'content': '没有时间信息'}
-        self.assertEqual(chat._build_llm_history_with_time_gaps([msg]), [msg])
+        self.assertEqual(
+            chat._build_llm_history_with_time_gaps([msg]),
+            [{'role': 'user', 'content': '没有时间信息'}],
+        )
 
     async def test_autonomous_does_not_publish_provider_reasoning_or_send_think_messages(self):
         response = {
@@ -79,7 +82,8 @@ class GroundingTests(unittest.IsolatedAsyncioTestCase):
                     'created_at': '2026-10-04T16:05:00'}]
         result = chat._build_llm_history_with_time_gaps(history)
         self.assertIn('2026-10-05 00:05', result[0]['content'])
-        self.assertEqual(result[-1], {'role': 'user', 'content': history[0]['content']})
+        self.assertEqual(result[-1]["role"], "user")
+        self.assertEqual(result[-1]["content"], history[0]["content"])
 
     async def test_runtime_prompt_does_not_treat_consciousness_as_confirmed_fact(self):
         with patch.object(chat.weather_service, 'get_latest', AsyncMock(return_value=None)), \

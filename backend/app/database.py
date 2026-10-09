@@ -47,6 +47,7 @@ async def init_db():
                 thinking TEXT,
                 image TEXT,
                 channel TEXT,
+                display_mode TEXT DEFAULT 'split',
                 created_at TEXT NOT NULL
             );
 
@@ -430,6 +431,8 @@ async def init_db():
             "ALTER TABLE proactive_message_settings ADD COLUMN round_interval_minutes INTEGER NOT NULL DEFAULT 30",
             "ALTER TABLE proactive_message_settings ADD COLUMN end_on_reply INTEGER NOT NULL DEFAULT 1",
             "ALTER TABLE proactive_message_settings ADD COLUMN types_json TEXT DEFAULT '{\"care\":true,\"reminder\":true,\"followup\":true,\"special\":true}'",
+            "ALTER TABLE proactive_message_settings ADD COLUMN delivery_channel TEXT NOT NULL DEFAULT 'remoire'",
+            "ALTER TABLE messages ADD COLUMN display_mode TEXT DEFAULT 'split'",
         ]:
             try:
                 await db.execute(col_sql)
@@ -461,6 +464,50 @@ async def init_db():
                 await db.execute(idx_sql)
             except Exception:
                 pass
+        await db.executescript("""
+            CREATE TABLE IF NOT EXISTS imessage_accounts (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                enabled INTEGER NOT NULL DEFAULT 0,
+                project_id TEXT NOT NULL DEFAULT '',
+                project_secret TEXT NOT NULL DEFAULT '',
+                owner_phone TEXT NOT NULL DEFAULT '',
+                line_phone TEXT NOT NULL DEFAULT '',
+                chat_guid TEXT NOT NULL DEFAULT '',
+                merge_wait_seconds INTEGER NOT NULL DEFAULT 4,
+                typing_ms_per_char INTEGER NOT NULL DEFAULT 45,
+                failure_phrase_enabled INTEGER NOT NULL DEFAULT 0,
+                status TEXT NOT NULL DEFAULT 'unconfigured',
+                status_detail TEXT NOT NULL DEFAULT '',
+                last_inbound_at TEXT,
+                last_outbound_at TEXT,
+                updated_at TEXT NOT NULL DEFAULT ''
+            );
+
+            CREATE TABLE IF NOT EXISTS imessage_inbox (
+                external_id TEXT PRIMARY KEY,
+                accepted INTEGER NOT NULL,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS imessage_outbox (
+                id TEXT PRIMARY KEY,
+                conversation_id TEXT,
+                message_id TEXT,
+                kind TEXT NOT NULL,
+                body TEXT NOT NULL DEFAULT '',
+                ref_id TEXT NOT NULL DEFAULT '',
+                chat_guid TEXT NOT NULL DEFAULT '',
+                delay_ms INTEGER NOT NULL DEFAULT 0,
+                sequence INTEGER NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                attempts INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_imessage_outbox_pending
+                ON imessage_outbox(status, sequence);
+        """)
         await db.execute("UPDATE memories SET layer = 'core' WHERE pinned = 1 AND layer = 'long'")
         async with db.execute(
             "SELECT 1 FROM schema_migrations WHERE version = ?",
