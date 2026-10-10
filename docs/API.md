@@ -1434,3 +1434,10 @@ Web Push 通知，让用户在不看 Remoire 页面时也能收到 Connie 的消
 ```
 
 推送失败（endpoint 过期/权限取消）时自动删除对应订阅记录。
+
+
+## 2026-10-10 iMessage 交互增量（本地未发布）
+
+内部桥接入站增加 kind=text/reaction、reply_to、quote_text、target_id、emoji、target_text；仍需 X-Remoire-Bridge 并校验登记手机号。出站 ACK 可带 external_id，用于气泡 ID 映射。新增 kind=reply/reaction 出站动作由 Node 适配。
+
+`GET /api/chat/history` 可返回 imessage_bubbles（external_id、body、quote）。不向网页下发 Tapback 数据；网页无表情入口。见 `IMESSAGE-INTERACTIONS-2026-10-10.md`。

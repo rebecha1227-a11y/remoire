@@ -14,7 +14,7 @@ from app.auth import verify_token
 from app.database import init_db
 from app.routers import imessage as imessage_router
 from app.routers import settings as settings_router
-from app.services import chat_service, imessage_service, model_settings_service, nudge_service
+from app.services import imessage_interactions, chat_service, imessage_service, model_settings_service, nudge_service
 from app.services.chat_service import _build_llm_history_with_time_gaps
 from app.services.imessage_format import bubble_delay_ms, sanitize_bubbles
 
@@ -73,7 +73,10 @@ class ImessageBridgeTests(unittest.IsolatedAsyncioTestCase):
     async def test_merge_timer_still_sends_a_reply(self):
         await self._enable()
         imessage_service._STATE["auto_fire"] = True
-        with patch.object(imessage_service.asyncio, "sleep", new=AsyncMock()):
+        async def elapse(_seconds):
+            imessage_service._STATE["last_received"] = 0
+
+        with patch.object(imessage_service.asyncio, "sleep", new=elapse):
             await imessage_service.accept_inbound(
                 external_id="timer-1",
                 sender="+8613800138000",
@@ -149,32 +152,205 @@ class ImessageBridgeTests(unittest.IsolatedAsyncioTestCase):
                 users = (await cur.fetchone())["n"]
         self.assertEqual(users, 1)
 
-    async def test_a_new_message_waits_until_the_current_turn_finishes(self):
+    async def test_followups_during_generation_replace_obsolete_reply(self):
         await self._enable()
         started = asyncio.Event()
         release = asyncio.Event()
+        calls = []
 
-        async def slow_llm(*_args, **_kwargs):
-            started.set()
-            await release.wait()
-            return {"content": "先回这句", "tool_calls": None}
+        async def slow_llm(*args, **_kwargs):
+            calls.append(args[1])
+            if len(calls) == 1:
+                started.set()
+                await release.wait()
+                return {"content": "旧回答", "tool_calls": None}
+            return {"content": "一起回答", "tool_calls": None}
 
         self.llm.side_effect = slow_llm
         await imessage_service.accept_inbound(external_id="first", sender="+8613800138000", text="先说", chat_guid="c")
         first = asyncio.create_task(imessage_service.flush_pending())
         await started.wait()
         await imessage_service.accept_inbound(external_id="second", sender="+8613800138000", text="再说", chat_guid="c")
+        # A second consumer waiting for the lock must not steal pending input.
+        second = asyncio.create_task(imessage_service.flush_pending())
+        await asyncio.sleep(0)
+        await imessage_service.accept_inbound(external_id="third", sender="+8613800138000", text="补充", chat_guid="c")
         release.set()
-        await first
-        self.llm.side_effect = None
-        self.llm.return_value = {"content": "后回这句", "tool_calls": None}
+        await asyncio.gather(first, second)
+        await self._drain_background()
+        self.assertEqual(len(calls), 2)
+        users = [m["content"] for m in calls[-1] if m["role"] == "user"]
+        self.assertTrue(any("先说" in text for text in users))
+        self.assertTrue(any("再说\n补充" in text for text in users))
+        actions = await imessage_service.pending_actions()
+        self.assertEqual([a["body"] for a in actions if a["kind"] == "send"], ["一起回答"])
+        async with database.get_db() as db:
+            async with db.execute("SELECT content FROM messages WHERE role = 'assistant'") as cur:
+                self.assertEqual([r["content"] for r in await cur.fetchall()], ["一起回答"])
+        self.extract.assert_awaited_once()
+
+    async def test_superseded_tool_request_is_not_executed(self):
+        await self._enable()
+        calls = 0
+
+        async def tool_reply(*_args, **_kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                await imessage_service.accept_inbound(external_id="tool-b", sender="+8613800138000", text="先别做")
+                return {"content": "", "tool_calls": [{"id": "t1", "function": {"name": "leave_note", "arguments": "{}"}}]}
+            return {"content": "好的", "tool_calls": None}
+
+        self.llm.side_effect = tool_reply
+        with patch.object(chat_service, "execute_tool", new=AsyncMock()) as execute:
+            await imessage_service.accept_inbound(external_id="tool-a", sender="+8613800138000", text="留纸条")
+            await imessage_service.flush_pending()
+            await self._drain_background()
+            execute.assert_not_awaited()
+        self.assertEqual(calls, 2)
+
+    async def test_debounce_rechecks_last_arrival_without_cancelling_worker(self):
+        await self._enable()
+        imessage_service._STATE["auto_fire"] = True
+        sleeps = []
+
+        async def elapse(seconds):
+            sleeps.append(seconds)
+            if len(sleeps) == 1:
+                worker = imessage_service._STATE["task"]
+                await imessage_service.accept_inbound(external_id="timer-b", sender="+8613800138000", text="第二句")
+                self.assertIs(imessage_service._STATE["task"], worker)
+                self.assertFalse(worker.cancelling())
+            else:
+                imessage_service._STATE["last_received"] = 0
+
+        with patch.object(imessage_service.asyncio, "sleep", new=elapse):
+            await imessage_service.accept_inbound(external_id="timer-a", sender="+8613800138000", text="第一句")
+            await self._drain_background()
+        self.assertEqual(len(sleeps), 2)
+        self.assertEqual(self.llm.await_count, 1)
+        users = [m["content"] for m in self.llm.await_args.args[1] if m["role"] == "user"]
+        self.assertTrue(any("第一句\n第二句" in text for text in users))
+
+    async def test_empty_event_does_not_supersede_generation(self):
+        await self._enable()
+        result = await imessage_service.accept_inbound(external_id="empty", sender="+8613800138000", text=" ")
+        self.assertEqual(result.get("ignored"), "empty_text")
+        self.assertTrue(await imessage_service._reply_is_current())
+        self.assertEqual(imessage_service._STATE["last_received"], 0)
+
+    async def test_quote_reaction_tools_and_ack_preserve_bubble_identity(self):
+        await self._enable()
+        self.llm.side_effect = [
+            {"content": "", "tool_calls": [
+                {"id": "t1", "function": {"name": "imessage_reply_to", "arguments": '{"target_id":"quoted-u"}'}},
+                {"id": "t2", "function": {"name": "imessage_react", "arguments": '{"target_id":"quoted-u","reaction":"love"}'}},
+            ]},
+            {"content": "这一句的回答", "tool_calls": None},
+        ]
+        await imessage_service.accept_inbound(external_id="quoted-u", sender="+8613800138000", text="说的是那一句", chat_guid="c", reply_to="old-a", quote_text="旧引用内容")
         await imessage_service.flush_pending()
         await self._drain_background()
+        actions = await imessage_service.pending_actions()
+        reply = next(a for a in actions if a["kind"] == "reply")
+        reaction = next(a for a in actions if a["kind"] == "reaction")
+        self.assertEqual(reply["ref_id"], "quoted-u")
+        self.assertEqual(reaction["body"], "❤️")
+        await imessage_service.ack_action(reply["id"], True, external_id="sent-a")
+        await imessage_service.ack_action(reply["id"], True, external_id="sent-a")
+        await imessage_service.ack_action(reaction["id"], True, external_id="react-a")
+        conv = await imessage_service._latest_conversation_id()
+        history = await imessage_interactions.enrich_history(await chat_service.get_history(conv))
+        user_bubble = history[0]["imessage_bubbles"][0]
+        self.assertEqual(user_bubble["quote"], "旧引用内容")
+        self.assertNotIn("reactions", user_bubble)
         async with database.get_db() as db:
-            async with db.execute("SELECT role, content FROM messages ORDER BY created_at") as cur:
-                rows = [dict(row) for row in await cur.fetchall()]
-        user_texts = [row["content"] for row in rows if row["role"] == "user"]
-        self.assertEqual(user_texts, ["先说", "再说"])
+            async with db.execute("SELECT emoji FROM imessage_reactions WHERE actor='assistant'") as cur:
+                self.assertEqual((await cur.fetchone())["emoji"], "❤️")
+        self.assertEqual(history[1]["imessage_bubbles"][0]["quote"], "说的是那一句")
+        self.assertEqual(history[1]["imessage_bubbles"][0]["external_id"], "sent-a")
+        self.assertEqual(len(history[1]["imessage_bubbles"]), 1)
+
+    async def test_incoming_reaction_is_passive_and_seen_next_turn(self):
+        await self._enable()
+        await imessage_service.accept_inbound(external_id="r-u", sender="+8613800138000", text="在吗", chat_guid="c")
+        await imessage_service.flush_pending()
+        await self._drain_background()
+        action = next(a for a in await imessage_service.pending_actions() if a["kind"] == "send")
+        await imessage_service.ack_action(action["id"], True, external_id="r-a")
+        self.llm.reset_mock()
+        response = await imessage_service.accept_inbound(external_id="r-event", sender="+8613800138000", kind="reaction", text="", chat_guid="c", target_id="r-a", emoji="👍")
+        self.assertTrue(response["reaction_saved"])
+        self.llm.assert_not_awaited()
+        self.assertEqual(imessage_service._STATE["items"], [])
+        duplicate = await imessage_service.accept_inbound(external_id="r-event", sender="+8613800138000", kind="reaction", text="", chat_guid="c", target_id="r-a", emoji="👍")
+        self.assertTrue(duplicate["duplicate"])
+        await imessage_service.accept_inbound(external_id="r-next", sender="+8613800138000", text="继续", chat_guid="c")
+        await imessage_service.flush_pending()
+        await self._drain_background()
+        context = str(self.llm.await_args.args[1])
+        self.assertIn("👍", context)
+        self.assertIn("r-a", context)
+
+    async def test_reaction_only_needs_no_text_reply_or_extra_model_call(self):
+        await self._enable()
+        self.llm.return_value = {"content": "", "tool_calls": [{"id": "r", "function": {"name": "imessage_react", "arguments": '{"target_id":"only-u","reaction":"love","without_text":true}'}}]}
+        await imessage_service.accept_inbound(external_id="only-u", sender="+8613800138000", text="贴个爱心就好", chat_guid="c")
+        await imessage_service.flush_pending()
+        await self._drain_background()
+        actions = await imessage_service.pending_actions()
+        self.assertEqual([a["kind"] for a in actions], ["read", "typing_start", "reaction", "typing_stop"])
+        self.llm.assert_awaited_once()
+        self.extract.assert_awaited_once()
+        await imessage_service.ack_action(actions[2]["id"], False)
+        async with database.get_db() as db:
+            async with db.execute("SELECT count(*) AS n FROM imessage_reactions") as cur:
+                self.assertEqual((await cur.fetchone())["n"], 0)
+
+    async def test_reaction_to_legacy_message_keeps_target_snapshot(self):
+        await self._enable()
+        await imessage_service.accept_inbound(external_id="legacy-event", sender="+8613800138000", text="", kind="reaction", chat_guid="c", target_id="legacy-a", emoji="❤️", target_text="旧消息示例")
+        await imessage_service.accept_inbound(external_id="legacy-next", sender="+8613800138000", text="继续", chat_guid="c")
+        await imessage_service.flush_pending()
+        await self._drain_background()
+        self.assertIn("旧消息示例", str(self.llm.await_args.args[1]))
+        self.llm.assert_awaited_once()
+
+    async def test_superseded_turn_does_not_send_staged_reaction(self):
+        await self._enable()
+        calls = 0
+
+        async def respond(*_args, **_kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                return {"content": "", "tool_calls": [{"id": "r", "function": {"name": "imessage_react", "arguments": '{"target_id":"draft-u","reaction":"love"}'}}]}
+            if calls == 2:
+                await imessage_service.accept_inbound(external_id="draft-next", sender="+8613800138000", text="先不贴", chat_guid="c")
+                return {"content": "过期草稿", "tool_calls": None}
+            return {"content": "好", "tool_calls": None}
+
+        self.llm.side_effect = respond
+        await imessage_service.accept_inbound(external_id="draft-u", sender="+8613800138000", text="hello", chat_guid="c")
+        await imessage_service.flush_pending()
+        await self._drain_background()
+        actions = await imessage_service.pending_actions()
+        self.assertFalse(any(a["kind"] == "reaction" for a in actions))
+        self.assertEqual([a["body"] for a in actions if a["kind"] == "send"], ["好"])
+
+    async def test_interaction_targets_are_scoped_and_migration_is_repeatable(self):
+        await self._enable()
+        await init_db()
+        await imessage_service.accept_inbound(external_id="scope-u", sender="+8613800138000", text="hello", chat_guid="c")
+        await imessage_service.flush_pending()
+        await self._drain_background()
+        conv = await imessage_service._latest_conversation_id()
+        turn = await imessage_interactions.context_for_turn(conv, "other-chat", [])
+        self.assertFalse(turn["targets"])
+        result = await imessage_interactions.handle_tool("imessage_react", {"target_id": "scope-u", "reaction": "love"}, turn)
+        self.assertIn("未执行", result)
+        stranger = await imessage_service.accept_inbound(external_id="stranger-r", sender="+19995550123", text="", kind="reaction", chat_guid="c", target_id="scope-u", emoji="❤️")
+        self.assertEqual(stranger["reason"], "rejected")
 
     async def test_markdown_and_tool_banner_are_removed_before_send(self):
         self.llm.return_value = {"content": "**你好**\n\n# 标题\n\n正在查记忆", "tool_calls": None}

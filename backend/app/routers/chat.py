@@ -68,6 +68,8 @@ async def chat_history(
     _=Depends(verify_token),
 ):
     messages = await get_history(conversation_id, limit=limit)
+    from app.services.imessage_interactions import enrich_history
+    messages = await enrich_history(messages)
     return {"ok": True, "data": {"messages": messages, "conversation_id": conversation_id}}
 
 @router.get("/search")

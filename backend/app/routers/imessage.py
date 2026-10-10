@@ -1,4 +1,5 @@
 import hmac
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
@@ -29,6 +30,13 @@ class InboundBody(BaseModel):
     sent_at: str = Field(default="", max_length=64)
     chat_guid: str = Field(default="", max_length=300)
 
+    kind: Literal["text", "reaction"] = "text"
+    reply_to: str = Field(default="", max_length=200)
+    quote_text: str = Field(default="", max_length=2000)
+    target_id: str = Field(default="", max_length=200)
+    emoji: str = Field(default="", max_length=32)
+    target_text: str = Field(default="", max_length=2000)
+
 
 class StatusBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -41,6 +49,7 @@ class StatusBody(BaseModel):
 class AckBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     ok: bool
+    external_id: str = Field(default="", max_length=200)
 
 
 def verify_bridge(request: Request) -> None:
@@ -100,6 +109,7 @@ async def bridge_inbound(body: InboundBody, _=Depends(verify_bridge)):
         text=body.text,
         sent_at=body.sent_at,
         chat_guid=body.chat_guid,
+        kind=body.kind, reply_to=body.reply_to, quote_text=body.quote_text, target_id=body.target_id, emoji=body.emoji, target_text=body.target_text,
     )
     return {"ok": True, "data": result}
 
@@ -118,5 +128,5 @@ async def bridge_outbox(_=Depends(verify_bridge)):
 
 @router.post("/api/internal/imessage/outbox/{action_id}")
 async def bridge_ack(action_id: str, body: AckBody, _=Depends(verify_bridge)):
-    await imessage_service.ack_action(action_id, body.ok)
+    await imessage_service.ack_action(action_id, body.ok, external_id=body.external_id)
     return {"ok": True}

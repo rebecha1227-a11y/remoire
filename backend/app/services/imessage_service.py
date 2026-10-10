@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 import httpx
 
 from app.database import get_db
+from app.services import imessage_interactions
 from app.services.imessage_format import (
     FAILURE_PHRASE,
     INGRESS_NOTE,
@@ -26,7 +27,7 @@ logger = logging.getLogger("remoire.imessage")
 PHOTON_BASE = "https://spectrum.photon.codes"
 _LOCK = asyncio.Lock()
 _QUEUE = asyncio.Lock()
-_STATE = {"items": [], "task": None, "auto_fire": True}
+_STATE = {"items": [], "task": None, "auto_fire": True, "last_received": 0.0}
 
 
 def reset_runtime_state():
@@ -36,6 +37,7 @@ def reset_runtime_state():
     _STATE["items"] = []
     _STATE["task"] = None
     _STATE["auto_fire"] = True
+    _STATE["last_received"] = 0.0
 
 
 def _now() -> str:
@@ -221,7 +223,7 @@ async def _remember_inbox(external_id: str, accepted: int) -> bool:
         return cur.rowcount == 1
 
 
-async def accept_inbound(*, external_id: str, sender: str, text: str, sent_at: str = "", chat_guid: str = "") -> dict:
+async def accept_inbound(*, external_id: str, sender: str, text: str, sent_at: str = "", chat_guid: str = "", kind: str = "text", reply_to: str = "", quote_text: str = "", target_id: str = "", emoji: str = "", target_text: str = "") -> dict:
     external_id = (external_id or "").strip()
     if not external_id:
         return {"ok": False, "reason": "missing_id"}
@@ -240,6 +242,16 @@ async def accept_inbound(*, external_id: str, sender: str, text: str, sent_at: s
         logger.info("imessage_inbound_rejected")
         return {"ok": False, "reason": "rejected"}
 
+    if kind == "reaction":
+        if not chat_guid or not target_id or not emoji or len(emoji) > 32:
+            return {"ok": False, "reason": "invalid_reaction"}
+        await imessage_interactions.record_reaction(chat_guid, target_id, "user", emoji, target_text)
+        return {"ok": True, "reaction_saved": True}
+
+    # Non-text Photon events must not reset the debounce or supersede a reply.
+    if not (text or "").strip():
+        return {"ok": True, "ignored": "empty_text"}
+
     _note_lag(sent_at)
     async with get_db() as db:
         await db.execute(
@@ -255,10 +267,13 @@ async def accept_inbound(*, external_id: str, sender: str, text: str, sent_at: s
         await db.commit()
 
     async with _QUEUE:
+        _STATE["last_received"] = asyncio.get_running_loop().time()
         _STATE["items"].append({
             "external_id": external_id,
             "text": text or "",
             "chat_guid": chat_guid or "",
+            "reply_to": reply_to,
+            "quote_text": quote_text,
         })
     _schedule()
     return {"ok": True, "queued": True}
@@ -283,39 +298,46 @@ def _schedule() -> None:
         return
     task = _STATE.get("task")
     if task and not task.done():
-        task.cancel()
+        return
     _STATE["task"] = asyncio.create_task(_sleep_then_fire())
 
 
 async def _sleep_then_fire() -> None:
-    account = await get_account()
-    wait = max(2, min(10, int(account.get("merge_wait_seconds") or 4)))
     try:
-        await asyncio.sleep(wait)
-    except asyncio.CancelledError:
-        return
-    await flush_pending()
+        await flush_pending()
+    finally:
+        if _STATE.get("task") is asyncio.current_task():
+            _STATE["task"] = None
+            if _STATE["items"]:
+                _schedule()
 
 
 async def flush_pending() -> None:
-    current = asyncio.current_task()
-    task = _STATE.get("task")
-    _STATE["task"] = None
-    if task and task is not current and not task.done():
-        task.cancel()
-    async with _QUEUE:
-        items = list(_STATE["items"])
-        _STATE["items"] = []
-    if not items:
-        return
+    # One consumer owns the queue throughout generation. Never remove messages
+    # into a cancellable task waiting behind another turn.
     async with _LOCK:
-        await _run_turn(items)
-    if not _STATE["auto_fire"]:
-        return
+        while True:
+            account = await get_account()
+            wait = max(2, min(10, int(account.get("merge_wait_seconds") or 4)))
+            async with _QUEUE:
+                if not _STATE["items"]:
+                    return
+                remaining = _STATE["last_received"] + wait - asyncio.get_running_loop().time()
+                if not _STATE["auto_fire"] or remaining <= 0:
+                    items = _STATE["items"]
+                    _STATE["items"] = []
+                else:
+                    items = None
+            if items is None:
+                await asyncio.sleep(remaining)
+                continue
+            logger.info("imessage_burst_start count=%s", len(items))
+            await _run_turn(items)
+
+
+async def _reply_is_current() -> bool:
     async with _QUEUE:
-        more = bool(_STATE["items"])
-    if more:
-        _schedule()
+        return not _STATE["items"]
 
 
 async def _run_turn(items: list[dict]) -> None:
@@ -332,7 +354,20 @@ async def _run_turn(items: list[dict]) -> None:
     await _enqueue(conversation_id, "read", "", ref_id=ref_id, chat_guid=chat_guid, delay_ms=0)
     await _enqueue(conversation_id, "typing_start", "", ref_id=ref_id, chat_guid=chat_guid, delay_ms=0)
 
+    saved_ids = {}
+    turn = {"chat_guid": chat_guid, "items": items}
+
+    async def on_saved(role, message_id):
+        saved_ids[role] = message_id
+        if role == "user":
+            for item in items:
+                await imessage_interactions.record_bubble(
+                    external_id=item["external_id"], chat_guid=chat_guid,
+                    conversation_id=conversation_id, message_id=message_id,
+                    direction="inbound", body=item["text"], reply_to=item.get("reply_to", ""), quote_text=item.get("quote_text", ""))
+
     error_code = ""
+    reaction_only = False
     async for event in stream_chat(
         conversation_id,
         merged,
@@ -342,27 +377,48 @@ async def _run_turn(items: list[dict]) -> None:
         ingress_note=INGRESS_NOTE,
         push_reply=False,
         save_error_reply=False,
+        reply_is_current=_reply_is_current,
+        on_message_saved=on_saved, imessage_turn=turn,
     ):
+        if isinstance(event, dict) and event.get("type") == "reaction_only":
+            reaction_only = True
+        if isinstance(event, dict) and event.get("type") == "superseded":
+            logger.info("imessage_reply_superseded")
+            return
         if isinstance(event, dict) and event.get("type") == "error":
             error_code = event.get("code") or "error"
 
+    if error_code and not await _reply_is_current():
+        return
     if error_code:
         await _fail_turn(conversation_id, chat_guid, account, "这轮没有生成回复")
         return
 
-    reply = await _latest_assistant_text(conversation_id)
+    if reaction_only:
+        for target, emoji in turn.get("reactions", {}).items():
+            await _enqueue(conversation_id, "reaction", emoji, ref_id=target, chat_guid=chat_guid)
+        await _enqueue(conversation_id, "typing_stop", "", chat_guid=chat_guid)
+        return
+
+    async with get_db() as db:
+        async with db.execute("SELECT content FROM messages WHERE id=?", (saved_ids.get("assistant", ""),)) as cur:
+            row = await cur.fetchone()
+    reply = row["content"] if row else ""
     bubbles = sanitize_bubbles(reply)
     if not bubbles:
         await _fail_turn(conversation_id, chat_guid, account, "这轮没有可发送的文字")
         return
 
+    for target, emoji in turn.get("reactions", {}).items():
+        await _enqueue(conversation_id, "reaction", emoji, ref_id=target, chat_guid=chat_guid)
     per_char = int(account.get("typing_ms_per_char") or 45)
     for index, bubble in enumerate(bubbles):
         await _enqueue(
             conversation_id,
-            "send",
+            "reply" if index == 0 and turn.get("reply_to") else "send",
             bubble,
-            ref_id=ref_id,
+            message_id=saved_ids.get("assistant", ""),
+            ref_id=turn.get("reply_to") if index == 0 and turn.get("reply_to") else ref_id,
             chat_guid=chat_guid,
             delay_ms=bubble_delay_ms(bubble, per_char, first=index == 0),
         )
@@ -394,7 +450,7 @@ async def deliver_proactive(conversation_id: str, content: str, thinking: str = 
 
     account = await get_account()
     bubbles = sanitize_bubbles(content)
-    await save_message(
+    proactive_message_id = await save_message(
         conversation_id,
         "assistant",
         content.strip(),
@@ -411,6 +467,7 @@ async def deliver_proactive(conversation_id: str, content: str, thinking: str = 
                 conversation_id,
                 "send",
                 bubble,
+                message_id=proactive_message_id,
                 chat_guid=chat_guid,
                 delay_ms=bubble_delay_ms(bubble, per_char, first=index == 0),
             )
@@ -433,19 +490,7 @@ async def _latest_conversation_id() -> str | None:
     return row["id"] if row else None
 
 
-async def _latest_assistant_text(conversation_id: str) -> str:
-    async with get_db() as db:
-        async with db.execute(
-            """SELECT content FROM messages
-               WHERE conversation_id = ? AND role = 'assistant'
-               ORDER BY created_at DESC LIMIT 1""",
-            (conversation_id,),
-        ) as cur:
-            row = await cur.fetchone()
-    return row["content"] if row else ""
-
-
-async def _enqueue(conversation_id: str, kind: str, body: str, *, ref_id: str = "", chat_guid: str = "", delay_ms: int = 0) -> str:
+async def _enqueue(conversation_id: str, kind: str, body: str, *, ref_id: str = "", chat_guid: str = "", delay_ms: int = 0, message_id: str = "") -> str:
     item_id = str(uuid.uuid4())
     now = _now()
     async with get_db() as db:
@@ -453,9 +498,9 @@ async def _enqueue(conversation_id: str, kind: str, body: str, *, ref_id: str = 
             sequence = (await cur.fetchone())["n"]
         await db.execute(
             """INSERT INTO imessage_outbox
-               (id, conversation_id, kind, body, ref_id, chat_guid, delay_ms, sequence, status, attempts, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?)""",
-            (item_id, conversation_id, kind, body, ref_id, chat_guid, int(delay_ms), sequence, now, now),
+               (id, conversation_id, message_id, kind, body, ref_id, chat_guid, delay_ms, sequence, status, attempts, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?)""",
+            (item_id, conversation_id, message_id or None, kind, body, ref_id, chat_guid, int(delay_ms), sequence, now, now),
         )
         await db.commit()
     return item_id
@@ -473,23 +518,33 @@ async def pending_actions(limit: int = 20) -> list[dict]:
     return [dict(row) for row in rows]
 
 
-async def ack_action(action_id: str, ok: bool) -> None:
+async def ack_action(action_id: str, ok: bool, *, external_id: str = "") -> None:
     now = _now()
     async with get_db() as db:
-        async with db.execute("SELECT attempts, kind FROM imessage_outbox WHERE id = ?", (action_id,)) as cur:
+        async with db.execute("SELECT * FROM imessage_outbox WHERE id = ?", (action_id,)) as cur:
             row = await cur.fetchone()
-        if not row:
+        if not row or row["status"] == "sent":
             return
         if ok:
             await db.execute(
                 "UPDATE imessage_outbox SET status = 'sent', updated_at = ? WHERE id = ?",
                 (now, action_id),
             )
-            if row["kind"] == "send":
+            if row["kind"] in ("send", "reply"):
+                if external_id and row["message_id"]:
+                    await db.execute("""INSERT INTO imessage_bubbles
+                        (external_id, chat_guid, conversation_id, message_id, direction, body, reply_to)
+                        VALUES (?, ?, ?, ?, 'outbound', ?, ?) ON CONFLICT(chat_guid,external_id) DO NOTHING""",
+                        (external_id, row["chat_guid"], row["conversation_id"], row["message_id"], row["body"], row["ref_id"] if row["kind"] == "reply" else ""))
                 await db.execute(
                     "UPDATE imessage_accounts SET last_outbound_at = ?, updated_at = ? WHERE id = 1",
                     (now, now),
                 )
+            if row["kind"] == "reaction":
+                await db.execute("""INSERT INTO imessage_reactions (chat_guid,target_id,actor,emoji)
+                    VALUES (?,?,'assistant',?) ON CONFLICT(chat_guid,target_id,actor)
+                    DO UPDATE SET emoji=excluded.emoji, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')""",
+                    (row["chat_guid"], row["ref_id"], row["body"]))
         else:
             attempts = int(row["attempts"]) + 1
             status = "pending" if attempts < 2 else "failed"

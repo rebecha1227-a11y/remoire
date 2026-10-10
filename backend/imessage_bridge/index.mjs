@@ -1,3 +1,5 @@
+import { normalizeInbound, sendAction } from "./protocol.mjs";
+
 /**
  * Small courier between Photon and Remoire.
  * It does not store persona, memories, or model keys of its own.
@@ -10,6 +12,8 @@ const RETRY_DELAYS = [5_000, 15_000, 30_000, 60_000, 120_000, 300_000];
 
 const spaces = new Map();
 const inboundMessages = new Map();
+let provider = null;
+let linePhone = "";
 
 function headers() {
   return {
@@ -68,7 +72,11 @@ async function checkLineOwnership(projectId, projectSecret, linePhone) {
 }
 
 async function executeAction(action) {
-  const space = spaces.get(action.chat_guid) || [...spaces.values()].at(-1);
+  let space = spaces.get(action.chat_guid);
+  if (!space && provider && action.chat_guid) {
+    space = await provider.space.get(action.chat_guid, { phone: linePhone });
+    if (space) spaces.set(action.chat_guid, space);
+  }
   if (action.kind === "read") {
     const message = inboundMessages.get(action.ref_id);
     if (!space || !message) return true;
@@ -98,16 +106,19 @@ async function executeAction(action) {
     }
     return true;
   }
-  if (action.kind === "send") {
+  if (["send", "reply", "reaction"].includes(action.kind)) {
     if (!space?.send) return false;
     if (action.delay_ms > 0) await sleep(action.delay_ms);
-    await space.send(action.body);
-    return true;
+    const builders = await import("spectrum-ts");
+    const sent = await sendAction(space, action, builders);
+    if (!sent?.id) throw new Error("imessage_send_missing_id");
+    return { external_id: String(sent.id) };
   }
-  return true;
+  return false;
 }
 
 async function pumpOutbox(stop) {
+  let unacked = null;
   while (!stop.stopped) {
     let actions = [];
     try {
@@ -122,17 +133,18 @@ async function pumpOutbox(stop) {
       await sleep(400);
       continue;
     }
-    let ok = false;
-    try {
-      ok = await executeAction(next);
-    } catch {
-      ok = false;
+    let result = unacked?.id === next.id ? unacked.result : null;
+    if (result === null) {
+      try { result = await executeAction(next); } catch { result = false; }
+      unacked = { id: next.id, result };
     }
+    const ok = Boolean(result);
     try {
       await api(`/api/internal/imessage/outbox/${next.id}`, {
         method: "POST",
-        body: JSON.stringify({ ok }),
+        body: JSON.stringify({ ok, external_id: result?.external_id || "" }),
       });
+      unacked = null;
     } catch {
       await sleep(1000);
     }
@@ -158,50 +170,31 @@ async function connectOnce(runtime, stop) {
     projectSecret: runtime.project_secret,
     providers: [imessage.config()],
   });
+  provider = imessage(instance);
+  linePhone = runtime.line_phone;
   await reportStatus("connected", "");
   try {
     for await (const [space, message] of instance.messages) {
       if (stop.stopped) break;
-      if (message.direction === "outbound") continue;
-      if (message.platform && message.platform !== "imessage") continue;
-      const externalId = String(message.id || "");
-      if (!externalId) continue;
-      const chatGuid = message.space?.id || message.sender?.id || "";
-      if (chatGuid) spaces.set(chatGuid, space);
-      inboundMessages.set(externalId, message);
-      if (inboundMessages.size > 200) {
-        const oldest = inboundMessages.keys().next().value;
-        inboundMessages.delete(oldest);
-      }
-      const text = flattenText(message.content);
+      const payload = normalizeInbound(message, space.id);
+      if (!payload) continue;
+      spaces.set(payload.chat_guid, space);
+      inboundMessages.set(payload.external_id, message);
+      if (inboundMessages.size > 200) inboundMessages.delete(inboundMessages.keys().next().value);
       await api("/api/internal/imessage/inbound", {
-        method: "POST",
-        body: JSON.stringify({
-          external_id: externalId,
-          sender: message.sender?.id || "",
-          text,
-          sent_at: message.dateCreated || "",
-          chat_guid: chatGuid,
-        }),
+        method: "POST", body: JSON.stringify(payload),
       });
     }
   } finally {
+    provider = null;
+    spaces.clear();
+    inboundMessages.clear();
     try {
       await instance.stop();
     } catch {
       /* ignore */
     }
   }
-}
-
-function flattenText(content) {
-  if (!content) return "";
-  if (typeof content === "string") return content;
-  if (content.type === "text") return content.text || content.body || "";
-  if (Array.isArray(content.parts)) {
-    return content.parts.map((part) => flattenText(part)).filter(Boolean).join("\n");
-  }
-  return content.text || content.body || "";
 }
 
 async function main() {

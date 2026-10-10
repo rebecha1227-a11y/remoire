@@ -5,6 +5,7 @@ import json
 import logging
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
+from collections.abc import Awaitable, Callable
 from app.database import get_db
 from app.llm import call_llm, call_llm_with_tools
 from app.services import memory_service, diary_interaction_service, model_settings_service
@@ -661,8 +662,13 @@ async def stream_chat(
     ingress_note: str = "",
     push_reply: bool = True,
     save_error_reply: bool = True,
+    reply_is_current: Callable[[], Awaitable[bool]] | None = None,
+    on_message_saved: Callable[[str, str], Awaitable[None]] | None = None,
+    imessage_turn: dict | None = None,
 ):
-    await save_message(conversation_id, "user", user_message, image=image or "", channel=channel)
+    saved_user_id = await save_message(conversation_id, "user", user_message, image=image or "", channel=channel)
+    if on_message_saved is not None:
+        await on_message_saved("user", saved_user_id)
 
     from app.services.nudge_service import check_and_close_if_replied
     asyncio.create_task(check_and_close_if_replied(conversation_id))
@@ -699,6 +705,12 @@ async def stream_chat(
         has_diary_notifications=collected["has_diary_notifications"],
         stable=True,
     )
+    if imessage_turn is not None and channel == "imessage":
+        from app.services import imessage_interactions
+        prepared = await imessage_interactions.context_for_turn(conversation_id, imessage_turn["chat_guid"], imessage_turn["items"])
+        imessage_turn.update(prepared)
+        collected["dynamic_parts"].append(prepared["prompt"])
+        tools = [*tools, *imessage_interactions.TOOLS]
     try:
         messages, selected_history, budget = _build_budgeted_chat_context(
             collected,
@@ -743,6 +755,10 @@ async def stream_chat(
                 max_tokens=output_budget,
             )
 
+            if reply_is_current is not None and not await reply_is_current():
+                yield {"type": "superseded"}
+                return
+
             tool_calls = assistant_msg.get("tool_calls")
             if not tool_calls:
                 break
@@ -757,7 +773,13 @@ async def stream_chat(
                     fn_args = json.loads(tc["function"]["arguments"])
                 except (json.JSONDecodeError, TypeError):
                     fn_args = {}
-                result = await execute_tool(fn_name, fn_args)
+                if fn_name in ("imessage_reply_to", "imessage_react"):
+                    if channel == "imessage" and imessage_turn is not None:
+                        result = await imessage_interactions.handle_tool(fn_name, fn_args, imessage_turn)
+                    else:
+                        result = "当前入口不支持 iMessage 操作。"
+                else:
+                    result = await execute_tool(fn_name, fn_args)
                 if fn_name == "leave_note":
                     try:
                         note_payload = json.loads(result)
@@ -774,6 +796,16 @@ async def stream_chat(
                 })
 
             yield {"type": "tool_done", "tools": tool_names, "count": len(tool_calls)}
+            if imessage_turn and imessage_turn.get("reaction_only") and imessage_turn.get("reactions"):
+                if reply_is_current is not None and not await reply_is_current():
+                    yield {"type": "superseded"}
+                else:
+                    yield {"type": "reaction_only"}
+                    # A reaction-only reply still needs the normal user-memory path.
+                    asyncio.create_task(_extract_memories_bg(conversation_id, history[-6:]))
+                    asyncio.create_task(_extract_reminders_bg(conversation_id, history[-6:]))
+                    asyncio.create_task(_compact_conversation_bg(conversation_id))
+                return
         else:
             _assert_context_fits(messages, tools, input_budget)
             assistant_msg = await call_llm_with_tools(
@@ -881,8 +913,14 @@ async def stream_chat(
             yield {"type": "error", "code": "empty_reply", "content": "没有可发送的文字"}
             return
 
+    # iMessage can receive more input while the model is working. Keep the
+    # saved user messages, but do not publish/extract an obsolete draft.
+    if reply_is_current is not None and not await reply_is_current():
+        yield {"type": "superseded"}
+        return
+
     if full_reply:
-        await save_message(
+        saved_assistant_id = await save_message(
             conversation_id,
             "assistant",
             full_reply,
@@ -890,6 +928,8 @@ async def stream_chat(
             display_mode="split" if channel == "imessage" else reply_style,
             channel=channel,
         )
+        if on_message_saved is not None:
+            await on_message_saved("assistant", saved_assistant_id)
 
     if not full_reply:
         return

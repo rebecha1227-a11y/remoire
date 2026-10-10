@@ -831,3 +831,8 @@ Remoire 使用 SQLite WAL mode，运行中备份不要直接 `cp` 主 `.db` 文�
 4. **不要在高频写入路径上做事务嵌套**。聊天消息存储 + 候选记忆提取应该是两个独立的 INSERT，不要包在同一个事务里——万一打标失败不应该影响消息存储。
 
 5. **模型 API Key**：生产环境必须配置 `MODEL_SECRET_ENCRYPTION_KEYS`。服务启动时会用 Fernet 对 `model_presets.api_key` 的历史明文执行原地迁移；数据库只保存带 `fernet:v1:` 前缀的密文。密钥不进入数据库或备份，应单独保存在服务器环境变量和离线密码库中。
+
+
+## 2026-10-10 iMessage 交互增量（本地未发布）
+
+新增 imessage_bubbles（chat_guid + external_id 主键，关联 conversation_id / message_id，direction、body、reply_to、quote_text）及 imessage_reactions（chat_guid + target_id + actor 主键，emoji、target_text、updated_at）。气泡随所属 messages/conversations 删除；表情表仅用于 iMessage，不下发网页。建表在 init_db 中可重复执行，无现有正文重写。发布前须在在线备份副本演练。详见 `IMESSAGE-INTERACTIONS-2026-10-10.md`。

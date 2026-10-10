@@ -505,6 +505,28 @@ async def init_db():
                 updated_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS imessage_bubbles (
+                external_id TEXT NOT NULL,
+                chat_guid TEXT NOT NULL,
+                conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+                message_id TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+                direction TEXT NOT NULL,
+                body TEXT NOT NULL,
+                reply_to TEXT NOT NULL DEFAULT '',
+                quote_text TEXT NOT NULL DEFAULT '',
+                PRIMARY KEY(chat_guid, external_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_imessage_bubbles_message ON imessage_bubbles(message_id);
+            CREATE TABLE IF NOT EXISTS imessage_reactions (
+                chat_guid TEXT NOT NULL,
+                target_id TEXT NOT NULL,
+                actor TEXT NOT NULL,
+                emoji TEXT NOT NULL,
+                target_text TEXT NOT NULL DEFAULT '',
+                updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+                PRIMARY KEY(chat_guid, target_id, actor)
+            );
+
             CREATE INDEX IF NOT EXISTS idx_imessage_outbox_pending
                 ON imessage_outbox(status, sequence);
         """)

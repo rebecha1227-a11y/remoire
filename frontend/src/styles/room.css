@@ -826,3 +826,74 @@
     transparent 45%
   );
 }
+
+/* A quoted line sits quietly above the answer, without a second card. */
+.r-quoted-message {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  max-width: 100%;
+  padding: 0 10px 6px;
+  color: var(--ink-soft);
+  font-family: var(--font-chat);
+  font-size: 13px;
+  line-height: 1.55;
+}
+.r-quoted-message > svg { flex: 0 0 auto; margin-top: 3px; opacity: .7; }
+.r-quoted-message > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.r-quote-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px;
+  border: 0;
+  background: none;
+  color: var(--ink-faint);
+  cursor: pointer;
+  border-radius: 5px;
+}
+.r-quote-action:hover { color: var(--ink); background: var(--ai-bg); }
+.r-quote-action:focus-visible, .r-compose-quote-dismiss:focus-visible {
+  outline: 1px solid var(--ink-soft);
+  outline-offset: 3px;
+}
+.r-compose-quote {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 2px 8px 14px;
+  color: var(--ink-soft);
+  font-family: var(--font-chat);
+}
+.r-compose-quote > svg { flex: 0 0 auto; opacity: .7; }
+.r-compose-quote-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.r-compose-quote-label { font-size: 12px; line-height: 1.4; }
+.r-compose-quote-text {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.r-compose-quote-dismiss {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+.r-compose-quote-dismiss:hover { color: var(--ink); background: var(--ai-bg); }

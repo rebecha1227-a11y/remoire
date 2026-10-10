@@ -1,3 +1,4 @@
+import { CornerUpLeft, X } from "lucide-react";
 import { useState, useRef, useEffect, memo, useCallback } from "react";
 import { apiFetch, apiJsonFetch, API_BASE } from "../utils/api";
 import { PALETTES, currentBand, AMBIENT_BY_BAND, isDarkBand } from "../utils/ambient";
@@ -131,14 +132,9 @@ const MessageRow = memo(function MessageRow({ m, isKept, isThinkOpen, onToggleTh
       {isAi && <div className="r-spark">✦</div>}
       <div className="r-bubble-stack">
         {m.quote && (
-          <div style={{
-            padding: '4px 10px', marginBottom: 2, borderRadius: 8,
-            background: 'rgba(124,99,80,0.06)',
-            borderLeft: '2px solid var(--ink-faint, rgba(0,0,0,0.15))',
-            fontSize: 12, color: 'var(--ink-soft, var(--text-tertiary))',
-            lineHeight: 1.4, maxHeight: 36, overflow: 'hidden',
-          }}>
-            {m.quote}
+          <div className="r-quoted-message" aria-label="引用的消息" title={m.quote}>
+            <CornerUpLeft size={14} strokeWidth={1.5} aria-hidden="true" />
+            <span>{m.quote}</span>
           </div>
         )}
         {m.image && <img src={m.image} alt="" className="r-bubble-img" />}
@@ -168,8 +164,8 @@ const MessageRow = memo(function MessageRow({ m, isKept, isThinkOpen, onToggleTh
                 : <svg {...ico}><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
               }
             </button>
-            <button style={actBtn} onClick={() => onQuote(m)} title="引用">
-              <svg {...ico}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
+            <button className="r-quote-action" onClick={() => onQuote(m)} title="引用" aria-label="引用这条消息">
+              <CornerUpLeft size={14} strokeWidth={1.5} aria-hidden="true" />
             </button>
             <button style={actBtn} onClick={onRegenerate} title="重新生成">
               <svg {...ico}><path d="M21 2v6h-6" /><path d="M3 12a9 9 0 0 1 15-6.7L21 8" /><path d="M3 22v-6h6" /><path d="M21 12a9 9 0 0 1-15 6.7L3 16" /></svg>
@@ -502,6 +498,10 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
                 const segments = m.content.split('\n\n').map(s => s.trim()).filter(s => s.length > 0);
                 for (let si = 0; si < segments.length; si++) {
                   const msgObj = { id: ++msgIdRef.current, role: 'ai', text: segments[si], time, type: 'normal', channel: m.channel || 'remoire' };
+                  const bubble = m.imessage_bubbles?.[si];
+                  if (bubble?.body === segments[si]) {
+                    msgObj.quote = bubble.quote;
+                  }
                   if (si === 0 && m.thinking) msgObj.thinking = m.thinking;
                   loaded.push(msgObj);
                 }
@@ -509,6 +509,13 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
             } else if (m.role === 'system' || m.content.startsWith('静儿修改')) {
               loaded.push({ id: ++msgIdRef.current, role: 'system', text: m.content, time, channel: m.channel || '' });
             } else {
+              if (m.imessage_bubbles?.length && !m.image && !m.image_id) {
+                for (const bubble of m.imessage_bubbles) {
+                  loaded.push({ id: ++msgIdRef.current, role: 'user', text: bubble.body, time,
+                    type: 'normal', channel: 'imessage', quote: bubble.quote });
+                }
+                continue;
+              }
               const userMsg = { id: ++msgIdRef.current, role: 'user', text: m.content, time, type: 'normal', channel: m.channel || 'remoire' };
               if (m.image) userMsg.image = m.image;
               else if (m.image_id) userMsg.image = `${API_BASE}/chat/image/${m.image_id}`;
@@ -1036,24 +1043,15 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
         onChange={e => pickPhoto(e.target.files?.[0])} />
       <div className="r-input-wrap">
         {quotedMsg && (
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 8,
-            padding: '6px 12px', margin: '0 0 -2px',
-            background: 'rgba(124,99,80,0.06)',
-            borderLeft: '2px solid var(--ink-accent, var(--accent))',
-            borderRadius: '4px 8px 0 0',
-            fontSize: 12, color: 'var(--ink-soft, var(--text-tertiary))',
-            lineHeight: 1.4,
-          }}>
-            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {quotedMsg.role === 'ai' ? '引用 Connie：' : '引用自己：'}
-              {quotedMsg.text?.slice(0, 50)}{quotedMsg.text?.length > 50 ? '…' : ''}
-            </span>
-            <button aria-label="取消引用" onClick={() => setQuotedMsg(null)} style={{
-              background: 'none', border: 'none', cursor: 'pointer',
-              color: 'var(--ink-faint, var(--text-tertiary))', fontSize: 14,
-              minWidth: 44, minHeight: 44, padding: 0, lineHeight: 1,
-            }}>✕</button>
+          <div className="r-compose-quote">
+            <CornerUpLeft size={16} strokeWidth={1.5} aria-hidden="true" />
+            <div className="r-compose-quote-copy">
+              <span className="r-compose-quote-label">{quotedMsg.role === 'ai' ? '回应 Connie' : '接着自己的话'}</span>
+              <span className="r-compose-quote-text">{quotedMsg.text}</span>
+            </div>
+            <button className="r-compose-quote-dismiss" aria-label="取消引用" onClick={() => setQuotedMsg(null)}>
+              <X size={16} strokeWidth={1.5} aria-hidden="true" />
+            </button>
           </div>
         )}
         {pendingImage && (
