@@ -374,7 +374,7 @@ async def call_llm_with_tools(
                     msg["reasoning_content"] = thinking
                 return msg
         except Exception as e:
-            if attempt < 2:
+            if attempt < 2 and not (isinstance(e, httpx.HTTPStatusError) and 400 <= e.response.status_code < 500 and e.response.status_code != 429):
                 await asyncio.sleep(1 + attempt)
                 continue
             raise RuntimeError(f"LLM 调用失败：{e}")
@@ -415,7 +415,7 @@ async def _call_anthropic_once(
         except UnsupportedAnthropicProtocol:
             raise
         except Exception as exc:
-            if attempt < retries:
+            if attempt < retries and not (isinstance(exc, httpx.HTTPStatusError) and 400 <= exc.response.status_code < 500 and exc.response.status_code != 429):
                 await asyncio.sleep(1 + attempt)
                 continue
             raise RuntimeError(f"Claude Messages 调用失败：{exc}") from exc
@@ -653,3 +653,147 @@ def _extract_content_and_thinking(message: dict) -> tuple[str, str]:
     if thinking:
         thinking_parts.insert(0, str(thinking))
     return "".join(content_parts), "".join(thinking_parts)
+
+
+async def generate_image(config: ModelConfig, prompt: str) -> str:
+    """One image, no automatic paid retries; all model network calls live here."""
+    from urllib.parse import quote
+    from app.services.model_settings_service import _validated_public_base, resolve_image_wire_protocol
+    from app.services.image_storage import decode_image, MAX_ENCODED_IMAGE_CHARS
+    base = (await _validated_public_base(config.api_base))["base_url"]
+    wire = resolve_image_wire_protocol(config.provider, config.api_base, config.model_id)
+    if wire == "gemini-image":
+        url = f"{base}/models/{quote(config.model_id, safe='')}:generateContent"
+        headers = {"x-goog-api-key": config.api_key}
+        payload = {"contents": [{"role": "user", "parts": [{"text": prompt}]}],
+                   "generationConfig": {"responseModalities": ["TEXT", "IMAGE"]}}
+    elif wire == "openai-image":
+        url = f"{base}/images/generations"
+        headers = _openai_headers(config)
+        payload = {"model": config.model_id, "prompt": prompt, "n": 1}
+        if config.model_id.startswith("dall-e"):
+            payload["response_format"] = "b64_json"
+    else:
+        raise ValueError("图片接口类型不支持")
+    # Generation is billed once the provider accepts the request, so wait long
+    # enough for slow image models instead of abandoning a paid result.
+    timeout = httpx.Timeout(connect=15, read=360, write=60, pool=15)
+    async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
+        try:
+            body = await _read_capped(client, "POST", url, headers=headers, json=payload)
+        except httpx.TimeoutException as exc:
+            raise ImageProviderTimeout() from exc
+        except httpx.HTTPStatusError as exc:
+            raise ImageProviderHTTPError(exc.response.status_code) from exc
+        result = json_mod.loads(body)
+        encoded = None
+        picture_url = None
+        if wire == "gemini-image":
+            for candidate in result.get("candidates", []):
+                for part in candidate.get("content", {}).get("parts", []):
+                    data = part.get("inlineData") or part.get("inline_data") or {}
+                    if data.get("data") and not part.get("thought"):
+                        encoded = data["data"]
+                        break
+                if encoded:
+                    break
+        else:
+            for item in result.get("data", []) or []:
+                if item.get("b64_json"):
+                    encoded = item["b64_json"]
+                    break
+                if item.get("url") and not picture_url:
+                    picture_url = item["url"]
+        if not encoded and picture_url:
+            if picture_url.startswith("data:"):
+                encoded = picture_url
+            else:
+                encoded = await _download_provider_picture(client, picture_url)
+    if not encoded:
+        raise ImageMissingData()
+    raw, mime = decode_image(encoded)
+    import base64
+    return f"data:{mime};base64,{base64.b64encode(raw).decode('ascii')}"
+
+
+class ImageProviderTimeout(Exception):
+    pass
+
+
+class ImageMissingData(ValueError):
+    pass
+
+
+class ImageProviderHTTPError(Exception):
+    def __init__(self, status: int):
+        super().__init__(f"status={status}")
+        self.status = status
+
+
+async def _read_capped(client, method, url, **kwargs) -> bytes:
+    from app.services.image_storage import MAX_ENCODED_IMAGE_CHARS
+    async with client.stream(method, url, **kwargs) as response:
+        response.raise_for_status()
+        chunks, size = [], 0
+        async for chunk in response.aiter_bytes():
+            size += len(chunk)
+            if size > MAX_ENCODED_IMAGE_CHARS + 512 * 1024:
+                raise ValueError("生成图片超过大小限制")
+            chunks.append(chunk)
+    return b"".join(chunks)
+
+
+async def _download_provider_picture(client, picture_url: str) -> str:
+    """Some relays answer with a short-lived https link instead of Base64."""
+    import base64
+    from urllib.parse import urlparse
+    from app.services.model_settings_service import _validated_public_base
+    from urllib.parse import urljoin
+    from app.services.image_storage import MAX_IMAGE_BYTES
+    for hop in range(4):
+        parsed = urlparse(picture_url)
+        if parsed.scheme != "https" or not parsed.netloc or parsed.username or parsed.password:
+            raise ImageMissingData()
+        await _validated_public_base(f"{parsed.scheme}://{parsed.netloc}")
+        try:
+            async with client.stream("GET", picture_url, follow_redirects=False) as response:
+                if response.status_code in (301, 302, 303, 307, 308):
+                    location = response.headers.get("location")
+                    if not location or hop == 3:
+                        raise ImageMissingData()
+                    picture_url = urljoin(picture_url, location)
+                    continue
+                response.raise_for_status()
+                chunks, size = [], 0
+                async for chunk in response.aiter_bytes():
+                    size += len(chunk)
+                    if size > MAX_IMAGE_BYTES:
+                        raise ValueError("生成图片超过大小限制")
+                    chunks.append(chunk)
+                return base64.b64encode(b"".join(chunks)).decode("ascii")
+        except httpx.TimeoutException as exc:
+            raise ImageProviderTimeout() from exc
+        except httpx.HTTPStatusError as exc:
+            raise ImageProviderHTTPError(exc.response.status_code) from exc
+    raise ImageMissingData()
+
+
+def public_model_error(error: Exception) -> tuple[str, str]:
+    """Fixed diagnostic text only: never render provider bodies, prompts or URLs."""
+    current = error
+    seen = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, (ImageProviderTimeout, httpx.TimeoutException)):
+            return "model_timeout", "模型接口等待超时，结果尚未确认；请先核对服务商记录，避免重复生成。"
+        if isinstance(current, (httpx.HTTPStatusError, ImageProviderHTTPError)):
+            status = current.response.status_code if isinstance(current, httpx.HTTPStatusError) else current.status
+            if status in (401, 403):
+                return "model_access_denied", f"模型接口拒绝访问（HTTP {status}），请检查该预设的密钥和模型权限。"
+            if status == 429:
+                return "model_rate_limited", "模型接口限流或额度不足（HTTP 429），请核对服务商状态。"
+            return "model_http_error", f"模型接口返回 HTTP {status}，本轮未完整完成。"
+        if isinstance(current, ImageMissingData):
+            return "image_missing_data", "生图接口没有返回可用图片数据；请核对服务商记录，不要重复生成。"
+        current = current.__cause__ or current.__context__
+    return "model_failed", "本轮处理失败，请检查模型接口或稍后再试。"

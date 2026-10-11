@@ -46,6 +46,7 @@ class ModelProbeRequest(BaseModel):
     api_key: str = Field(min_length=1, max_length=4096)
     base_url: str = Field(min_length=1, max_length=2048)
     model_name: str | None = Field(default=None, min_length=1, max_length=256)
+    provider: str | None = Field(default="openai-compatible", max_length=100)
 
 
 @router.get("/model-presets")
@@ -101,6 +102,7 @@ async def list_models_for_config(req: ModelProbeRequest, _=Depends(verify_token)
         models = await model_settings_service.list_remote_models_for_config(
             api_key=req.api_key,
             base_url=req.base_url,
+            provider=req.provider or "openai-compatible",
         )
         return {"ok": True, "data": models}
     except model_settings_service.UnsafeBaseUrlError as exc:
@@ -119,6 +121,7 @@ async def test_model_config(req: ModelProbeRequest, _=Depends(verify_token)):
             api_key=req.api_key,
             base_url=req.base_url,
             model_name=req.model_name,
+            provider=req.provider or "openai-compatible",
         )
         return {"ok": True, "data": result}
     except model_settings_service.UnsafeBaseUrlError as exc:

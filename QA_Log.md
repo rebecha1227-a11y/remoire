@@ -1,5 +1,45 @@
 # QA Log
 
+## 2026-10-10 生图预设为什么不自动拉模型，OpenAI 和 Gemini 要不要分开选
+
+**原问：** 填了生图模型的密钥和接口地址之后，模型不会自动拉取；接口用途选生图就不会自动拉取，聊天就可以。OpenAI 和 Gemini 必须分开吗？不能只保留聊天模型和生图模型两个用途吗？
+
+**答案核心：** 之前是前端故意跳过了生图用途的自动拉取（代码里排除了 `openai-image` / `gemini-image`），所以不是密钥填错，是功能没接上。已改为生图和聊天一样：填密钥+地址后会调 `/models` 自动拉列表。设置里接口用途收成两项：**聊天模型**、**生图模型**；不必再选手动区分 OpenAI 生图 / Gemini 生图。保存时统一记为生图预设，真正发请求时由**接口地址**（Google 官方域名走 Gemini 原生，其余默认走 OpenAI 图片 `/images/generations`）和模型名自动选协议。以后加语音槽可以同样只加「语音模型」一项。旧预设里若仍是 `openai-image` / `gemini-image` 也兼容。
+
+**相关引用：** `SettingsSubPages.jsx` 的 `fetchDraftModels` / `useEffect`；`model_settings_service.list_remote_models_for_config`；`resolve_image_wire_protocol`
+
+## 2026-10-10 网页画的图和 iMessage 怎么同步
+
+**原问：** 让 Remoire 里也可以调用画图工具，图片消息在 iMessage 和 Remoire 都能同步。
+
+**答案核心：** 可以。生图槽配好之后，网页聊天和 iMessage 都会给 Connie 画图工具。画出的图写进同一段对话：网页马上显示，以后打开记录也在。你在 iMessage 里收到或让她画出的图，本来就会进这段记录，网页看得到。反过来，你在网页里让她画、并且 iMessage 线路是连着的，同一张已保存的图会再发到短信，不会重新花钱生一张。
+
+**相关引用：** `image_generation_service.publish_web_image`；`imessage_service.mirror_saved_image`；`ChatPage.jsx` 的 `type === 'image'`
+
+## 2026-10-10 生图是不是必须官方地址，网页能不能收到图
+
+**原问：** 现在生图是不是必须用 OpenAI / Gemini 官方 base URL？她用的是和其他模型一样的第三方中转。图片生成是不是只有 iMessage 能发，Remoire 网页里也能发给她吗？
+
+**答案核心：** 地址不锁死官方域名。生图预设里填什么 https 公网地址，就打到哪里。但请求格式分两种：选「OpenAI 图片接口」会打 `{地址}/images/generations`，中转必须提供这个图片接口，不能只靠聊天的 `/chat/completions`；选「Gemini 原生接口」会打 `{地址}/models/模型名:generateContent`，并带 Gemini 的请求头和正文，中转必须实现这套原生接口，不能只是 OpenAI 兼容转发。网页聊天目前不会生图：画图工具只挂在 iMessage 这一轮，生成的图只进 iMessage 发送队列。Remoire 网页里 Connie 还不能把新画的图发给你。
+
+**相关引用：** `llm.generate_image`；`image_generation_service.TOOL`；`chat_service.stream_chat` 里 `channel == "imessage"` 才挂工具
+
+## 2026-10-09 主动消息改成 iMessage 入口会不会立即生效
+
+**原问：** 设置页主动消息，如果改成入口为 iMessage，会立即生效吗？
+
+**答案核心：** 保存成功后就写入数据库，不用重启服务器。之后每一次 Connie **新生成并发送**的主动消息，都会先读最新设置；若选 iMessage 且线路是已连接，就走短信，否则改网页 Push。点「iMessage」会立刻调保存接口；线路没连上会保存失败并提示。改设置**不会马上发一条测试短信**，只影响**下一次**到点的主动活动（随机大约 45–75 分钟一轮，还要在允许时段内）。生成主动消息时也会告诉模型「这次可能发到 iMessage」。
+
+**相关引用：** `SettingsSubPages.jsx` 的 `set('deliveryChannel')`；`settings.py` 的 `update_proactive_settings`；`nudge_service.send_nudge`、`_get_settings()`
+
+## 2026-10-09 能不能参考 Uranus 的实现
+
+**原问：** 不拷贝 Uranus 源码，但可以参考他们是如何实现的呀；Remoire 不会商用，已经征得 Uranus 开发者许可。
+
+**答案核心：** 可以，而且应该这样干。「不拷贝」指的是不要把 Uranus 整份当子项目贴进 Remoire、也不要 fork 成第二套记忆；不是不能读他们的仓库。有开发者许可、又不商用，对照 `Uranus_Imessage` 看每种 iMessage 类型（图、语音、贴表情、撤回、链接卡片、转账样式、点单）怎么接 Photon、怎么拼气泡，然后在 Remoire 里用现有的 `imessage_bridge`、`imessage_service` 和 `stream_chat` 重写一遍，记忆仍只走 Remoire 的 SQLite。
+
+**相关引用：** `.claude/handovers/2026-10-09-imessage.md` P2 节；Uranus `server/src/imessage.js`、`photon.js`
+
 ## 2026-10-09 换日常模型要不要为 Claude 改代码
 
 **原问：** 现在是在做什么？为什么要查 Claude API 的要求/消息转换逻辑？只需要把本地日常槽位改成生产环境里那个 Claude 的 API。为什么要专门针对 Claude 做修改，以后换成别的模型不就不适用了吗？

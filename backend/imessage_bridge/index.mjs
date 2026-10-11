@@ -1,4 +1,4 @@
-import { normalizeInbound, sendAction } from "./protocol.mjs";
+import { normalizeInboundWithImages, sendAction } from "./protocol.mjs";
 
 /**
  * Small courier between Photon and Remoire.
@@ -106,11 +106,21 @@ async function executeAction(action) {
     }
     return true;
   }
-  if (["send", "reply", "reaction"].includes(action.kind)) {
+  if (["send", "reply", "reaction", "image"].includes(action.kind)) {
     if (!space?.send) return false;
     if (action.delay_ms > 0) await sleep(action.delay_ms);
     const builders = await import("spectrum-ts");
-    const sent = await sendAction(space, action, builders);
+    let media = null;
+    if (action.kind === "image") {
+      const response = await fetch(`${API_BASE}/api/internal/imessage/outbox/${encodeURIComponent(action.id)}/image`, { headers: headers(), signal: AbortSignal.timeout(15000) });
+      if (!response.ok) throw new Error("imessage_image_download_failed");
+      const length = Number(response.headers.get("content-length"));
+      if (!length || length > 8 * 1024 * 1024) throw new Error("imessage_image_size_invalid");
+      const data = Buffer.from(await response.arrayBuffer());
+      if (data.length !== length) throw new Error("imessage_image_size_invalid");
+      media = { data, mimeType: response.headers.get("content-type")?.split(";")[0] };
+    }
+    const sent = await sendAction(space, action, builders, media);
     if (!sent?.id) throw new Error("imessage_send_missing_id");
     return { external_id: String(sent.id) };
   }
@@ -176,7 +186,7 @@ async function connectOnce(runtime, stop) {
   try {
     for await (const [space, message] of instance.messages) {
       if (stop.stopped) break;
-      const payload = normalizeInbound(message, space.id);
+      const payload = await normalizeInboundWithImages(message, space.id, runtime.owner_phone);
       if (!payload) continue;
       spaces.set(payload.chat_guid, space);
       inboundMessages.set(payload.external_id, message);

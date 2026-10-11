@@ -223,15 +223,12 @@ async def _remember_inbox(external_id: str, accepted: int) -> bool:
         return cur.rowcount == 1
 
 
-async def accept_inbound(*, external_id: str, sender: str, text: str, sent_at: str = "", chat_guid: str = "", kind: str = "text", reply_to: str = "", quote_text: str = "", target_id: str = "", emoji: str = "", target_text: str = "") -> dict:
+async def accept_inbound(*, external_id: str, sender: str, text: str, sent_at: str = "", chat_guid: str = "", kind: str = "text", reply_to: str = "", quote_text: str = "", target_id: str = "", emoji: str = "", target_text: str = "", images: list[str] | None = None) -> dict:
     external_id = (external_id or "").strip()
     if not external_id:
         return {"ok": False, "reason": "missing_id"}
     sender_phone = normalize_phone(sender)
     account = await get_account()
-    fresh = await _remember_inbox(external_id, 0)
-    if not fresh:
-        return {"ok": True, "duplicate": True}
 
     if not account.get("enabled"):
         logger.info("imessage_inbound_disabled")
@@ -242,6 +239,17 @@ async def accept_inbound(*, external_id: str, sender: str, text: str, sent_at: s
         logger.info("imessage_inbound_rejected")
         return {"ok": False, "reason": "rejected"}
 
+    images = images or []
+    from app.services.image_storage import decode_image, InvalidImageError, MAX_IMAGE_BYTES
+    try:
+        if len(images) > 4 or sum(len(decode_image(value)[0]) for value in images) > MAX_IMAGE_BYTES:
+            raise InvalidImageError("图片总大小超过限制")
+    except (InvalidImageError, TypeError):
+        return {"ok": False, "reason": "invalid_image"}
+    fresh = await _remember_inbox(external_id, 0)
+    if not fresh:
+        return {"ok": True, "duplicate": True}
+
     if kind == "reaction":
         if not chat_guid or not target_id or not emoji or len(emoji) > 32:
             return {"ok": False, "reason": "invalid_reaction"}
@@ -249,7 +257,7 @@ async def accept_inbound(*, external_id: str, sender: str, text: str, sent_at: s
         return {"ok": True, "reaction_saved": True}
 
     # Non-text Photon events must not reset the debounce or supersede a reply.
-    if not (text or "").strip():
+    if not (text or "").strip() and not images:
         return {"ok": True, "ignored": "empty_text"}
 
     _note_lag(sent_at)
@@ -271,6 +279,7 @@ async def accept_inbound(*, external_id: str, sender: str, text: str, sent_at: s
         _STATE["items"].append({
             "external_id": external_id,
             "text": text or "",
+            "images": images,
             "chat_guid": chat_guid or "",
             "reply_to": reply_to,
             "quote_text": quote_text,
@@ -342,17 +351,32 @@ async def _reply_is_current() -> bool:
 
 async def _run_turn(items: list[dict]) -> None:
     merged = "\n".join(item["text"].strip() for item in items if item.get("text") and item["text"].strip()).strip()
-    if not merged:
+    if not merged and not any(item.get("images") for item in items):
         return
+    merged = merged or "[本轮通过 iMessage 发来图片]"
     chat_guid = next((item["chat_guid"] for item in reversed(items) if item.get("chat_guid")), "")
     ref_id = items[-1]["external_id"]
     account = await get_account()
-    from app.services.chat_service import get_or_create_conversation, stream_chat
+    from app.services.chat_service import get_or_create_conversation, stream_chat, save_message
 
     conversation_id = await _latest_conversation_id()
     conversation_id = await get_or_create_conversation(conversation_id)
     await _enqueue(conversation_id, "read", "", ref_id=ref_id, chat_guid=chat_guid, delay_ms=0)
     await _enqueue(conversation_id, "typing_start", "", ref_id=ref_id, chat_guid=chat_guid, delay_ms=0)
+
+    # Photo bursts retain their original messages, not an extra duplicate text
+    # bubble. Each photo uses the existing authenticated web image history.
+    has_images = any(item.get("images") for item in items)
+    if has_images:
+        for item in items:
+            for index, image in enumerate(item.get("images") or [""]):
+                message_id = await save_message(conversation_id, "user", item["text"] if index == 0 else "", image=image, channel="imessage")
+                if index == 0:
+                    await imessage_interactions.record_bubble(
+                        external_id=item["external_id"], chat_guid=chat_guid,
+                        conversation_id=conversation_id, message_id=message_id,
+                        direction="inbound", body=item["text"] or "[图片]",
+                        reply_to=item.get("reply_to", ""), quote_text=item.get("quote_text", ""))
 
     saved_ids = {}
     turn = {"chat_guid": chat_guid, "items": items}
@@ -361,6 +385,8 @@ async def _run_turn(items: list[dict]) -> None:
         saved_ids[role] = message_id
         if role == "user":
             for item in items:
+                if item.get("images"):
+                    continue
                 await imessage_interactions.record_bubble(
                     external_id=item["external_id"], chat_guid=chat_guid,
                     conversation_id=conversation_id, message_id=message_id,
@@ -379,6 +405,8 @@ async def _run_turn(items: list[dict]) -> None:
         save_error_reply=False,
         reply_is_current=_reply_is_current,
         on_message_saved=on_saved, imessage_turn=turn,
+        context_images=[image for item in items for image in item.get("images", [])] or None,
+        persist_user=not has_images,
     ):
         if isinstance(event, dict) and event.get("type") == "reaction_only":
             reaction_only = True
@@ -405,12 +433,15 @@ async def _run_turn(items: list[dict]) -> None:
             row = await cur.fetchone()
     reply = row["content"] if row else ""
     bubbles = sanitize_bubbles(reply)
-    if not bubbles:
+    if not bubbles and not turn.get("generated_image"):
         await _fail_turn(conversation_id, chat_guid, account, "这轮没有可发送的文字")
         return
 
     for target, emoji in turn.get("reactions", {}).items():
         await _enqueue(conversation_id, "reaction", emoji, ref_id=target, chat_guid=chat_guid)
+    if turn.get("generated_image"):
+        image_id = await save_message(conversation_id, "assistant", "", image=turn["generated_image"], channel="imessage")
+        await _enqueue(conversation_id, "image", "[图片]", message_id=image_id, chat_guid=chat_guid)
     per_char = int(account.get("typing_ms_per_char") or 45)
     for index, bubble in enumerate(bubbles):
         await _enqueue(
@@ -530,7 +561,7 @@ async def ack_action(action_id: str, ok: bool, *, external_id: str = "") -> None
                 "UPDATE imessage_outbox SET status = 'sent', updated_at = ? WHERE id = ?",
                 (now, action_id),
             )
-            if row["kind"] in ("send", "reply"):
+            if row["kind"] in ("send", "reply", "image"):
                 if external_id and row["message_id"]:
                     await db.execute("""INSERT INTO imessage_bubbles
                         (external_id, chat_guid, conversation_id, message_id, direction, body, reply_to)
@@ -553,3 +584,26 @@ async def ack_action(action_id: str, ok: bool, *, external_id: str = "") -> None
                 (status, attempts, now, action_id),
             )
         await db.commit()
+
+
+async def mirror_saved_image(conversation_id: str, image_id: str) -> bool:
+    """Queue a saved web image once, only while the configured line is live."""
+    async with get_db() as db:
+        await db.execute("BEGIN IMMEDIATE")
+        async with db.execute("SELECT enabled,status,chat_guid FROM imessage_accounts WHERE id=1") as cur:
+            account = await cur.fetchone()
+        if not account or not account["enabled"] or account["status"] != "connected" or not account["chat_guid"]:
+            return False
+        async with db.execute("SELECT 1 FROM messages WHERE id=? AND conversation_id=? AND role='assistant' AND image='file'", (image_id, conversation_id)) as cur:
+            if not await cur.fetchone():
+                return False
+        async with db.execute("SELECT 1 FROM imessage_outbox WHERE message_id=? AND kind='image'", (image_id,)) as cur:
+            if await cur.fetchone():
+                return True
+        now = _now()
+        await db.execute("""INSERT INTO imessage_outbox
+            (id,conversation_id,message_id,kind,body,ref_id,chat_guid,delay_ms,sequence,status,attempts,created_at,updated_at)
+            VALUES (?,?,?,'image','[图片]','',?,0,(SELECT COALESCE(MAX(sequence),0)+1 FROM imessage_outbox),'pending',0,?,?)""",
+            (str(uuid.uuid4()), conversation_id, image_id, account["chat_guid"], now, now))
+        await db.commit()
+    return True

@@ -156,8 +156,17 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 
 
 @app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request: Request, _exc: RequestValidationError):
-    return _error_response(request, 422, "validation_error", "请求参数不正确")
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    message = "请求参数不正确"
+    for item in exc.errors():
+        if item.get("type") == "extra_forbidden":
+            message = "请求参数不正确：请重启本地后端后再试（当前 API 版本过旧）"
+            break
+        loc = item.get("loc") or ()
+        if loc and loc[-1] in ("api_key", "base_url"):
+            message = "请先填写有效的密钥和接口地址"
+            break
+    return _error_response(request, 422, "validation_error", message)
 
 
 @app.exception_handler(Exception)

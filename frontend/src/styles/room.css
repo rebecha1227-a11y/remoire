@@ -305,11 +305,18 @@
     inset 0 1px 0 var(--user-edge);
   text-shadow: 0 1px 1px rgba(80,40,10,0.08);
 }
-.r-bubble-img {
-  max-width: 220px; max-height: 220px;
-  border-radius: 14px;
-  border: 1px solid var(--ai-border);
-  box-shadow: var(--ai-shadow);
+.r-chat-photo {
+  display: block;
+  max-width: min(78vw, 280px);
+  max-height: min(78vw, 360px);
+  width: auto;
+  height: auto;
+  border-radius: 12px;
+  object-fit: cover;
+  box-shadow: 0 6px 20px -8px rgba(40, 33, 28, 0.22);
+}
+.r-row-user .r-chat-photo {
+  margin-left: auto;
 }
 .r-cursor::after {
   content: ''; display: inline-block;
@@ -897,3 +904,19 @@
   cursor: pointer;
 }
 .r-compose-quote-dismiss:hover { color: var(--ink); background: var(--ai-bg); }
+
+/* Native dialog keeps original images above the room and navigation. */
+.r-chat-photo-button { display: block; padding: 0; border: 0; background: none; cursor: zoom-in; min-width: 44px; min-height: 44px; border-radius: 12px; }
+.r-row-user .r-chat-photo-button { margin-left: auto; }
+.r-chat-photo-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.r-image-viewer { position: fixed; inset: 0; box-sizing: border-box; width: 100%; height: 100dvh; max-width: none; max-height: none; margin: 0; padding: 0; border: 0; background: var(--bg-primary, #F6F2ED); color: var(--text-primary, #28211C); font-family: var(--font-body); }
+.r-image-viewer[open] { display: flex; flex-direction: column; }
+.r-image-viewer::backdrop { background: var(--bg-primary, #F6F2ED); }
+.r-image-toolbar { display: flex; align-items: center; justify-content: space-between; padding: max(12px, env(safe-area-inset-top)) 16px 8px; font-size: 15px; flex-shrink: 0; }
+.r-image-toolbar > div { display: flex; gap: 8px; }
+.r-image-toolbar button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; min-width: 44px; padding: 0 10px; border: 0; border-radius: 8px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.r-image-toolbar button:disabled { opacity: .5; }
+.r-image-stage { display: flex; align-items: center; justify-content: center; flex: 1; min-height: 0; overflow: auto; padding: 0 12px; }
+.r-image-stage img { display: block; max-width: 100%; max-height: 100%; object-fit: contain; -webkit-touch-callout: default; user-select: auto; }
+.r-image-footer { flex-shrink: 0; text-align: center; padding: 12px 20px max(12px, env(safe-area-inset-bottom)); color: var(--text-secondary); font-size: 13px; line-height: 1.6; }
+.r-image-footer a { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; margin-left: 12px; color: inherit; text-underline-offset: 4px; }

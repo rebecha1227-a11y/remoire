@@ -1,5 +1,5 @@
 import hmac
-from typing import Literal
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.auth import verify_token
 from app import config
 from app.services import imessage_service
+from app.services.image_storage import MAX_ENCODED_IMAGE_CHARS
 
 router = APIRouter(tags=["imessage"])
 
@@ -27,6 +28,7 @@ class InboundBody(BaseModel):
     external_id: str = Field(min_length=1, max_length=200)
     sender: str = Field(default="", max_length=64)
     text: str = Field(default="", max_length=8000)
+    images: list[Annotated[str, Field(max_length=MAX_ENCODED_IMAGE_CHARS)]] = Field(default_factory=list, max_length=4)
     sent_at: str = Field(default="", max_length=64)
     chat_guid: str = Field(default="", max_length=300)
 
@@ -106,7 +108,7 @@ async def bridge_inbound(body: InboundBody, _=Depends(verify_bridge)):
     result = await imessage_service.accept_inbound(
         external_id=body.external_id,
         sender=body.sender,
-        text=body.text,
+        text=body.text, images=body.images,
         sent_at=body.sent_at,
         chat_guid=body.chat_guid,
         kind=body.kind, reply_to=body.reply_to, quote_text=body.quote_text, target_id=body.target_id, emoji=body.emoji, target_text=body.target_text,
@@ -130,3 +132,17 @@ async def bridge_outbox(_=Depends(verify_bridge)):
 async def bridge_ack(action_id: str, body: AckBody, _=Depends(verify_bridge)):
     await imessage_service.ack_action(action_id, body.ok, external_id=body.external_id)
     return {"ok": True}
+
+
+@router.get("/api/internal/imessage/outbox/{action_id}/image")
+async def bridge_outbound_image(action_id: str, _=Depends(verify_bridge)):
+    from app.database import get_db
+    from app.services.chat_service import get_message_image
+    from fastapi.responses import Response
+    async with get_db() as db:
+        async with db.execute("SELECT message_id FROM imessage_outbox WHERE id=? AND kind='image' AND status='pending'", (action_id,)) as cur:
+            row = await cur.fetchone()
+    image = await get_message_image(row["message_id"]) if row else None
+    if not image:
+        raise HTTPException(status_code=404, detail="图片不可用")
+    return Response(image[0], media_type=image[1], headers={"Cache-Control": "no-store"})

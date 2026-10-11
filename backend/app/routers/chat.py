@@ -7,6 +7,8 @@ from app.auth import verify_token
 from app.services.chat_service import get_or_create_conversation, get_history, search_messages, stream_chat, debug_prompt
 from app.services.image_storage import MAX_ENCODED_IMAGE_CHARS, decode_image
 import json
+import asyncio
+from contextlib import suppress
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
@@ -31,17 +33,19 @@ async def send_message(req: SendRequest, _=Depends(verify_token)):
 
     async def event_stream():
         yield f"data: {json.dumps({'type': 'conversation_id', 'conversation_id': conversation_id})}\n\n"
-        had_error = False
-        async for item in stream_chat(conversation_id, req.message, image=req.image, mode=req.mode or "daily", reply_style=req.reply_style or "split"):
-            if isinstance(item, dict):
-                yield f"data: {json.dumps(item)}\n\n"
-                if item.get("type") == "error":
-                    had_error = True
-                    break
-            else:
-                yield f"data: {json.dumps({'type': 'chunk', 'content': item})}\n\n"
-        if not had_error:
-            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+        try:
+            source = stream_chat(conversation_id, req.message, image=req.image, mode=req.mode or "daily", reply_style=req.reply_style or "split")
+            async for item in _with_heartbeat(source):
+                if item is None:
+                    yield ": keepalive\n\n"
+                else:
+                    event = item if isinstance(item, dict) else {"type": "chunk", "content": item}
+                    yield f"data: {json.dumps(event)}\n\n"
+        except Exception as exc:
+            from app.llm import public_model_error
+            code, detail = public_model_error(exc)
+            yield f"data: {json.dumps({'type': 'error', 'code': code, 'content': detail})}\n\n"
+        yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
@@ -92,3 +96,25 @@ async def chat_image(message_id: str, _=Depends(verify_token)):
         raise HTTPException(status_code=404, detail="not found")
     raw_bytes, mime = result
     return Response(content=raw_bytes, media_type=mime)
+
+
+async def _with_heartbeat(source, interval=15):
+    """Keep proxies alive during generation without cancelling the pending call."""
+    pending = None
+    try:
+        while True:
+            pending = asyncio.create_task(anext(source))
+            while not (await asyncio.wait({pending}, timeout=interval))[0]:
+                yield None
+            finished, pending = pending, None
+            try:
+                item = finished.result()
+            except StopAsyncIteration:
+                break
+            yield item
+    finally:
+        if pending is not None:
+            pending.cancel()
+            with suppress(asyncio.CancelledError, StopAsyncIteration):
+                await pending
+        await source.aclose()

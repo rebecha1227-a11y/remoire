@@ -3,6 +3,7 @@ import { useState, useRef, useEffect, memo, useCallback } from "react";
 import { apiFetch, apiJsonFetch, API_BASE } from "../utils/api";
 import { PALETTES, currentBand, AMBIENT_BY_BAND, isDarkBand } from "../utils/ambient";
 import Floaters from "./Floaters";
+import ChatImage from "./ChatImage";
 import { RainLayer, FogLayer } from "./WeatherEffects";
 import "../styles/room.css";
 
@@ -40,7 +41,14 @@ const TOOL_LABELS = {
   browse_twitter: '刷推特', search_xiaohongshu: '搜小红书', search_twitter: '搜推特',
   save_browsed: '保存内容', read_diary: '翻日记', read_jinger_diary: '看静儿日记',
   try_unlock_diary: '猜密码', reply_diary_interaction: '回复日记',
+  generate_picture: '画画',
 };
+
+function toolBannerLine(tools, count, done) {
+  const onlyDraw = count === 1 && tools?.[0] === 'generate_picture';
+  if (onlyDraw) return done ? `调用了 ${count} 个工具` : '正在画画…';
+  return done ? `调用了 ${count} 个工具` : '正在调用工具…';
+}
 
 function ToolCallBanner({ tools, count, done }) {
   const [expanded, setExpanded] = useState(false);
@@ -70,7 +78,7 @@ function ToolCallBanner({ tools, count, done }) {
         >
           <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
         </svg>
-        <span>{done ? `调用了 ${count} 个工具` : `正在调用工具…`}</span>
+        <span>{toolBannerLine(tools, count, done)}</span>
         <svg
           width="10" height="10" viewBox="0 0 24 24" fill="none"
           stroke="currentColor" strokeWidth="2"
@@ -137,7 +145,9 @@ const MessageRow = memo(function MessageRow({ m, isKept, isThinkOpen, onToggleTh
             <span>{m.quote}</span>
           </div>
         )}
-        {m.image && <img src={m.image} alt="" className="r-bubble-img" />}
+        {m.image && (
+          <ChatImage src={m.image} />
+        )}
         {m.text && (
           <div className={`r-bubble ${isAi ? 'r-bubble-ai' : 'r-bubble-user'}`}>
             {m.formatted ? <FormattedText text={m.text} /> : m.text}
@@ -151,6 +161,11 @@ const MessageRow = memo(function MessageRow({ m, isKept, isThinkOpen, onToggleTh
             fontSize: 12, color: 'var(--ink-soft)',
             textAlign: 'center', fontStyle: 'italic',
           }}>{m.text}</div>
+        )}
+        {m.image && !m.text && m.role !== 'system' && (
+          <div className={`r-meta ${isAi ? 'r-meta-ai' : 'r-meta-user'}`}>
+            {m.time && <span className="r-time">{m.time}</span>}
+          </div>
         )}
         {m.text && m.role !== 'system' && (
           <div className={`r-meta ${isAi ? 'r-meta-ai' : 'r-meta-user'}`} style={{
@@ -489,6 +504,9 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
           for (const m of data.data.messages) {
             const time = formatBJTime(m.created_at);
             if (m.role === 'assistant') {
+              if (m.image || m.image_id) {
+                loaded.push({ id: ++msgIdRef.current, role: 'ai', text: '', time, type: 'normal', channel: m.channel || 'remoire', image: m.image || `${API_BASE}/chat/image/${m.image_id}` });
+              }
               const mode = m.display_mode || 'split';
               if (mode === 'whole') {
                 const msgObj = { id: ++msgIdRef.current, role: 'ai', text: m.content.trim(), time, type: 'normal', formatted: true, channel: m.channel || 'remoire' };
@@ -519,6 +537,7 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
               const userMsg = { id: ++msgIdRef.current, role: 'user', text: m.content, time, type: 'normal', channel: m.channel || 'remoire' };
               if (m.image) userMsg.image = m.image;
               else if (m.image_id) userMsg.image = `${API_BASE}/chat/image/${m.image_id}`;
+              userMsg.quote = m.imessage_bubbles?.[0]?.quote;
               loaded.push(userMsg);
             }
           }
@@ -564,12 +583,58 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
       const decoder = new TextDecoder('utf-8', { fatal: false });
       let replyText = '';
       let thinkingText = '';
+      const pictures = [];
+      let picturesOnScreen = 0;
       let buffer = '';
       let streamDone = false;
       let streamError = '';
 
+      const pushPictureBubble = (src) => {
+        if (pictures.includes(src)) return;
+        pictures.push(src);
+        setTyping(false);
+        setMessages(m => [...m, {
+          id: ++msgIdRef.current, role: 'ai', text: '', time, type: 'normal', isNew: true, image: src,
+        }]);
+        picturesOnScreen += 1;
+      };
+
+      const handleStreamEvent = (parsed) => {
+        if (parsed.type === 'conversation_id') {
+          conversationIdRef.current = parsed.conversation_id;
+          localStorage.setItem('remoire_conv_id', parsed.conversation_id);
+        } else if (parsed.type === 'tool_start') {
+          setToolCall({ tools: parsed.tools, count: parsed.count, done: false });
+          setTyping(false);
+        } else if (parsed.type === 'tool_done') {
+          setMessages(m => [...m, { id: ++msgIdRef.current, type: 'tool_call', tools: parsed.tools, count: parsed.count }]);
+          setToolCall(null);
+          setTyping(true);
+        } else if (parsed.type === 'chunk') {
+          replyText += parsed.content;
+        } else if (parsed.type === 'image' && parsed.image_id) {
+          pushPictureBubble(`${API_BASE}/chat/image/${parsed.image_id}`);
+        } else if (parsed.type === 'thinking') {
+          thinkingText += parsed.content;
+        } else if (parsed.type === 'note') {
+          setNoteData(parsed.note);
+          setNoteState('visible');
+        } else if (parsed.type === 'done') {
+          streamDone = true;
+        } else if (parsed.type === 'error') {
+          streamError = parsed.content || '后端生成回复时出错了。';
+        }
+      };
+
       while (true) {
-        const { done, value } = await reader.read();
+        let next;
+        try {
+          next = await reader.read();
+        } catch {
+          streamError = '连接中断；已收到的内容保留，后续回复未完成。';
+          break;
+        }
+        const { done, value } = next;
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n');
@@ -577,29 +642,7 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
         for (const line of lines) {
           if (!line.startsWith('data:')) continue;
           try {
-            const parsed = JSON.parse(line.slice(5).trim());
-            if (parsed.type === 'conversation_id') {
-              conversationIdRef.current = parsed.conversation_id;
-              localStorage.setItem('remoire_conv_id', parsed.conversation_id);
-            } else if (parsed.type === 'tool_start') {
-              setToolCall({ tools: parsed.tools, count: parsed.count, done: false });
-              setTyping(false);
-            } else if (parsed.type === 'tool_done') {
-              setMessages(m => [...m, { id: ++msgIdRef.current, type: 'tool_call', tools: parsed.tools, count: parsed.count }]);
-              setToolCall(null);
-              setTyping(true);
-            } else if (parsed.type === 'chunk') {
-              replyText += parsed.content;
-            } else if (parsed.type === 'thinking') {
-              thinkingText += parsed.content;
-            } else if (parsed.type === 'note') {
-              setNoteData(parsed.note);
-              setNoteState('visible');
-            } else if (parsed.type === 'done') {
-              streamDone = true;
-            } else if (parsed.type === 'error') {
-              streamError = parsed.content || '后端生成回复时出错了。';
-            }
+            handleStreamEvent(JSON.parse(line.slice(5).trim()));
           } catch {
             streamError = '回复数据格式异常，请重试。';
           }
@@ -609,32 +652,39 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
       for (const line of buffer.split('\n')) {
         if (!line.startsWith('data:')) continue;
         try {
-          const parsed = JSON.parse(line.slice(5).trim());
-          if (parsed.type === 'tool_start') { setToolCall({ tools: parsed.tools, count: parsed.count, done: false }); setTyping(false); }
-          else if (parsed.type === 'tool_done') { setMessages(m => [...m, { id: ++msgIdRef.current, type: 'tool_call', tools: parsed.tools, count: parsed.count }]); setToolCall(null); setTyping(true); }
-          else if (parsed.type === 'chunk') { replyText += parsed.content; }
-          else if (parsed.type === 'thinking') thinkingText += parsed.content;
-          else if (parsed.type === 'note') { setNoteData(parsed.note); setNoteState('visible'); }
-          else if (parsed.type === 'done') streamDone = true;
-          else if (parsed.type === 'error') streamError = parsed.content || '后端生成回复时出错了。';
+          handleStreamEvent(JSON.parse(line.slice(5).trim()));
         } catch {
           streamError = '回复数据格式异常，请重试。';
         }
       }
 
-      if (streamError) throw new Error(streamError);
-      if (!streamDone) throw new Error('后端流式响应中断');
+      const hasReplyContent = !!replyText.trim() || pictures.length > 0;
+      if (!streamDone && !streamError) streamError = '回复连接中断，未完整完成。';
+      if (streamError && !hasReplyContent) {
+        const error = new Error(streamError);
+        error.publicMessage = streamError;
+        throw error;
+      }
 
       setTyping(false);
       setStreaming('');
       setToolCall(null);
-      if (!replyText.trim()) {
+      const showPicture = () => {
+        for (const src of pictures.slice(picturesOnScreen)) {
+          setMessages(m => [...m, { id: ++msgIdRef.current, role: 'ai', text: '', time, type: 'normal', isNew: true, image: src }]);
+        }
+      };
+      if (!replyText.trim() && pictures.length === 0) {
         setMessages(m => [...m, { id: ++msgIdRef.current, role: 'ai', text: '……我刚刚走神了，你再说一次好吗？', time, type: 'normal', isNew: true }]);
+      } else if (!replyText.trim()) {
+        showPicture();
       } else if (replyStyle === 'whole') {
+        showPicture();
         const msgObj = { id: ++msgIdRef.current, role: 'ai', text: replyText.trim(), time, type: 'normal', isNew: true, formatted: true };
         if (thinkingText) msgObj.thinking = thinkingText;
         setMessages(m => [...m, msgObj]);
       } else {
+        showPicture();
         const segments = replyText.split('\n\n').map(s => s.trim()).filter(s => s.length > 0);
         for (let i = 0; i < segments.length; i++) {
           if (i > 0) {
@@ -647,16 +697,27 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
           setMessages(m => [...m, msgObj]);
         }
       }
+      if (streamError && hasReplyContent) {
+        setMessages(m => [...m, {
+          id: ++msgIdRef.current,
+          role: 'ai',
+          text: streamError,
+          time: formatBJTime(new Date().toISOString()),
+          type: 'normal',
+          isNew: true,
+        }]);
+      }
     } catch (e) {
       setTyping(false);
       setStreaming('');
-      const message = e.message?.includes('流式响应中断')
+      setToolCall(null);
+      const message = e.publicMessage || (e.message?.includes('流式响应中断')
         ? '回复中断了，刚刚那次没有完整生成。'
         : e.message?.includes('模型输出被截断')
           ? '模型输出被截断了。可以关掉扩展思考，或换一个输出上限更高的模型。'
           : e.message?.startsWith('后端返回错误')
             ? e.message
-            : '连不上后端，请确认后端在运行中。';
+            : '连接未完成，请检查网络或后端状态。');
       setMessages(m => [...m, { id: ++msgIdRef.current, role: 'ai', text: message, time: formatBJTime(new Date().toISOString()), type: 'normal', isNew: true }]);
     }
   }

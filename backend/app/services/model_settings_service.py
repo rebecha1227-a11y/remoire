@@ -20,8 +20,34 @@ from app.database import get_db
 from app.llm import ModelConfig
 
 
-SLOTS = ("daily", "deep", "backend")
+SLOTS = ("daily", "deep", "backend", "image")
+IMAGE_PRESET_PROVIDERS = frozenset({"image", "openai-image", "gemini-image"})
 UNSET = object()
+
+
+def is_image_provider(provider: str | None) -> bool:
+    return (provider or "").strip() in IMAGE_PRESET_PROVIDERS
+
+
+def normalize_provider(provider: str | None) -> str:
+    value = (provider or "openai-compatible").strip()
+    if value in ("openai-image", "gemini-image"):
+        return "image"
+    return value
+
+
+def resolve_image_wire_protocol(provider: str | None, base_url: str, model_id: str = "") -> str:
+    """Pick OpenAI /images or Gemini generateContent from preset type, host, and model id."""
+    stored = (provider or "").strip()
+    if stored == "gemini-image":
+        return "gemini-image"
+    if stored == "openai-image":
+        return "openai-image"
+    host = urlparse(base_url or "").netloc.lower()
+    model = (model_id or "").lower()
+    if "generativelanguage.googleapis.com" in host or model.startswith(("gemini-", "imagen")):
+        return "gemini-image"
+    return "openai-image"
 _ENCRYPTED_PREFIX = "fernet:v1:"
 DEFAULT_CONTEXT_WINDOW = 32768
 DEFAULT_OUTPUT_BUDGET = 4096
@@ -406,7 +432,7 @@ async def create_preset(data: dict) -> dict:
             (
                 preset_id,
                 data["nickname"].strip(),
-                (data.get("provider") or "openai-compatible").strip(),
+                normalize_provider(data.get("provider")),
                 _encrypt_api_key(data["api_key"]),
                 data["base_url"].strip().rstrip("/"),
                 data["model_name"].strip(),
@@ -438,7 +464,7 @@ async def update_preset(preset_id: str, data: dict) -> dict:
                WHERE id = ?""",
             (
                 merged["nickname"].strip(),
-                (merged.get("provider") or "openai-compatible").strip(),
+                normalize_provider(merged.get("provider")),
                 _encrypt_api_key(merged["api_key"]),
                 merged["base_url"].strip().rstrip("/"),
                 merged["model_name"].strip(),
@@ -468,10 +494,44 @@ async def list_remote_models(preset_id: str) -> list[dict]:
     return await list_remote_models_for_config(
         api_key=preset["api_key"],
         base_url=preset["base_url"],
+        provider=preset.get("provider") or "openai-compatible",
     )
 
 
-async def list_remote_models_for_config(api_key: str, base_url: str) -> list[dict]:
+async def _request_gemini_models(api_key: str, base_url: str) -> list[dict]:
+    validated = await _validated_public_base(base_url)
+    root = validated["base_url"].rstrip("/")
+    if root.endswith("/v1beta"):
+        url = f"{root}/models"
+    elif "/v1beta" in root:
+        url = f"{root}/models"
+    else:
+        url = f"{root}/v1beta/models"
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.get(url, headers={"x-goog-api-key": api_key})
+        resp.raise_for_status()
+        payload = resp.json()
+    result = []
+    for item in payload.get("models", []):
+        name = item.get("name") or ""
+        model_id = name.split("/")[-1] if name else ""
+        if not model_id:
+            continue
+        methods = item.get("supportedGenerationMethods") or []
+        if methods and "generateContent" not in methods:
+            continue
+        result.append({"id": model_id, "owned_by": "google"})
+    return result
+
+
+async def list_remote_models_for_config(
+    api_key: str,
+    base_url: str,
+    provider: str = "openai-compatible",
+) -> list[dict]:
+    if is_image_provider(provider) and resolve_image_wire_protocol(provider, base_url) == "gemini-image":
+        return await _request_gemini_models(api_key, base_url)
+
     payload = await _request_openai_compatible(api_key, base_url, "/models")
     models = payload.get("data", [])
     result = []
@@ -493,7 +553,19 @@ async def list_remote_models_for_config(api_key: str, base_url: str) -> list[dic
     return result
 
 
-async def test_model_config(api_key: str, base_url: str, model_name: str) -> dict:
+async def test_model_config(
+    api_key: str,
+    base_url: str,
+    model_name: str,
+    provider: str = "openai-compatible",
+) -> dict:
+    if is_image_provider(provider):
+        models = await list_remote_models_for_config(api_key, base_url, provider=provider)
+        ids = {item["id"] for item in models}
+        if model_name not in ids:
+            raise ValueError("所选模型不在接口返回的列表里")
+        return {"model": model_name, "mode": "image-list"}
+
     payload = await _request_openai_compatible(
         api_key,
         base_url,
@@ -515,7 +587,12 @@ async def test_saved_model_config(preset_id: str) -> dict:
     preset = await get_preset(preset_id)
     if not preset:
         raise PresetNotFoundError("模型预设不存在")
-    return await test_model_config(preset["api_key"], preset["base_url"], preset["model_name"])
+    return await test_model_config(
+        preset["api_key"],
+        preset["base_url"],
+        preset["model_name"],
+        provider=preset.get("provider") or "openai-compatible",
+    )
 
 
 async def list_slots() -> list[dict]:
@@ -589,6 +666,10 @@ async def update_slot(
         raise PresetNotFoundError("模型预设不存在")
     thinking = bool(current["extended_thinking"]) if current and extended_thinking is UNSET else bool(extended_thinking)
     selected_preset = await get_preset(next_preset_id) if next_preset_id else None
+    if selected_preset:
+        image_provider = is_image_provider(selected_preset.get("provider"))
+        if (slot == "image") != image_provider:
+            raise ValueError("生图槽位请选择生图预设；聊天槽位请选择聊天预设")
     inferred = selected_preset.get("capabilities") if selected_preset else None
     if next_preset_id != current_preset_id:
         current = {**(current or {}), "context_window": DEFAULT_CONTEXT_WINDOW,

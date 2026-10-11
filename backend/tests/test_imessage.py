@@ -70,6 +70,209 @@ class ImessageBridgeTests(unittest.IsolatedAsyncioTestCase):
         if pending:
             await asyncio.gather(*pending, return_exceptions=True)
 
+    async def test_images_survive_burst_and_are_available_in_model_history(self):
+        from app.services import image_storage
+        await self._enable()
+        png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXioAAAAASUVORK5CYII="
+        with patch.object(image_storage, "IMAGES_DIR", Path(self.tempdir.name)):
+            for n in range(2):
+                result = await imessage_service.accept_inbound(external_id=f"photo-{n}", sender="+8613800138000", text="", images=[png], chat_guid="chat-photos")
+                self.assertTrue(result["queued"])
+            await imessage_service.accept_inbound(external_id="caption", sender="+8613800138000", text="哪张好看？", chat_guid="chat-photos")
+            await imessage_service.flush_pending()
+            await self._drain_background()
+            args = self.llm.call_args
+            messages = args.kwargs.get("messages") or args.args[1]
+            parts = [part for message in messages if isinstance(message.get("content"), list) for part in message["content"]]
+            self.assertEqual(sum(part.get("type") == "image_url" for part in parts), 2)
+            async with database.get_db() as db:
+                async with db.execute("SELECT * FROM messages WHERE image='file'") as cur:
+                    photos = [dict(row) for row in await cur.fetchall()]
+            self.assertEqual(len(photos), 2)
+            for photo in photos:
+                self.assertIsNotNone(await chat_service.get_message_image(photo["id"]))
+            # A new turn with no explicit image still renders retained pictures.
+            rendered = chat_service._render_llm_history(photos)
+            self.assertEqual(sum(isinstance(m["content"], list) for m in rendered), 2)
+
+    async def test_bad_image_does_not_consume_deduplication_id(self):
+        await self._enable()
+        args = dict(external_id="retry-image", sender="+8613800138000", text="重试", chat_guid="chat")
+        result = await imessage_service.accept_inbound(**args, images=["not-an-image"])
+        self.assertEqual(result["reason"], "invalid_image")
+        result = await imessage_service.accept_inbound(**args)
+        self.assertTrue(result["queued"])
+
+    async def test_autonomous_image_tool_queues_persisted_image_and_ack_mapping(self):
+        from app import llm
+        from app.services import image_storage
+        await self._enable()
+        preset = await model_settings_service.create_preset(dict(nickname="画图", provider="openai-image", api_key="fake-image-key", base_url="https://images.example/v1", model_name="gpt-image-1"))
+        await model_settings_service.update_slot("image", preset_id=preset["id"])
+        self.llm.side_effect = [
+            {"role": "assistant", "content": "", "tool_calls": [{"id": "draw", "type": "function", "function": {"name": "generate_picture", "arguments": '{"prompt":"窗边的一束花"}'}}]},
+            {"role": "assistant", "content": "画了一束花，给你。", "tool_calls": None},
+        ]
+        png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXioAAAAASUVORK5CYII="
+        with patch.object(image_storage, "IMAGES_DIR", Path(self.tempdir.name)), patch.object(llm, "generate_image", AsyncMock(return_value=png)) as generate:
+            await imessage_service.accept_inbound(external_id="draw-1", sender="+8613800138000", text="画束花", chat_guid="chat-draw")
+            await imessage_service.flush_pending()
+            await self._drain_background()
+            generate.assert_awaited_once()
+            self.assertEqual(generate.call_args.args[1], "窗边的一束花")
+            actions = await imessage_service.pending_actions()
+            pictures = [a for a in actions if a["kind"] == "image"]
+            self.assertEqual(len(pictures), 1)
+            async with database.get_db() as db:
+                async with db.execute("SELECT message_id FROM imessage_outbox WHERE id=?", (pictures[0]["id"],)) as cur:
+                    image_id = (await cur.fetchone())["message_id"]
+            self.assertIsNotNone(await chat_service.get_message_image(image_id))
+            app = FastAPI()
+            app.include_router(imessage_router.router)
+            with patch.object(config, "IMESSAGE_BRIDGE_TOKEN", "test-bridge-token"), TestClient(app) as client:
+                url = f"/api/internal/imessage/outbox/{pictures[0]['id']}/image"
+                self.assertEqual(client.get(url).status_code, 401)
+                response = client.get(url, headers={"x-remoire-bridge": "test-bridge-token"})
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.headers["content-type"], "image/png")
+                self.assertEqual(response.headers["cache-control"], "no-store")
+            await imessage_service.ack_action(pictures[0]["id"], True, external_id="picture-guid")
+            async with database.get_db() as db:
+                async with db.execute("SELECT message_id FROM imessage_bubbles WHERE external_id='picture-guid'") as cur:
+                    self.assertEqual((await cur.fetchone())["message_id"], image_id)
+
+    async def test_image_tool_disabled_failed_and_duplicate_calls(self):
+        from app import llm
+        from app.services import image_generation_service as image_service
+        self.assertIsNone(await image_service.configured())
+        preset = await model_settings_service.create_preset(dict(nickname="画图", provider="openai-image", api_key="fake-key", base_url="https://images.example/v1", model_name="gpt-image-1"))
+        with self.assertRaises(ValueError):
+            await model_settings_service.update_slot("daily", preset_id=preset["id"])
+        await model_settings_service.update_slot("image", preset_id=preset["id"])
+        turn = {}
+        with patch.object(llm, "generate_image", AsyncMock(side_effect=RuntimeError("private-error"))) as generate:
+            result = await image_service.handle_tool({"prompt": "flower"}, turn)
+            self.assertIn("失败", result)
+            self.assertNotIn("private-error", result)
+            await image_service.handle_tool({"prompt": "again"}, turn)
+            generate.assert_awaited_once()
+        self.assertNotIn("generated_image", turn)
+        await model_settings_service.update_slot("image", preset_id=None)
+        self.assertIsNone(await image_service.configured())
+
+    async def test_web_drawing_lands_in_shared_history_and_streams_image(self):
+        from app import llm
+        from app.services import image_storage
+        await self._enable()
+        preset = await model_settings_service.create_preset(dict(nickname="画图", provider="openai-image", api_key="fake-key", base_url="https://images.example/v1", model_name="gpt-image-1"))
+        await model_settings_service.update_slot("image", preset_id=preset["id"])
+        self.llm.side_effect = [
+            {"role": "assistant", "content": "", "tool_calls": [{"id": "draw", "type": "function", "function": {"name": "generate_picture", "arguments": '{"prompt":"窗边的花"}'}}]},
+            {"role": "assistant", "content": "画好了。", "tool_calls": None},
+        ]
+        png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXioAAAAASUVORK5CYII="
+        conversation_id = await chat_service.get_or_create_conversation(None)
+        with patch.object(image_storage, "IMAGES_DIR", Path(self.tempdir.name)), patch.object(llm, "generate_image", AsyncMock(return_value=png)):
+            events = [event async for event in chat_service.stream_chat(conversation_id, "画一朵花", channel="remoire")]
+            image_events = [event for event in events if isinstance(event, dict) and event.get("type") == "image"]
+            self.assertEqual(len(image_events), 1)
+            self.assertIsNotNone(await chat_service.get_message_image(image_events[0]["image_id"]))
+        self.assertFalse(any(action["kind"] == "image" for action in await imessage_service.pending_actions()))
+
+    async def test_web_image_only_survives_mirror_failure_without_extra_model_call(self):
+        from app import llm
+        from app.services import image_storage
+        preset = await model_settings_service.create_preset(dict(nickname="画图", provider="image", api_key="fake-key", base_url="https://images.example/v1", model_name="gpt-image-1"))
+        await model_settings_service.update_slot("image", preset_id=preset["id"])
+        self.llm.side_effect = [
+            {"role":"assistant", "content":"", "tool_calls":[{"id":"draw", "type":"function", "function":{"name":"generate_picture", "arguments":'{"prompt":"flower"}'}}]},
+            {"role":"assistant", "content":"", "tool_calls":None},
+        ]
+        png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXioAAAAASUVORK5CYII="
+        conversation = await chat_service.get_or_create_conversation(None)
+        with patch.object(image_storage, "IMAGES_DIR", Path(self.tempdir.name)), patch.object(llm,"generate_image",AsyncMock(return_value=png)), patch.object(imessage_service,"mirror_saved_image",AsyncMock(side_effect=RuntimeError("secret"))), patch.object(chat_service,"call_llm",AsyncMock(side_effect=AssertionError("extra call"))) as extra:
+            events = [e async for e in chat_service.stream_chat(conversation,"画花",push_reply=False)]
+            pictures = [e for e in events if e.get("type") == "image"]
+            self.assertEqual(len(pictures),1)
+            self.assertIsNotNone(await chat_service.get_message_image(pictures[0]["image_id"]))
+            extra.assert_not_awaited()
+            self.assertFalse(any(e.get("type") == "error" for e in events))
+        await self._drain_background()
+
+    async def test_web_publication_failure_is_not_reported_as_llm_failure(self):
+        from app import llm
+        from app.services import image_generation_service
+        preset = await model_settings_service.create_preset(dict(nickname="画图", provider="image", api_key="fake-key", base_url="https://images.example/v1", model_name="gpt-image-1"))
+        await model_settings_service.update_slot("image", preset_id=preset["id"])
+        self.llm.side_effect = [
+            {"role":"assistant", "content":"", "tool_calls":[{"id":"draw", "type":"function", "function":{"name":"generate_picture", "arguments":'{"prompt":"flower"}'}}]},
+            {"role":"assistant", "content":"", "tool_calls":None},
+        ]
+        conversation = await chat_service.get_or_create_conversation(None)
+        with patch.object(llm,"generate_image",AsyncMock(return_value="generated-data")) as draw, patch.object(image_generation_service,"publish_web_image",AsyncMock(side_effect=OSError("private-path"))) as publish:
+            events = [e async for e in chat_service.stream_chat(conversation,"画花",push_reply=False)]
+        self.assertTrue(any(e.get("code") == "image_save_failed" for e in events))
+        self.assertFalse(any(e.get("type") == "image" for e in events))
+        draw.assert_awaited_once()
+        publish.assert_awaited_once()
+        self.assertNotIn("private-path",str(events))
+        await self._drain_background()
+
+    async def test_web_image_mirror_queues_only_once_when_connected(self):
+        from app.services import image_storage, image_generation_service
+        await self._enable()
+        await imessage_service.set_status("connected", "", chat_guid="mirror-chat")
+        conversation = await chat_service.get_or_create_conversation(None)
+        png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXioAAAAASUVORK5CYII="
+        with patch.object(image_storage,"IMAGES_DIR",Path(self.tempdir.name)):
+            result = await image_generation_service.publish_web_image(conversation,png)
+            self.assertTrue(result["mirrored"])
+            self.assertTrue(await imessage_service.mirror_saved_image(conversation,result["image_id"]))
+        actions = [a for a in await imessage_service.pending_actions() if a["kind"] == "image"]
+        self.assertEqual(len(actions),1)
+        self.assertEqual(actions[0]["chat_guid"],"mirror-chat")
+
+    async def test_imessage_still_sends_when_sanitize_strips_text_but_image_exists(self):
+        from app import llm
+        from app.services import image_storage
+        await self._enable()
+        preset = await model_settings_service.create_preset(dict(nickname="画图", provider="openai-image", api_key="fake-key", base_url="https://images.example/v1", model_name="gpt-image-1"))
+        await model_settings_service.update_slot("image", preset_id=preset["id"])
+        self.llm.side_effect = [
+            {"role": "assistant", "content": "", "tool_calls": [{"id": "draw", "type": "function", "function": {"name": "generate_picture", "arguments": '{"prompt":"窗边的花"}'}}]},
+            {"role": "assistant", "content": "正在查记忆", "tool_calls": None},
+        ]
+        png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXioAAAAASUVORK5CYII="
+        conversation_id = await chat_service.get_or_create_conversation(None)
+        turn = {"chat_guid": "chat-sanitize", "items": [{"external_id": "x1", "text": "画花", "chat_guid": "chat-sanitize"}]}
+        with patch.object(image_storage, "IMAGES_DIR", Path(self.tempdir.name)), patch.object(llm, "generate_image", AsyncMock(return_value=png)):
+            events = [event async for event in chat_service.stream_chat(
+                conversation_id, "画花", channel="imessage", imessage_turn=turn, push_reply=False, persist_user=False,
+            )]
+        self.assertFalse(any(isinstance(event, dict) and event.get("code") == "empty_reply" for event in events))
+        self.assertIn("generated_image", turn)
+        await model_settings_service.update_slot("image", preset_id=None)
+
+    async def test_new_input_during_image_generation_discards_old_image(self):
+        from app import llm
+        from app.services import image_storage
+        await self._enable()
+        preset = await model_settings_service.create_preset(dict(nickname="画图", provider="openai-image", api_key="fake-key", base_url="https://images.example/v1", model_name="gpt-image-1"))
+        await model_settings_service.update_slot("image", preset_id=preset["id"])
+        self.llm.side_effect = [
+            {"role": "assistant", "content": "", "tool_calls": [{"id": "draw", "type": "function", "function": {"name": "generate_picture", "arguments": '{"prompt":"flower"}'}}]},
+            {"role": "assistant", "content": "旧回复", "tool_calls": None},
+            {"role": "assistant", "content": "好，先不画了。", "tool_calls": None},
+        ]
+        async def interrupted(*args):
+            await imessage_service.accept_inbound(external_id="stop-draw", sender="+8613800138000", text="先别画了", chat_guid="chat")
+            return "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXioAAAAASUVORK5CYII="
+        with patch.object(image_storage, "IMAGES_DIR", Path(self.tempdir.name)), patch.object(llm, "generate_image", interrupted):
+            await imessage_service.accept_inbound(external_id="start-draw", sender="+8613800138000", text="画花", chat_guid="chat")
+            await imessage_service.flush_pending()
+            await self._drain_background()
+            self.assertFalse(any(a["kind"] == "image" for a in await imessage_service.pending_actions()))
+
     async def test_merge_timer_still_sends_a_reply(self):
         await self._enable()
         imessage_service._STATE["auto_fire"] = True

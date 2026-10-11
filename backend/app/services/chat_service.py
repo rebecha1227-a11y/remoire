@@ -1,4 +1,5 @@
 from app.services import prompt_profile_service
+import base64
 import uuid
 import asyncio
 import json
@@ -387,20 +388,30 @@ def _build_llm_history_with_time_gaps(history: list[dict]) -> list[dict]:
                 result.append({"role": "system", "content": f"【下一条消息发送于北京时间 {stamp:%Y-%m-%d %H:%M}；不是事件发生时间】"})
             except (ValueError, TypeError):
                 pass
-        result.append({
-            "role": msg["role"],
-            "content": label_history_content(msg.get("content") or "", msg.get("channel")),
-        })
+        content = label_history_content(msg.get("content") or "", msg.get("channel"))
+        if msg.get("image") and msg.get("role") == "user":
+            from app.services.image_storage import get_image
+            stored = get_image(msg.get("id")) if msg["image"] == "file" else None
+            url = ("data:" + stored[1] + ";base64," + base64.b64encode(stored[0]).decode("ascii")) if stored else (msg["image"] if msg["image"] != "file" else None)
+            if url:
+                content = [{"type": "image_url", "image_url": {"url": url}}, {"type": "text", "text": content or "[图片]"}]
+        result.append({"role": msg["role"], "content": content})
     return result
 
 
 def _render_llm_history(history: list[dict], image: str | None = None, user_message: str = "") -> list[dict]:
     rendered = _build_llm_history_with_time_gaps(history)
     if image:
+        images = image if isinstance(image, list) else [image]
+        # Current photos are mandatory alongside the newest text; do not count
+        # their separately persisted history records twice in this request.
+        for message in rendered:
+            if isinstance(message.get("content"), list):
+                message["content"] = [part for part in message["content"] if part.get("type") != "image_url" or part["image_url"]["url"] not in images]
         for message in reversed(rendered):
             if message.get("role") == "user":
                 message["content"] = [
-                    {"type": "image_url", "image_url": {"url": image}},
+                    *[{"type": "image_url", "image_url": {"url": value}} for value in images],
                     {"type": "text", "text": user_message},
                 ]
                 break
@@ -665,10 +676,15 @@ async def stream_chat(
     reply_is_current: Callable[[], Awaitable[bool]] | None = None,
     on_message_saved: Callable[[str, str], Awaitable[None]] | None = None,
     imessage_turn: dict | None = None,
+    context_images: list[str] | None = None,
+    persist_user: bool = True,
 ):
-    saved_user_id = await save_message(conversation_id, "user", user_message, image=image or "", channel=channel)
-    if on_message_saved is not None:
-        await on_message_saved("user", saved_user_id)
+    if persist_user:
+        saved_user_id = await save_message(conversation_id, "user", user_message, image=image or "", channel=channel)
+        if on_message_saved is not None:
+            await on_message_saved("user", saved_user_id)
+
+    image = context_images or image
 
     from app.services.nudge_service import check_and_close_if_replied
     asyncio.create_task(check_and_close_if_replied(conversation_id))
@@ -705,12 +721,39 @@ async def stream_chat(
         has_diary_notifications=collected["has_diary_notifications"],
         stable=True,
     )
+    picture_turn = imessage_turn if imessage_turn is not None else {}
     if imessage_turn is not None and channel == "imessage":
         from app.services import imessage_interactions
         prepared = await imessage_interactions.context_for_turn(conversation_id, imessage_turn["chat_guid"], imessage_turn["items"])
         imessage_turn.update(prepared)
         collected["dynamic_parts"].append(prepared["prompt"])
         tools = [*tools, *imessage_interactions.TOOLS]
+    from app.services import image_generation_service
+    try:
+        image_configured = await image_generation_service.configured()
+    except Exception as exc:
+        logger.warning("image_configuration_failed %s", type(exc))
+        image_configured = None
+    if image_configured:
+        tools.append(image_generation_service.TOOL)
+
+    async def web_picture_event():
+        if channel == "imessage" or not picture_turn.get("generated_image") or picture_turn.get("published") or picture_turn.get("publish_error"):
+            return None
+        if reply_is_current is not None and not await reply_is_current():
+            picture_turn["published"] = True
+            picture_turn.pop("generated_image", None)
+            return None
+        try:
+            picture = await image_generation_service.publish_web_image(conversation_id, picture_turn["generated_image"])
+        except Exception as exc:
+            logger.error("image_publish_failed %s", type(exc))
+            picture_turn["publish_error"] = True
+            return None
+        picture_turn["published"] = True
+        picture_turn.pop("generated_image", None)
+        return picture
+
     try:
         messages, selected_history, budget = _build_budgeted_chat_context(
             collected,
@@ -773,7 +816,18 @@ async def stream_chat(
                     fn_args = json.loads(tc["function"]["arguments"])
                 except (json.JSONDecodeError, TypeError):
                     fn_args = {}
-                if fn_name in ("imessage_reply_to", "imessage_react"):
+                if fn_name == "generate_picture":
+                    result = await image_generation_service.handle_tool(fn_args, picture_turn)
+                    if channel != "imessage":
+                        picture = await web_picture_event()
+                        if picture:
+                            yield {"type": "image", "image_id": picture["image_id"]}
+                        elif picture_turn.get("publish_error"):
+                            result = "图片已经生成，但保存失败，尚未交付；不要重新生图或声称已经发送。"
+                            yield {"type": "error", "code": "image_save_failed", "content": result}
+                        elif picture_turn.get("image_error"):
+                            yield picture_turn["image_error"]
+                elif fn_name in ("imessage_reply_to", "imessage_react"):
                     if channel == "imessage" and imessage_turn is not None:
                         result = await imessage_interactions.handle_tool(fn_name, fn_args, imessage_turn)
                     else:
@@ -796,7 +850,7 @@ async def stream_chat(
                 })
 
             yield {"type": "tool_done", "tools": tool_names, "count": len(tool_calls)}
-            if imessage_turn and imessage_turn.get("reaction_only") and imessage_turn.get("reactions"):
+            if imessage_turn and imessage_turn.get("reaction_only") and imessage_turn.get("reactions") and not imessage_turn.get("generated_image"):
                 if reply_is_current is not None and not await reply_is_current():
                     yield {"type": "superseded"}
                 else:
@@ -816,16 +870,24 @@ async def stream_chat(
             )
     except context_budget_service.ContextBudgetError as e:
         logger.warning("工具调用后上下文预算不足: %s details=%s", e, e.details)
+        picture = await web_picture_event()
+        if picture:
+            yield {"type": "image", "image_id": picture["image_id"]}
         yield {"type": "error", "code": "context_budget_exceeded", "content": str(e), "details": e.details}
         return
     except Exception as e:
-        logger.error("LLM 调用异常: %s", type(e).__name__)
+        logger.error("chat_turn_failed %s", type(e))
+        picture = await web_picture_event()
+        if picture:
+            yield {"type": "image", "image_id": picture["image_id"]}
         if not save_error_reply:
             yield {"type": "error", "code": "llm_failed", "content": "生成没有完成"}
             return
-        error_reply = "抱歉宝贝，我现在脑子有点转不动……等一下再找我说话好吗？🥺"
-        yield {"type": "chunk", "content": error_reply}
-        await save_message(conversation_id, "assistant", error_reply, channel=channel)
+        from app.llm import public_model_error
+        code, detail = public_model_error(e)
+        if picture_turn.get("published"):
+            detail = "图片已保存，后续文字回复未完成。" + detail
+        yield {"type": "error", "code": code, "content": detail}
         return
 
     full_reply = assistant_msg.get("content", "")
@@ -839,6 +901,9 @@ async def stream_chat(
     finish_reason = assistant_msg.get("_finish_reason")
     if finish_reason and finish_reason not in ("stop", "tool_calls"):
         logger.warning("LLM 返回可能被截断：finish_reason=%s", finish_reason)
+        picture = await web_picture_event()
+        if picture:
+            yield {"type": "image", "image_id": picture["image_id"]}
         yield {
             "type": "error",
             "code": "model_truncated",
@@ -850,7 +915,7 @@ async def stream_chat(
         thinking_from_non_stream = await _ensure_chinese_thinking(config, thinking_from_non_stream)
 
     thinking_text = ""
-    if not full_reply:
+    if not full_reply and not (picture_turn.get("published") or picture_turn.get("generated_image") or picture_turn.get("publish_error")):
         try:
             generator = await call_llm(
                 config,
@@ -896,9 +961,9 @@ async def stream_chat(
             if not save_error_reply:
                 yield {"type": "error", "code": "llm_failed", "content": "生成没有完成"}
                 return
-            error_reply = "抱歉宝贝，我现在脑子有点转不动……等一下再找我说话好吗？🥺"
-            yield {"type": "chunk", "content": error_reply}
-            await save_message(conversation_id, "assistant", error_reply, channel=channel)
+            from app.llm import public_model_error
+            code, detail = public_model_error(e)
+            yield {"type": "error", "code": code, "content": detail}
             return
 
     all_thinking = (thinking_from_non_stream + thinking_text).strip() if (thinking_from_non_stream or thinking_text) else ""
@@ -909,15 +974,21 @@ async def stream_chat(
     if full_reply and channel == "imessage":
         from app.services.imessage_format import sanitize_imessage_text
         full_reply = sanitize_imessage_text(full_reply)
-        if not full_reply:
+        if not full_reply and not picture_turn.get("generated_image"):
             yield {"type": "error", "code": "empty_reply", "content": "没有可发送的文字"}
             return
+        if not full_reply:
+            full_reply = ""
 
     # iMessage can receive more input while the model is working. Keep the
     # saved user messages, but do not publish/extract an obsolete draft.
     if reply_is_current is not None and not await reply_is_current():
         yield {"type": "superseded"}
         return
+
+    picture = await web_picture_event()
+    if picture:
+        yield {"type": "image", "image_id": picture["image_id"]}
 
     if full_reply:
         saved_assistant_id = await save_message(
@@ -932,6 +1003,8 @@ async def stream_chat(
             await on_message_saved("assistant", saved_assistant_id)
 
     if not full_reply:
+        if picture:
+            asyncio.create_task(_compact_conversation_bg(conversation_id))
         return
 
     if assistant_msg.get("content"):

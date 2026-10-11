@@ -23,6 +23,9 @@ def install_private_logging():
         error_type = record.exc_info[0].__name__ if record.exc_info and record.exc_info[0] else "none"
         if error_type == "none" and isinstance(record.args, tuple):
             for value in record.args:
+                if isinstance(value, type) and issubclass(value, BaseException):
+                    error_type = value.__name__
+                    break
                 if isinstance(value, BaseException):
                     error_type = type(value).__name__
                     break

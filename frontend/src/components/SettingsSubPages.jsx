@@ -277,11 +277,20 @@ export { default as PromptSettings } from "./PromptSettings";
 // ═══════════════════════════════════════════
 // 3. 模型配置
 // ═══════════════════════════════════════════
+function isImageProvider(provider) {
+  return provider === 'image' || provider === 'openai-image' || provider === 'gemini-image';
+}
+
+function normalizeProvider(provider) {
+  return isImageProvider(provider) ? 'image' : (provider || 'openai-compatible');
+}
+
 export function ModelSettings({ onBack }) {
   const SLOTS = [
     { id: 'daily', label: '日常陪伴', desc: '聊天、小纸条、自动日记、气息状态、留言回复' },
     { id: 'deep', label: '深度时刻', desc: '复杂情绪、长对话、需要更深的理解' },
     { id: 'backend', label: '后台任务', desc: '记忆提取、情感打标、摘要压缩、自动回复判断' },
+    { id: 'image', label: '图片生成', desc: '给Ta一支笔，把Ta眼中的世界画给你看。' },
   ];
   const API = '/settings';
   const emptyDraft = { id: null, nickname: '', provider: 'openai-compatible', api_key: '', base_url: '', model_name: '', model_capabilities: null };
@@ -333,9 +342,10 @@ export function ModelSettings({ onBack }) {
 
   function updateDraft(field, value) {
     setDraft(d => ({ ...d, [field]: value }));
-    if (field === 'api_key' || field === 'base_url') {
+    if (field === 'api_key' || field === 'base_url' || field === 'provider') {
       setDraftModels([]);
       setTestResult(null);
+      if (field === 'provider') setModelFetchKey('');
     }
     if (field === 'model_name') {
       setDraft(d => ({ ...d, model_capabilities: null }));
@@ -387,7 +397,12 @@ export function ModelSettings({ onBack }) {
   }
 
   function editPreset(preset) {
-    setDraft({ ...preset, api_key: '', model_capabilities: preset.capabilities || null });
+    setDraft({
+      ...preset,
+      provider: normalizeProvider(preset.provider),
+      api_key: '',
+      model_capabilities: preset.capabilities || null,
+    });
     setDraftModels([]);
     setModelFetchKey('');
     setTestResult(null);
@@ -420,11 +435,15 @@ export function ModelSettings({ onBack }) {
         ? await apiFetch(`${API}/model-presets/${draft.id}/models`)
         : await apiJsonFetch(`${API}/model-presets/models`, {
             method: 'POST',
-            body: JSON.stringify({ api_key: draft.api_key, base_url: draft.base_url }),
+            body: JSON.stringify({
+              api_key: draft.api_key,
+              base_url: draft.base_url,
+              provider: draft.provider,
+            }),
           });
       const json = await readJson(res);
       setDraftModels(json.data || []);
-      setModelFetchKey(`${draft.id || draft.api_key}|${draft.base_url}`);
+      setModelFetchKey(`${draft.id || draft.api_key}|${draft.base_url}|${draft.provider}`);
       if (!silent) setStatus('已拉取可用模型。');
     } catch (err) {
       setDraftModels([]);
@@ -432,7 +451,7 @@ export function ModelSettings({ onBack }) {
     } finally {
       setFetchingModels(false);
     }
-  }, [draft.api_key, draft.base_url, draft.id, readJson]);
+  }, [draft.api_key, draft.base_url, draft.id, draft.provider, readJson]);
 
   useEffect(() => {
     const timer = window.setTimeout(loadSettings, 0);
@@ -441,11 +460,11 @@ export function ModelSettings({ onBack }) {
 
   useEffect(() => {
     if (!addOpen || !draft.base_url || (!draft.id && !draft.api_key)) return;
-    const key = `${draft.id || draft.api_key}|${draft.base_url}`;
+    const key = `${draft.id || draft.api_key}|${draft.base_url}|${draft.provider}`;
     if (key === modelFetchKey) return;
     const timer = window.setTimeout(() => fetchDraftModels({ silent: true }), 700);
     return () => window.clearTimeout(timer);
-  }, [addOpen, draft.api_key, draft.base_url, draft.id, fetchDraftModels, modelFetchKey]);
+  }, [addOpen, draft.api_key, draft.base_url, draft.id, draft.provider, fetchDraftModels, modelFetchKey]);
 
   async function testDraftModel() {
     if ((!draft.id && !draft.api_key) || !draft.base_url || !draft.model_name) {
@@ -464,6 +483,7 @@ export function ModelSettings({ onBack }) {
               api_key: draft.api_key,
               base_url: draft.base_url,
               model_name: draft.model_name,
+              provider: draft.provider,
             }),
           });
       await readJson(res);
@@ -572,11 +592,11 @@ export function ModelSettings({ onBack }) {
                 placeholder="不使用预设"
                 options={[
                   { value: '', label: '不使用预设' },
-                  ...presets.map(p => ({ value: p.id, label: `${p.nickname} · ${p.model_name}` })),
+                  ...presets.filter(p => (slot.id === 'image') === isImageProvider(p.provider)).map(p => ({ value: p.id, label: `${p.nickname} · ${p.model_name}` })),
                 ]}
                 style={{ marginBottom: 10 }}
               />
-              {current.preset_id && (
+              {current.preset_id && slot.id !== 'image' && (
                 <div style={{
                   marginBottom: 8, padding: '9px 10px', borderRadius: 'var(--radius-sm)',
                   background: 'var(--bg-secondary)', border: '1px solid var(--border-light)',
@@ -602,9 +622,15 @@ export function ModelSettings({ onBack }) {
                   )}
                 </div>
               )}
-              <SettingRow label="扩展思考" sub="开启后允许保存思考内容；是否生效取决于模型。">
-                <SettingsToggle on={!!current.extended_thinking} onChange={v => saveSlot(slot.id, { extended_thinking: v })} />
-              </SettingRow>
+              {slot.id === 'image' ? (
+                <div style={{ ...metaText, fontSize: 13, lineHeight: 1.65 }}>
+                  给Ta一支笔，把Ta眼中的世界画给你看。
+                </div>
+              ) : (
+                <SettingRow label="扩展思考" sub="开启后允许保存思考内容；是否生效取决于模型。">
+                  <SettingsToggle on={!!current.extended_thinking} onChange={v => saveSlot(slot.id, { extended_thinking: v })} />
+                </SettingRow>
+              )}
             </Card>
           );
         })}
@@ -694,6 +720,19 @@ export function ModelSettings({ onBack }) {
 
         {addOpen && (
           <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border-light)' }}>
+            <div style={{ marginBottom: 12 }}>
+              <label style={labelStyle}>接口用途</label>
+              <GlassSelect value={draft.provider} onChange={v => updateDraft('provider', v)} options={[
+                { value: 'openai-compatible', label: '聊天模型' },
+                { value: 'image', label: '生图模型' },
+              ]} />
+              {isImageProvider(draft.provider) && (
+                <div style={{ ...helperText, fontSize: 13, lineHeight: 1.65 }}>
+                  填密钥和接口地址即可；多数中转走 OpenAI 的 /models 和 /images/generations。Google 官方地址用
+                  {' '}https://generativelanguage.googleapis.com/v1beta 时会自动按 Gemini 方式拉模型和生图。保存不会触发生图或计费。
+                </div>
+              )}
+            </div>
             {[
               { field: 'nickname', label: '自定义预设名字', ph: '如 DeepSeek 日常', type: 'text' },
               { field: 'api_key', label: '密钥', ph: draft.id ? '留空则不修改' : 'sk-xxxxxxxx', type: 'password' },
@@ -734,7 +773,7 @@ export function ModelSettings({ onBack }) {
               </button>
               <button onClick={testDraftModel} disabled={testingModel || (!draft.id && !draft.api_key) || !draft.base_url || !draft.model_name}
                 style={{ ...ghostButton, flex: 1, opacity: testingModel ? 0.7 : 1 }}>
-                {testingModel ? '检测中…' : '检测可用'}
+                {testingModel ? '检测中…' : isImageProvider(draft.provider) ? '检测模型在列表中' : '检测可用'}
               </button>
             </div>
 

@@ -29,3 +29,35 @@ test('reply and reaction resolve exact target after a process restart', async ()
   await assert.rejects(sendAction(space, { kind: 'reply', chat_guid: 'chat', ref_id: 'missing' }, builders));
   assert.equal(sent.length, 2);
 });
+
+import { normalizeInboundWithImages } from './protocol.mjs';
+const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXioAAAAASUVORK5CYII=', 'base64');
+const picture = (overrides = {}) => ({ type: 'attachment', mimeType: 'image/png', size: png.length,
+  stream: async () => new ReadableStream({ start(controller) { controller.enqueue(png); controller.close(); } }), ...overrides });
+test('photo-only and mixed SDK groups preserve pictures and captions', async () => {
+  const result = await normalizeInboundWithImages({ ...message, content: { type: 'group', items: [{ content: picture() }, { content: { type: 'text', text: 'look' } }, { content: picture() }] } }, 'chat', '+123');
+  assert.equal(result.text, 'look'); assert.equal(result.images.length, 2);
+  assert.equal(result.images[0], `data:image/png;base64,${png.toString('base64')}`);
+  assert.equal((await normalizeInboundWithImages({ ...message, content: picture() }, 'chat', '+123')).images.length, 1);
+});
+test('unknown senders never download images; unsupported formats return explicit status', async () => {
+  let called = false;
+  const content = picture({ stream: async () => { called = true; throw new Error('private'); } });
+  assert.equal(await normalizeInboundWithImages({ ...message, content }, 'chat', '+456'), null);
+  assert.equal(called, false);
+  const failed = await normalizeInboundWithImages({ ...message, content: picture({ mimeType: 'image/heic' }) }, 'chat', '+123');
+  assert.deepEqual(failed.images, []); assert.match(failed.text, /未提供给模型/);
+});
+test('stream size is enforced even when declared size lies', async () => {
+  const result = await normalizeInboundWithImages({ ...message, content: picture({ size: 1, stream: async () => new ReadableStream({ start(c) { c.enqueue(Buffer.alloc(8 * 1024 * 1024 + 1)); c.close(); } }) }) }, 'chat', '+123');
+  assert.deepEqual(result.images, []); assert.match(result.text, /8MB/);
+});
+
+test('outbound image sends native attachment bytes without resolving a text target', async () => {
+  const sent = [];
+  const space = { id: 'chat', send: async value => { sent.push(value); return { id: 'photo-guid' }; } };
+  const builders = { attachment: (bytes, options) => ({ bytes, ...options }) };
+  const result = await sendAction(space, { kind: 'image', chat_guid: 'chat' }, builders, { data: png, mimeType: 'image/png' });
+  assert.equal(result.id, 'photo-guid'); assert.deepEqual(sent[0].bytes, png); assert.equal(sent[0].mimeType, 'image/png');
+  await assert.rejects(sendAction(space, { kind: 'image', chat_guid: 'chat' }, builders));
+});
