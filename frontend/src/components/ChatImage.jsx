@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Download, X } from 'lucide-react';
 
-function ImageViewer({ src, onClose }) {
+export function ImageViewer({ src, onClose }) {
   const dialog = useRef(null);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -63,12 +63,12 @@ function ImageViewer({ src, onClose }) {
   );
 }
 
-export default function ChatImage({ src }) {
+export default function ChatImage({ src, kind }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="r-chat-image" onMouseDown={event => event.stopPropagation()} onTouchStart={event => event.stopPropagation()}>
       <button type="button" className="r-chat-photo-button" onClick={() => setOpen(true)} aria-label="放大查看图片">
-        <img src={src} alt="聊天图片" className="r-chat-photo" loading="lazy" decoding="async" />
+        <img src={src} alt="聊天图片" className={`r-chat-photo${kind === 'sticker' ? ' r-chat-sticker' : ''}`} loading="lazy" decoding="async" />
       </button>
       {open && <ImageViewer src={src} onClose={() => setOpen(false)} />}
     </div>

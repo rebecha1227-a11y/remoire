@@ -1,6 +1,6 @@
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from app.auth import verify_token
@@ -17,6 +17,7 @@ class SendRequest(BaseModel):
     message: str = Field(min_length=1, max_length=20_000)
     conversation_id: str | None = Field(default=None, max_length=64)
     image: str | None = Field(default=None, max_length=MAX_ENCODED_IMAGE_CHARS)
+    sticker_id: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     mode: Literal["daily", "deep"] = "daily"
     reply_style: Literal["split", "whole"] = "split"
 
@@ -29,12 +30,26 @@ class SendRequest(BaseModel):
 
 @router.post("/send")
 async def send_message(req: SendRequest, _=Depends(verify_token)):
+    image, message, image_kind = req.image, req.message, "photo"
+    if req.sticker_id:
+        if req.image:
+            raise HTTPException(400, "不能同时发送照片和表情包")
+        from app.services.sticker_service import get_media
+        import base64
+        try:
+            raw, mime, label = await get_media(req.sticker_id)
+        except ValueError:
+            raise HTTPException(404, "表情包不存在")
+        except Exception:
+            raise HTTPException(502, "表情包暂时无法读取，请稍后重试")
+        image = f"data:{mime};base64,{base64.b64encode(raw).decode()}"
+        message, image_kind = f"[表情包：{label}]", "sticker"
     conversation_id = await get_or_create_conversation(req.conversation_id)
 
     async def event_stream():
         yield f"data: {json.dumps({'type': 'conversation_id', 'conversation_id': conversation_id})}\n\n"
         try:
-            source = stream_chat(conversation_id, req.message, image=req.image, mode=req.mode or "daily", reply_style=req.reply_style or "split")
+            source = stream_chat(conversation_id, message, image=image, user_image_kind=image_kind, mode=req.mode or "daily", reply_style=req.reply_style or "split")
             async for item in _with_heartbeat(source):
                 if item is None:
                     yield ": keepalive\n\n"
@@ -118,3 +133,22 @@ async def _with_heartbeat(source, interval=15):
             with suppress(asyncio.CancelledError, StopAsyncIteration):
                 await pending
         await source.aclose()
+
+
+@router.get("/stickers")
+async def sticker_catalogue(q: str = Query('', max_length=100), category: str = Query('', max_length=100), offset: int = Query(0, ge=0), limit: int = Query(24, ge=1, le=48), _=Depends(verify_token)):
+    from app.services.sticker_service import list_catalogue
+    return {"ok": True, "data": await list_catalogue(q, category, offset, limit)}
+
+
+@router.get("/stickers/{sticker_id}/image")
+async def sticker_image(sticker_id: str, _=Depends(verify_token)):
+    from app.services.sticker_service import get_media
+    from fastapi.responses import Response
+    try:
+        raw, mime, _ = await get_media(sticker_id)
+    except ValueError:
+        raise HTTPException(404, "表情包不存在")
+    except Exception:
+        raise HTTPException(502, "表情包暂时无法读取")
+    return Response(raw, media_type=mime, headers={"Cache-Control": "private, no-store"})

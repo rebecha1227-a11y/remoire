@@ -440,7 +440,7 @@ async def _run_turn(items: list[dict]) -> None:
     for target, emoji in turn.get("reactions", {}).items():
         await _enqueue(conversation_id, "reaction", emoji, ref_id=target, chat_guid=chat_guid)
     if turn.get("generated_image"):
-        image_id = await save_message(conversation_id, "assistant", "", image=turn["generated_image"], channel="imessage")
+        image_id = await save_message(conversation_id, "assistant", "", image=turn["generated_image"], channel="imessage", image_kind=turn.get("image_kind", "photo"))
         await _enqueue(conversation_id, "image", "[图片]", message_id=image_id, chat_guid=chat_guid)
     per_char = int(account.get("typing_ms_per_char") or 45)
     for index, bubble in enumerate(bubbles):

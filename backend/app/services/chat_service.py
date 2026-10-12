@@ -248,7 +248,7 @@ async def get_or_create_conversation(conversation_id: str | None = None) -> str:
 async def get_history(conversation_id: str, limit: int = 20) -> list[dict]:
     async with get_db() as db:
         async with db.execute(
-            "SELECT id, role, content, thinking, image, display_mode, channel, created_at FROM messages WHERE conversation_id = ? ORDER BY created_at DESC LIMIT ?",
+            "SELECT id, role, content, thinking, image, image_kind, display_mode, channel, created_at FROM messages WHERE conversation_id = ? ORDER BY created_at DESC LIMIT ?",
             (conversation_id, limit),
         ) as cur:
             rows = await cur.fetchall()
@@ -259,6 +259,7 @@ async def get_history(conversation_id: str, limit: int = 20) -> list[dict]:
             item["thinking"] = r["thinking"]
         if r["image"]:
             item["image_id"] = r["id"]
+            item["image_kind"] = r["image_kind"] or "photo"
         item["display_mode"] = r["display_mode"] or "split"
         item["channel"] = r["channel"] or "remoire"
         result.append(item)
@@ -272,7 +273,7 @@ async def search_messages(conversation_id: str, query: str, limit: int = 80) -> 
     async with get_db() as db:
         async with db.execute(
             """
-            SELECT id, role, content, thinking, image, display_mode, channel, created_at
+            SELECT id, role, content, thinking, image, image_kind, display_mode, channel, created_at
             FROM messages
             WHERE conversation_id = ? AND content LIKE ?
             ORDER BY created_at DESC
@@ -288,6 +289,7 @@ async def search_messages(conversation_id: str, query: str, limit: int = 80) -> 
             item["thinking"] = r["thinking"]
         if r["image"]:
             item["image_id"] = r["id"]
+            item["image_kind"] = r["image_kind"] or "photo"
         item["display_mode"] = r["display_mode"] or "split"
         item["channel"] = r["channel"] or "remoire"
         result.append(item)
@@ -311,7 +313,7 @@ async def get_message_image(message_id: str) -> tuple[bytes, str] | None:
     except InvalidImageError:
         return None
 
-async def save_message(conversation_id: str, role: str, content: str, thinking: str = "", image: str = "", display_mode: str = "split", channel: str = "remoire") -> str:
+async def save_message(conversation_id: str, role: str, content: str, thinking: str = "", image: str = "", display_mode: str = "split", channel: str = "remoire", image_kind: str = "photo") -> str:
     msg_id = str(uuid.uuid4())
     now = datetime.utcnow().isoformat()
     image_marker = None
@@ -324,8 +326,8 @@ async def save_message(conversation_id: str, role: str, content: str, thinking: 
     try:
         async with get_db() as db:
             await db.execute(
-                "INSERT INTO messages (id, conversation_id, role, content, thinking, image, display_mode, channel, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (msg_id, conversation_id, role, content, thinking or None, image_marker, display_mode, channel or "remoire", now),
+                "INSERT INTO messages (id, conversation_id, role, content, thinking, image, image_kind, display_mode, channel, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (msg_id, conversation_id, role, content, thinking or None, image_marker, image_kind, display_mode, channel or "remoire", now),
             )
             await db.execute(
                 "UPDATE conversations SET updated_at = ? WHERE id = ?",
@@ -678,9 +680,10 @@ async def stream_chat(
     imessage_turn: dict | None = None,
     context_images: list[str] | None = None,
     persist_user: bool = True,
+    user_image_kind: str = "photo",
 ):
     if persist_user:
-        saved_user_id = await save_message(conversation_id, "user", user_message, image=image or "", channel=channel)
+        saved_user_id = await save_message(conversation_id, "user", user_message, image=image or "", channel=channel, image_kind=user_image_kind)
         if on_message_saved is not None:
             await on_message_saved("user", saved_user_id)
 
@@ -728,7 +731,9 @@ async def stream_chat(
         imessage_turn.update(prepared)
         collected["dynamic_parts"].append(prepared["prompt"])
         tools = [*tools, *imessage_interactions.TOOLS]
-    from app.services import image_generation_service
+    from app.services import image_generation_service, sticker_service
+    if await sticker_service.available():
+        tools.extend(sticker_service.TOOLS)
     try:
         image_configured = await image_generation_service.configured()
     except Exception as exc:
@@ -745,7 +750,7 @@ async def stream_chat(
             picture_turn.pop("generated_image", None)
             return None
         try:
-            picture = await image_generation_service.publish_web_image(conversation_id, picture_turn["generated_image"])
+            picture = await image_generation_service.publish_web_image(conversation_id, picture_turn["generated_image"], image_kind=picture_turn.get("image_kind", "photo"))
         except Exception as exc:
             logger.error("image_publish_failed %s", type(exc))
             picture_turn["publish_error"] = True
@@ -816,12 +821,15 @@ async def stream_chat(
                     fn_args = json.loads(tc["function"]["arguments"])
                 except (json.JSONDecodeError, TypeError):
                     fn_args = {}
-                if fn_name == "generate_picture":
-                    result = await image_generation_service.handle_tool(fn_args, picture_turn)
+                if fn_name in ("generate_picture", "send_sticker", "search_stickers"):
+                    if fn_name == "generate_picture":
+                        result = await image_generation_service.handle_tool(fn_args, picture_turn)
+                    else:
+                        result = await sticker_service.handle_tool(fn_name, fn_args, picture_turn)
                     if channel != "imessage":
                         picture = await web_picture_event()
                         if picture:
-                            yield {"type": "image", "image_id": picture["image_id"]}
+                            yield {"type": "image", "image_id": picture["image_id"], "image_kind": picture_turn.get("image_kind", "photo")}
                         elif picture_turn.get("publish_error"):
                             result = "图片已经生成，但保存失败，尚未交付；不要重新生图或声称已经发送。"
                             yield {"type": "error", "code": "image_save_failed", "content": result}
@@ -872,14 +880,14 @@ async def stream_chat(
         logger.warning("工具调用后上下文预算不足: %s details=%s", e, e.details)
         picture = await web_picture_event()
         if picture:
-            yield {"type": "image", "image_id": picture["image_id"]}
+            yield {"type": "image", "image_id": picture["image_id"], "image_kind": picture_turn.get("image_kind", "photo")}
         yield {"type": "error", "code": "context_budget_exceeded", "content": str(e), "details": e.details}
         return
     except Exception as e:
         logger.error("chat_turn_failed %s", type(e))
         picture = await web_picture_event()
         if picture:
-            yield {"type": "image", "image_id": picture["image_id"]}
+            yield {"type": "image", "image_id": picture["image_id"], "image_kind": picture_turn.get("image_kind", "photo")}
         if not save_error_reply:
             yield {"type": "error", "code": "llm_failed", "content": "生成没有完成"}
             return
@@ -903,7 +911,7 @@ async def stream_chat(
         logger.warning("LLM 返回可能被截断：finish_reason=%s", finish_reason)
         picture = await web_picture_event()
         if picture:
-            yield {"type": "image", "image_id": picture["image_id"]}
+            yield {"type": "image", "image_id": picture["image_id"], "image_kind": picture_turn.get("image_kind", "photo")}
         yield {
             "type": "error",
             "code": "model_truncated",
@@ -988,7 +996,7 @@ async def stream_chat(
 
     picture = await web_picture_event()
     if picture:
-        yield {"type": "image", "image_id": picture["image_id"]}
+        yield {"type": "image", "image_id": picture["image_id"], "image_kind": picture_turn.get("image_kind", "photo")}
 
     if full_reply:
         saved_assistant_id = await save_message(

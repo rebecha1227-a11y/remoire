@@ -16,6 +16,14 @@ async def get_db():
 async def init_db():
     async with get_db() as db:
         await db.executescript("""
+            CREATE TABLE IF NOT EXISTS stickers (
+                id TEXT PRIMARY KEY,
+                label TEXT NOT NULL,
+                category TEXT NOT NULL,
+                source_url TEXT NOT NULL UNIQUE,
+                enabled INTEGER NOT NULL DEFAULT 1
+            );
+
             CREATE TABLE IF NOT EXISTS channels (
                 id TEXT PRIMARY KEY,
                 type TEXT NOT NULL,
@@ -395,6 +403,7 @@ async def init_db():
             "ALTER TABLE diary_interactions ADD COLUMN seen_by_connie INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE diary_interactions ADD COLUMN seen_by_jinger INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE messages ADD COLUMN image TEXT",
+            "ALTER TABLE messages ADD COLUMN image_kind TEXT",
             "ALTER TABLE model_slots ADD COLUMN context_window INTEGER NOT NULL DEFAULT 32768",
             "ALTER TABLE model_slots ADD COLUMN output_budget INTEGER NOT NULL DEFAULT 4096",
             "ALTER TABLE model_presets ADD COLUMN capabilities_json TEXT",

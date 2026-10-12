@@ -836,3 +836,7 @@ Remoire 使用 SQLite WAL mode，运行中备份不要直接 `cp` 主 `.db` 文�
 ## 2026-10-10 iMessage 交互增量（本地未发布）
 
 新增 imessage_bubbles（chat_guid + external_id 主键，关联 conversation_id / message_id，direction、body、reply_to、quote_text）及 imessage_reactions（chat_guid + target_id + actor 主键，emoji、target_text、updated_at）。气泡随所属 messages/conversations 删除；表情表仅用于 iMessage，不下发网页。建表在 init_db 中可重复执行，无现有正文重写。发布前须在在线备份副本演练。详见 `IMESSAGE-INTERACTIONS-2026-10-10.md`。
+
+## 2026-10-12 stickers（本地）
+
+私有表情目录：id TEXT PRIMARY KEY（URL SHA256）、label TEXT、category TEXT、source_url TEXT UNIQUE、enabled INTEGER DEFAULT 1。原始媒体在 backend/data/stickers 按 id 缓存，发送副本进入现有 messages 图片存储。导入按 id 更新描述/分类，不覆盖 enabled。

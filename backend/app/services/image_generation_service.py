@@ -54,12 +54,12 @@ async def handle_tool(arguments, turn):
     return "图片已生成，会留在这段共同对话里。你可以用一两句简短文字补充，也可以只出图、不再加字；不要声称已经送达。"
 
 
-async def publish_web_image(conversation_id: str, data_url: str) -> dict:
+async def publish_web_image(conversation_id: str, data_url: str, *, image_kind: str = "photo") -> dict:
     """Save a web-generated picture into shared history and mirror it when iMessage is live."""
     from app.services.chat_service import save_message
     from app.services.imessage_service import mirror_saved_image
 
-    image_id = await save_message(conversation_id, "assistant", "", image=data_url, channel="remoire")
+    image_id = await save_message(conversation_id, "assistant", "", image=data_url, channel="remoire", image_kind=image_kind)
     try:
         mirrored = await mirror_saved_image(conversation_id, image_id)
     except Exception as exc:

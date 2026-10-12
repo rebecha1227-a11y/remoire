@@ -1,9 +1,10 @@
-import { CornerUpLeft, X } from "lucide-react";
+import { CornerUpLeft, X, Smile, Image } from "lucide-react";
 import { useState, useRef, useEffect, memo, useCallback } from "react";
 import { apiFetch, apiJsonFetch, API_BASE } from "../utils/api";
 import { PALETTES, currentBand, AMBIENT_BY_BAND, isDarkBand } from "../utils/ambient";
 import Floaters from "./Floaters";
 import ChatImage from "./ChatImage";
+import StickerPicker from "./StickerPicker";
 import { RainLayer, FogLayer } from "./WeatherEffects";
 import "../styles/room.css";
 
@@ -41,7 +42,7 @@ const TOOL_LABELS = {
   browse_twitter: '刷推特', search_xiaohongshu: '搜小红书', search_twitter: '搜推特',
   save_browsed: '保存内容', read_diary: '翻日记', read_jinger_diary: '看静儿日记',
   try_unlock_diary: '猜密码', reply_diary_interaction: '回复日记',
-  generate_picture: '画画',
+  generate_picture: '画画', search_stickers: '挑表情', send_sticker: '发表情',
 };
 
 function toolBannerLine(tools, count, done) {
@@ -146,7 +147,7 @@ const MessageRow = memo(function MessageRow({ m, isKept, isThinkOpen, onToggleTh
           </div>
         )}
         {m.image && (
-          <ChatImage src={m.image} />
+          <ChatImage src={m.image} kind={m.imageKind} />
         )}
         {m.text && (
           <div className={`r-bubble ${isAi ? 'r-bubble-ai' : 'r-bubble-user'}`}>
@@ -354,6 +355,8 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
   const [typing, setTyping] = useState(false);
   const [streaming, setStreaming] = useState('');
   const [showActions, setShowActions] = useState(false);
+  const [showStickers, setShowStickers] = useState(false);
+  const stickerSending = useRef(false);
   const [showModes, setShowModes] = useState(false);
   const [showSheet, setShowSheet] = useState(false);
   const [chatMode, setChatMode] = useState(() => localStorage.getItem('remoire_chat_mode') || 'daily');
@@ -505,7 +508,7 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
             const time = formatBJTime(m.created_at);
             if (m.role === 'assistant') {
               if (m.image || m.image_id) {
-                loaded.push({ id: ++msgIdRef.current, role: 'ai', text: '', time, type: 'normal', channel: m.channel || 'remoire', image: m.image || `${API_BASE}/chat/image/${m.image_id}` });
+                loaded.push({ id: ++msgIdRef.current, role: 'ai', text: '', time, type: 'normal', channel: m.channel || 'remoire', imageKind: m.image_kind, image: m.image || `${API_BASE}/chat/image/${m.image_id}` });
               }
               const mode = m.display_mode || 'split';
               if (mode === 'whole') {
@@ -535,6 +538,8 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
                 continue;
               }
               const userMsg = { id: ++msgIdRef.current, role: 'user', text: m.content, time, type: 'normal', channel: m.channel || 'remoire' };
+              userMsg.imageKind = m.image_kind;
+              if (m.image_kind === "sticker") userMsg.text = "";
               if (m.image) userMsg.image = m.image;
               else if (m.image_id) userMsg.image = `${API_BASE}/chat/image/${m.image_id}`;
               userMsg.quote = m.imessage_bubbles?.[0]?.quote;
@@ -567,13 +572,14 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
 
   const [toolCall, setToolCall] = useState(null);
 
-  async function fetchReply(txt, image) {
+  async function fetchReply(txt, image, stickerId) {
     const time = formatBJTime(new Date().toISOString());
     setTyping(true);
     setToolCall(null);
     try {
       const body = { message: txt || '（发了一张图片）', conversation_id: conversationIdRef.current || null, mode: chatMode, reply_style: replyStyle };
-      if (image) body.image = image;
+      if (stickerId) body.sticker_id = stickerId;
+      else if (image) body.image = image;
       const res = await apiJsonFetch('/chat/send', {
         method: 'POST', body: JSON.stringify(body),
       });
@@ -589,12 +595,12 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
       let streamDone = false;
       let streamError = '';
 
-      const pushPictureBubble = (src) => {
+      const pushPictureBubble = (src, imageKind) => {
         if (pictures.includes(src)) return;
         pictures.push(src);
         setTyping(false);
         setMessages(m => [...m, {
-          id: ++msgIdRef.current, role: 'ai', text: '', time, type: 'normal', isNew: true, image: src,
+          id: ++msgIdRef.current, role: 'ai', text: '', time, type: 'normal', isNew: true, image: src, imageKind,
         }]);
         picturesOnScreen += 1;
       };
@@ -613,7 +619,7 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
         } else if (parsed.type === 'chunk') {
           replyText += parsed.content;
         } else if (parsed.type === 'image' && parsed.image_id) {
-          pushPictureBubble(`${API_BASE}/chat/image/${parsed.image_id}`);
+          pushPictureBubble(`${API_BASE}/chat/image/${parsed.image_id}`, parsed.image_kind);
         } else if (parsed.type === 'thinking') {
           thinkingText += parsed.content;
         } else if (parsed.type === 'note') {
@@ -722,6 +728,15 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
     }
   }
 
+  async function sendSticker(item) {
+    if (typing || stickerSending.current) return;
+    stickerSending.current = true;
+    setShowStickers(false);
+    setMessages(m => [...m, { id: ++msgIdRef.current, role: 'user', text: '', image: `${API_BASE}/chat/stickers/${item.id}/image`, imageKind: 'sticker', stickerId: item.id, time: formatBJTime(new Date().toISOString()), isNew: true }]);
+    try { await fetchReply(`[表情包：${item.label}]`, null, item.id); }
+    finally { stickerSending.current = false; }
+  }
+
   async function sendMessage() {
     if (!inputValRef.current.trim() && !pendingImage) return;
     const txt = inputValRef.current;
@@ -748,7 +763,7 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
     const lastUserIdx = [...messages].reverse().findIndex(m => m.role === 'user');
     if (lastUserIdx === -1) return;
     const lastUser = messages[messages.length - 1 - lastUserIdx];
-    await fetchReply(lastUser.text, lastUser.image);
+    await fetchReply(lastUser.text, lastUser.image, lastUser.stickerId);
   }
 
   function toggleKeep(id) {
@@ -1103,6 +1118,7 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
       <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }}
         onChange={e => pickPhoto(e.target.files?.[0])} />
       <div className="r-input-wrap">
+        {showStickers && <StickerPicker disabled={typing} onSend={sendSticker} onClose={() => setShowStickers(false)} />}
         {quotedMsg && (
           <div className="r-compose-quote">
             <CornerUpLeft size={16} strokeWidth={1.5} aria-hidden="true" />
@@ -1124,14 +1140,17 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
         {showActions && (
           <div className="r-action-row">
             <button className="r-action-tile" onClick={() => fileRef.current?.click()}>
-              <span className="r-action-glyph">◰</span>
+              <Image size={22} strokeWidth={1.5} />
               <span className="r-action-label">照片</span>
+            </button>
+            <button className="r-action-tile" onClick={() => { setShowActions(false); setShowStickers(true); }}>
+              <Smile size={22} strokeWidth={1.5} /><span className="r-action-label">表情包</span>
             </button>
           </div>
         )}
 
         <div className="r-input-bar">
-          <button className="r-ibtn" aria-label={showActions ? '收起附件选项' : '添加照片'} aria-expanded={showActions} onClick={() => setShowActions(v => !v)}
+          <button className="r-ibtn" aria-label={showActions ? '收起附件选项' : '添加照片或表情包'} aria-expanded={showActions} onClick={() => { setShowStickers(false); setShowActions(v => !v); }}
             style={{ transform: showActions ? 'rotate(45deg)' : 'rotate(0)' }}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
               <path d="M12 5v14M5 12h14" strokeLinecap="round" />

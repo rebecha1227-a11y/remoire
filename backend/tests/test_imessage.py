@@ -193,6 +193,35 @@ class ImessageBridgeTests(unittest.IsolatedAsyncioTestCase):
         await model_settings_service.update_slot("image", preset_id=None)
         self.assertIsNone(await image_service.configured())
 
+    async def test_catalogue_sticker_sends_on_both_channels_without_image_model(self):
+        import json
+        from app import llm
+        from app.services import sticker_service, image_storage
+        key = 'a' * 64
+        await sticker_service.import_catalogue([{'id': key, 'label': '开心小狗', 'category': '小狗', 'source_url': 'https://iili.io/test.gif'}])
+        png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXioAAAAASUVORK5CYII='
+        await self._enable()
+        for channel in ('remoire', 'imessage'):
+            self.llm.side_effect = [
+                {'role':'assistant','content':'','tool_calls':[{'id':'search','type':'function','function':{'name':'search_stickers','arguments':'{"query":"开心"}'}}]},
+                {'role':'assistant','content':'','tool_calls':[{'id':'send','type':'function','function':{'name':'send_sticker','arguments':json.dumps({'sticker_id':key})}}]},
+                {'role':'assistant','content':'','tool_calls':None},
+            ]
+            with patch.object(sticker_service,'CACHE_DIR',Path(self.tempdir.name)/'stickers'), patch.object(image_storage,'IMAGES_DIR',Path(self.tempdir.name)/'images'), patch.object(llm,'_download_provider_picture',AsyncMock(return_value=png)), patch.object(llm,'generate_image',AsyncMock(side_effect=AssertionError('must not generate'))) as generate:
+                image_storage.IMAGES_DIR.mkdir(exist_ok=True)
+                if channel == 'remoire':
+                    conversation = await chat_service.get_or_create_conversation(None)
+                    events = [e async for e in chat_service.stream_chat(conversation,'发个开心小狗',push_reply=False)]
+                    pictures = [e for e in events if e.get('type')=='image']
+                    self.assertEqual(len(pictures),1)
+                    self.assertIsNotNone(await chat_service.get_message_image(pictures[0]['image_id']))
+                else:
+                    await imessage_service.accept_inbound(external_id='sticker-u',sender='+8613800138000',text='发个开心小狗',chat_guid='sticker-chat')
+                    await imessage_service.flush_pending()
+                    self.assertEqual(len([a for a in await imessage_service.pending_actions() if a['kind']=='image']),1)
+                generate.assert_not_awaited()
+                await self._drain_background()
+
     async def test_web_drawing_lands_in_shared_history_and_streams_image(self):
         from app import llm
         from app.services import image_storage
