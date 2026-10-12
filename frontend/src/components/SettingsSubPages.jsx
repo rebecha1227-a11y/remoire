@@ -187,8 +187,9 @@ export function ProactiveSettings({ onBack }) {
         </div>
       ) : (
         <>
-          <SettingRow label="发送入口" sub={cfg.deliveryChannel === 'imessage' ? '发到 iMessage；线路不通时改走网页通知' : '选一个入口。微信还不能用'}>
-            <div style={{ display: 'flex', gap: 8 }}>
+          <section aria-label="发送入口" style={{ padding: '16px 0', borderBottom: '1px solid var(--border-light)' }}>
+            <div style={{ fontSize: 14, color: 'var(--text-primary)', marginBottom: 12 }}>发送入口</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
               {[
                 { id: 'remoire', label: 'Remoire', disabled: false },
                 { id: 'imessage', label: 'iMessage', disabled: !cfg.imessageReady && cfg.deliveryChannel !== 'imessage' },
@@ -206,7 +207,7 @@ export function ProactiveSettings({ onBack }) {
                       set('deliveryChannel', choice.id);
                     }}
                     style={{
-                      minHeight: 44, padding: '0 12px', borderRadius: 8,
+                      minHeight: 44, minWidth: 0, whiteSpace: 'nowrap', padding: '0 8px', borderRadius: 8,
                       border: selected ? 'none' : '1px solid var(--border-light)',
                       background: selected ? 'var(--accent)' : 'var(--bg-elevated)',
                       color: selected ? 'var(--bubble-send-text)' : 'var(--text-secondary)',
@@ -218,10 +219,12 @@ export function ProactiveSettings({ onBack }) {
                 );
               })}
             </div>
-          </SettingRow>
-          {cfg.deliveryChannel !== 'imessage' && !cfg.imessageReady && (
-            <div style={{ fontSize: 12, color: 'var(--text-tertiary)', margin: '8px 0 12px' }}>iMessage 要等线路连上才能选。微信尚未开放。</div>
-          )}
+            <div style={{ fontSize: 12, lineHeight: 1.6, color: 'var(--text-tertiary)', marginTop: 10 }}>
+              {cfg.deliveryChannel === 'imessage'
+                ? '发到 iMessage，断线时改走网页通知'
+                : !cfg.imessageReady ? 'iMessage 连接后可选，微信暂未开放' : '选择消息入口，微信暂未开放'}
+            </div>
+          </section>
 
           {/* 时间段 */}
           <SettingsSectionTitle title="时间段" />
