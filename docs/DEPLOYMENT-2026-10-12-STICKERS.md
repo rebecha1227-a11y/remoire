@@ -40,3 +40,7 @@
 本次前端构建、相关组件 lint、3 项图片重试测试通过（新图不变、历史 GIF 原字节转换、读取失败/外链拒绝）。仅前端变更，不修改后端数据。修复后真实模型重试尚待用户验收。
 
 修复应用 `7c0ce6c` 已推送 main 并发布，目录 `/opt/remoire/releases/20261012-7c0ce6c`；旧入口备份 `/root/backups/release-20261012-7c0ce6c/index.html`，旧 assets 保留。新入口以重命名切换，公网首页与构建逐字节一致，readiness 正常，后端和桥 active；没有重启服务。回退只需恢复备份入口。
+
+## 网页错误提示样式
+
+`707055b` 已推送 main 并发布。网页空回复、请求失败、部分回复后的错误使用既有 system 提示展示，不再作为 Connie 消息气泡；iMessage 的 failure_phrase_enabled 和原失败兜底未改。前端构建、ChatPage lint 通过。发布目录 `/opt/remoire/releases/20261012-707055b`，旧入口备份 `/root/backups/release-20261012-707055b/index.html`，旧 assets 保留。公网入口逐字节匹配，readiness 正常，四服务 active；无服务重启、数据库改动或真实模型测试。恢复备份入口即可回退本次前端更新。
