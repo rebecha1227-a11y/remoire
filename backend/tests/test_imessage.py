@@ -64,6 +64,39 @@ class ImessageBridgeTests(unittest.IsolatedAsyncioTestCase):
             "merge_wait_seconds": 4,
         })
 
+    async def test_successful_delivery_recovers_failed_status_but_not_disabled_line(self):
+        await self._enable()
+        await imessage_service.set_status('failed', 'temporary delivery error')
+        await imessage_service.mark_outbound()
+        account = await imessage_service.get_account()
+        self.assertEqual(account['status'], 'connected')
+        self.assertEqual(account['status_detail'], '')
+        await imessage_service.set_status('line_changed', 'requires enrollment')
+        await imessage_service.mark_outbound()
+        self.assertEqual((await imessage_service.get_account())['status'], 'line_changed')
+
+    async def test_outbox_ack_recovers_delivery_failure_without_enabling_disabled_account(self):
+        await self._enable()
+        await imessage_service.accept_inbound(external_id='ack-u', sender='+8613800138000', text='hello', chat_guid='chat')
+        await imessage_service.flush_pending()
+        await self._drain_background()
+        actions = [a for a in await imessage_service.pending_actions() if a['kind'] == 'send']
+        await imessage_service.set_status('failed', 'temporary')
+        await imessage_service.ack_action(actions[0]['id'], True, external_id='ack-a')
+        self.assertEqual((await imessage_service.get_account())['status'], 'connected')
+        await imessage_service.save_account({'enabled': False})
+        await imessage_service.set_status('failed', 'disabled')
+        await imessage_service.mark_outbound()
+        account = await imessage_service.get_account()
+        self.assertFalse(account['enabled'])
+        self.assertEqual(account['status'], 'failed')
+
+    async def test_valid_inbound_recovers_failed_status(self):
+        await self._enable()
+        await imessage_service.set_status('failed', 'temporary')
+        await imessage_service.accept_inbound(external_id='recover', sender='+8613800138000', text='hello', chat_guid='chat')
+        self.assertEqual((await imessage_service.get_account())['status'], 'connected')
+
     async def _drain_background(self):
         current = asyncio.current_task()
         pending = [task for task in asyncio.all_tasks() if task is not current and not task.done()]

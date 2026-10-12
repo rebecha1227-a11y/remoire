@@ -158,7 +158,7 @@ async function pumpOutbox(stop) {
     } catch {
       await sleep(1000);
     }
-    if (!ok) await reportStatus("failed", "有一条消息没能发到 iMessage");
+    // Delivery failures belong to the outbox; they do not prove the transport is disconnected.
   }
 }
 

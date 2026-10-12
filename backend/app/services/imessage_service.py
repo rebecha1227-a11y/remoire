@@ -145,7 +145,7 @@ async def set_status(status: str, detail: str = "", *, chat_guid: str = "", line
 async def mark_outbound() -> None:
     async with get_db() as db:
         await db.execute(
-            "UPDATE imessage_accounts SET last_outbound_at = ?, updated_at = ? WHERE id = 1",
+            "UPDATE imessage_accounts SET last_outbound_at = ?, updated_at = ?, status = CASE WHEN enabled = 1 AND status IN ('failed', 'connecting', 'connected') THEN 'connected' ELSE status END, status_detail = CASE WHEN enabled = 1 AND status IN ('failed', 'connecting', 'connected') THEN '' ELSE status_detail END WHERE id = 1",
             (_now(), _now()),
         )
         await db.commit()
@@ -268,7 +268,7 @@ async def accept_inbound(*, external_id: str, sender: str, text: str, sent_at: s
         )
         await db.execute(
             """UPDATE imessage_accounts
-               SET last_inbound_at = ?, chat_guid = CASE WHEN ? != '' THEN ? ELSE chat_guid END, updated_at = ?
+               SET status = CASE WHEN enabled = 1 AND status IN ('failed', 'connecting', 'connected') THEN 'connected' ELSE status END, status_detail = CASE WHEN enabled = 1 AND status IN ('failed', 'connecting', 'connected') THEN '' ELSE status_detail END, last_inbound_at = ?, chat_guid = CASE WHEN ? != '' THEN ? ELSE chat_guid END, updated_at = ?
                WHERE id = 1""",
             (_now(), chat_guid, chat_guid, _now()),
         )
@@ -568,7 +568,7 @@ async def ack_action(action_id: str, ok: bool, *, external_id: str = "") -> None
                         VALUES (?, ?, ?, ?, 'outbound', ?, ?) ON CONFLICT(chat_guid,external_id) DO NOTHING""",
                         (external_id, row["chat_guid"], row["conversation_id"], row["message_id"], row["body"], row["ref_id"] if row["kind"] == "reply" else ""))
                 await db.execute(
-                    "UPDATE imessage_accounts SET last_outbound_at = ?, updated_at = ? WHERE id = 1",
+                    "UPDATE imessage_accounts SET last_outbound_at = ?, updated_at = ?, status = CASE WHEN enabled = 1 AND status IN ('failed', 'connecting', 'connected') THEN 'connected' ELSE status END, status_detail = CASE WHEN enabled = 1 AND status IN ('failed', 'connecting', 'connected') THEN '' ELSE status_detail END WHERE id = 1",
                     (now, now),
                 )
             if row["kind"] == "reaction":

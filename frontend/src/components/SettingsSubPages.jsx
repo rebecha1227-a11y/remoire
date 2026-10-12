@@ -109,12 +109,24 @@ export function ProactiveSettings({ onBack }) {
         }));
         setStatus('');
     }).catch(() => setStatus('设置加载失败，请稍后重试。'));
-    apiFetch('/settings/imessage').then(async response => {
-      const payload = await response.json().catch(() => ({}));
-      if (response.ok && payload.ok && payload.data) {
-        setCfg(current => ({ ...current, imessageReady: payload.data.status === 'connected' && payload.data.enabled }));
-      }
-    }).catch(() => {});
+    let active = true;
+    const refreshLine = async () => {
+      try {
+        const response = await apiFetch('/settings/imessage');
+        const payload = await response.json();
+        if (active && response.ok && payload.ok && payload.data) {
+          setCfg(current => ({ ...current, imessageReady: payload.data.status === 'connected' && payload.data.enabled }));
+        }
+      } catch { /* Keep the last known status during transient network errors. */ }
+    };
+    void refreshLine();
+    const timer = setInterval(refreshLine, 5000);
+    window.addEventListener('focus', refreshLine);
+    return () => {
+      active = false;
+      clearInterval(timer);
+      window.removeEventListener('focus', refreshLine);
+    };
   }, []);
 
   const save = async (patch) => {

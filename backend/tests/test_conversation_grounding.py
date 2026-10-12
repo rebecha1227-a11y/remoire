@@ -63,6 +63,34 @@ class GroundingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['model'], {'slot': 'daily', 'model_id': 'test-model'})
         self.assertIn('【主动消息触发】', llm.await_args.args[1][0]['content'])
 
+    async def test_autonomous_keeps_correction_beyond_fifteen_messages_and_recalls_facts(self):
+        history = [{'role': 'user', 'content': 'CORRECTION: 我已经搬走，不在旧住处。', 'created_at': '2026-10-10T12:00:00'}]
+        history += [{'role': 'assistant', 'content': f'无关闲聊 {i}', 'created_at': '2026-10-10T12:01:00'} for i in range(20)]
+        recall = AsyncMock(return_value=[])
+        llm = AsyncMock(return_value={'content': '想念她。<message>想你了。</message>'})
+        with patch.object(nudge.context_budget_service, 'get_history_after_summary', AsyncMock(return_value=history)), \
+             patch.object(nudge.context_budget_service, 'get_conversation_summary', AsyncMock(return_value={'summary': 'SUMMARY_MARKER', 'through_message_id': 'old', 'through_message_rowid': 1})), \
+             patch.object(memory, 'get_core_memories', AsyncMock(return_value=[])), \
+             patch.object(memory, 'recall', recall), \
+             patch.object(chat, '_build_resume_bundle', AsyncMock(return_value='')), \
+             patch.object(nudge.model_settings_service, 'get_model_config_for_slot', AsyncMock(return_value=(ModelConfig('https://invalid', 'fake', 'test'), {}))), \
+             patch.object(nudge, 'call_llm_with_tools', llm):
+            await nudge.generate_autonomous_activity('test')
+        text = str(llm.await_args.args[1])
+        self.assertIn('CORRECTION', text)
+        self.assertIn('SUMMARY_MARKER', text)
+        self.assertIn('必须调用 search_memories', text)
+        self.assertEqual(recall.await_count, 2)
+        self.assertIn('纠正', recall.await_args_list[1].args[0])
+
+    async def test_expired_device_location_is_not_injected(self):
+        async with database.get_db() as db:
+            await db.execute("INSERT INTO device_snapshots (id,city,created_at) VALUES ('old','STALE_CITY','2020-01-01T00:00:00+08:00')")
+            await db.commit()
+        text = await nudge._get_latest_device_snapshot()
+        self.assertNotIn('STALE_CITY', text)
+        self.assertIn('过期', text)
+
     async def test_fallback_does_not_promote_reasoning_to_monologue(self):
         with patch.object(nudge, 'call_llm_with_tools', AsyncMock(return_value={
             'content': '', 'reasoning_content': '**Processing Recent Input**'

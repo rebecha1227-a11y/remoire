@@ -721,8 +721,9 @@ async def execute_tool(name: str, arguments: dict) -> str:
         memories = await memory_service.recall(query, limit=8)
         if not memories:
             return "没有找到相关记忆。"
-        lines = [f"- {m['content']}" for m in memories]
-        return "\n".join(lines)
+        from app.services.chat_service import _memory_prompt_line
+        lines = [_memory_prompt_line(m) for m in memories]
+        return "\n".join(lines) + "\n（历史记忆不代表当前状态；以用户较新的明确纠正和事件时间为准。）"
 
     elif name == "leave_note":
         content = arguments.get("content", "")

@@ -7,7 +7,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from app.database import get_db
 from app.llm import call_llm_with_tools
-from app.services import memory_service, model_settings_service, weather_service
+from app.services import memory_service, model_settings_service, weather_service, context_budget_service
 from app.tools import select_tools, execute_tool
 from app.services.autonomous_output import parse_autonomous_reply
 
@@ -158,7 +158,16 @@ async def _get_latest_device_snapshot() -> str:
     if not row:
         return ""
     d = dict(row)
-    parts = []
+    try:
+        observed = datetime.fromisoformat(d["created_at"])
+        if observed.tzinfo is None:
+            observed = observed.replace(tzinfo=timezone.utc)
+        age = datetime.now(timezone.utc) - observed
+        if age < timedelta(0) or age > timedelta(hours=6):
+            return "（设备快照已过期，不能据此判断她当前的位置或状态。）"
+    except (ValueError, TypeError, KeyError):
+        return ""
+    parts = [f"采集于 {observed.astimezone(BJ_TZ).isoformat()}"]
     if d.get("city"):
         loc = d["city"]
         if d.get("district"):
@@ -214,9 +223,12 @@ async def _save_autonomous_log(action_type: str, thinking: str, action_summary: 
 
 async def generate_autonomous_activity(conversation_id: str, mode: str = "light", message_blocked_reason: str = "") -> dict:
     """Connie 自主活动：完整 system prompt + 感知 + 工具调用。"""
-    from app.services.chat_service import _build_system_prompt, _build_resume_bundle, get_history, _build_llm_history_with_time_gaps
+    from app.services.chat_service import _collect_system_prompt_parts, _build_budgeted_chat_context, _build_resume_bundle, _assert_context_fits, _bounded_tool_result
 
-    history = await get_history(conversation_id, limit=15)
+    summary = await context_budget_service.get_conversation_summary(conversation_id)
+    history = await context_budget_service.get_history_after_summary(
+        conversation_id, int(summary["through_message_rowid"]) if summary else 0,
+    )
 
     last_msg_time = None
     for msg in reversed(history):
@@ -252,18 +264,18 @@ async def generate_autonomous_activity(conversation_id: str, mode: str = "light"
     device_info = await _get_latest_device_snapshot()
     last_auto_info = await _get_recent_autonomous_logs()
 
-    recalled_query = f"自主活动 {now_bj.strftime('%H:%M')}"
-    if history:
-        for msg in reversed(history):
-            if msg["role"] == "user":
-                recalled_query = msg["content"][:50]
-                break
-
-    recalled = await memory_service.recall(recalled_query, limit=5)
+    # Recall before generation, even if the model decides not to use a tool.
+    recent_user = [m["content"] for m in history if m["role"] == "user"][-5:]
+    queries = ["\n".join(recent_user)[-1500:] or "最近聊天 未完成的事情",
+               "静儿 最近 目前 住处 位置 搬家 离开 回家 纠正 不再 状态"]
+    recalled_by_id = {}
+    for query in queries:
+        for item in await memory_service.recall(query, limit=8):
+            recalled_by_id[item["id"]] = item
     resume_bundle = await _build_resume_bundle(last_msg_time)
-    system_prompt = await _build_system_prompt(
+    collected = await _collect_system_prompt_parts(
         core_memories=core_memories,
-        recalled_memories=recalled if recalled else None,
+        recalled_memories=list(recalled_by_id.values()),
         resume_bundle=resume_bundle,
     )
 
@@ -290,10 +302,8 @@ async def generate_autonomous_activity(conversation_id: str, mode: str = "light"
 
     autonomous_prompt += "\n\n【重要】无论你决定做什么（包括什么都不做），你都必须先写出此刻脑海里的想法——可以是对静儿的牵挂、对天气的感受、一段回忆、或者纯粹的发呆碎碎念。这段内心独白会被记录下来。直接用自然的语言说出内心想法，不需要任何格式。"
 
-    system_prompt += "\n\n---\n\n" + autonomous_prompt
-
-    llm_history = _build_llm_history_with_time_gaps(history)
-    messages = [{"role": "system", "content": system_prompt}] + llm_history
+    collected["mandatory_parts"].append(autonomous_prompt)
+    messages = []
 
     last_assistant_texts = []
     for msg in reversed(history):
@@ -308,10 +318,10 @@ async def generate_autonomous_activity(conversation_id: str, mode: str = "light"
     if last_assistant_texts:
         dedup_hint = "\n\n⚠️ 以下是你最近已经发送过的消息（不要重复发送类似的内容）：\n" + "\n".join(f"- 「{t}…」" for t in last_assistant_texts)
 
-    messages.append({
+    trigger = {
         "role": "user",
-        "content": f"[系统：{time_info}。现在是你的自主活动时间。以上聊天记录仅供参考上下文，你不是在回复对话。如果你决定给静儿发消息，必须是全新的内容，不能重复你之前说过的话。注意：根据当前时间和上面的聊天记录判断静儿的状态，不要问与时间或聊天内容矛盾的问题。]{dedup_hint}",
-    })
+        "content": f"[系统：{time_info}。现在是你的自主活动时间。以上聊天记录仅供参考上下文，你不是在回复对话。如果你决定给静儿发消息，必须是全新的内容，不能重复你之前说过的话。注意：当前位置和状态必须有明确且仍有效的依据；不得将旧聊天、自己的主动消息或过期设备记录当成当前事实。]{dedup_hint}",
+    }
 
     include_web = (mode == "full")
     tools = select_tools("", has_diary_notifications=False, include_web=include_web)
@@ -327,9 +337,15 @@ async def generate_autonomous_activity(conversation_id: str, mode: str = "light"
             config, slot_settings = await model_settings_service.get_model_config_for_slot(slot)
             extended_thinking = bool(slot_settings.get("extended_thinking"))
 
+            requested_output = 2048 if mode == "full" else 1024
+            budget_settings = {**slot_settings, "output_budget": max(requested_output, int(slot_settings.get("output_budget") or 0))}
+            messages, _, budget = _build_budgeted_chat_context(
+                collected, history + [trigger], summary, tools, budget_settings,
+            )
             slot_messages = list(messages)
             for _ in range(4):
-                max_tokens = 2048 if mode == "full" else 1024
+                _assert_context_fits(slot_messages, tools, budget["input_budget"])
+                max_tokens = requested_output
                 assistant_msg = await call_llm_with_tools(
                     config, slot_messages, tools=tools,
                     extended_thinking=extended_thinking,
@@ -350,9 +366,10 @@ async def generate_autonomous_activity(conversation_id: str, mode: str = "light"
                     slot_messages.append({
                         "role": "tool",
                         "tool_call_id": tc["id"],
-                        "content": result,
+                        "content": _bounded_tool_result(slot_messages, tools, result, budget["input_budget"]),
                     })
             else:
+                _assert_context_fits(slot_messages, tools, budget["input_budget"])
                 assistant_msg = await call_llm_with_tools(
                     config, slot_messages,
                     extended_thinking=extended_thinking, max_tokens=1024,
