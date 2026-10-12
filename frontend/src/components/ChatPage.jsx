@@ -716,7 +716,7 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
       if (streamError && hasReplyContent) {
         setMessages(m => [...m, {
           id: ++msgIdRef.current,
-          role: 'ai',
+          role: 'system',
           text: streamError,
           time: formatBJTime(new Date().toISOString()),
           type: 'normal',
@@ -734,7 +734,7 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
           : e.message?.startsWith('后端返回错误')
             ? e.message
             : '连接未完成，请检查网络或后端状态。');
-      setMessages(m => [...m, { id: ++msgIdRef.current, role: 'ai', text: message, time: formatBJTime(new Date().toISOString()), type: 'normal', isNew: true }]);
+      setMessages(m => [...m, { id: ++msgIdRef.current, role: 'system', text: message, time: formatBJTime(new Date().toISOString()), type: 'normal', isNew: true }]);
     }
   }
 
