@@ -1,10 +1,11 @@
 import { CornerUpLeft, X, Smile, Image } from "lucide-react";
 import { useState, useRef, useEffect, memo, useCallback } from "react";
-import { apiFetch, apiJsonFetch, API_BASE } from "../utils/api";
+import { apiFetch, apiJsonFetch, apiErrorMessage, API_BASE } from "../utils/api";
 import { PALETTES, currentBand, AMBIENT_BY_BAND, isDarkBand } from "../utils/ambient";
 import Floaters from "./Floaters";
 import ChatImage from "./ChatImage";
 import StickerPicker from "./StickerPicker";
+import { resolveChatImage } from "../utils/chatImageInput";
 import { RainLayer, FogLayer } from "./WeatherEffects";
 import "../styles/room.css";
 
@@ -579,11 +580,19 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
     try {
       const body = { message: txt || '（发了一张图片）', conversation_id: conversationIdRef.current || null, mode: chatMode, reply_style: replyStyle };
       if (stickerId) body.sticker_id = stickerId;
-      else if (image) body.image = image;
+      else if (image) {
+        try { body.image = await resolveChatImage(image, API_BASE, apiFetch); }
+        catch (error) { error.publicMessage = error.message; throw error; }
+      }
       const res = await apiJsonFetch('/chat/send', {
         method: 'POST', body: JSON.stringify(body),
       });
-      if (!res.ok || !res.body) throw new Error(`后端返回错误：${res.status}`);
+      if (!res.ok || !res.body) {
+        const payload = await res.json().catch(() => null);
+        const error = new Error(`后端返回错误：${res.status}`);
+        error.publicMessage = apiErrorMessage(payload, `请求未完成（${res.status}），请稍后重试`);
+        throw error;
+      }
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder('utf-8', { fatal: false });
@@ -666,6 +675,7 @@ export default function ChatPage({ tweaks, activeTab, onNavigate }) {
 
       const hasReplyContent = !!replyText.trim() || pictures.length > 0;
       if (!streamDone && !streamError) streamError = '回复连接中断，未完整完成。';
+      if (streamDone && !streamError && !hasReplyContent) streamError = '这次没有收到可显示的回复，请重试。';
       if (streamError && !hasReplyContent) {
         const error = new Error(streamError);
         error.publicMessage = streamError;
